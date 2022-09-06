@@ -1,0 +1,152 @@
+{
+    "wandb_project_name": "dlgn-conv-test",
+    "is_DLGN_all_ones": "True",
+    "dataset_folder": "./Datasets/",
+    "version": "V1",
+    "list_of_hp_obj": [
+        {
+            "optimizer": "SGD",
+            "momentum": 0.9,
+            "lr": 0.001,
+            "epochs": 50,
+            "activ_func": "SIGMOID",
+            "output_activ_func": "SIGMOID",
+            "weight_init": "XAVIER_UNIFORM",
+            "loss_fn": "CCE"
+        }
+    ],
+    "gate_net_list_of_layer_configs": [
+        {
+            "layer_type": "CONV",
+            "layer_sub_type": "2D",
+            "number_of_filters": 128,
+            "padding": [
+                1,
+                1
+            ],
+            "stride": 1,
+            "kernel_size": [
+                3,
+                3
+            ],
+            "weight_init_type": "XAVIER_UNIFORM"
+        },
+        {
+            "layer_type": "CONV",
+            "layer_sub_type": "2D",
+            "number_of_filters": 128,
+            "padding": [
+                1,
+                1
+            ],
+            "stride": 1,
+            "kernel_size": [
+                3,
+                3
+            ],
+            "weight_init_type": "XAVIER_UNIFORM"
+        },
+        {
+            "layer_type": "CONV",
+            "layer_sub_type": "2D",
+            "number_of_filters": 128,
+            "padding": [
+                1,
+                1
+            ],
+            "stride": 1,
+            "kernel_size": [
+                3,
+                3
+            ],
+            "weight_init_type": "XAVIER_UNIFORM"
+        },
+        {
+            "layer_type": "CONV",
+            "layer_sub_type": "2D",
+            "number_of_filters": 128,
+            "padding": [
+                1,
+                1
+            ],
+            "stride": 1,
+            "kernel_size": [
+                3,
+                3
+            ],
+            "weight_init_type": "XAVIER_UNIFORM"
+        }
+    ],
+    "weight_net_list_of_layer_configs": [
+        {
+            "layer_type": "CONV",
+            "layer_sub_type": "2D",
+            "number_of_filters": 128,
+            "padding": [
+                1,
+                1
+            ],
+            "stride": 1,
+            "kernel_size": [
+                3,
+                3
+            ],
+            "weight_init_type": "XAVIER_UNIFORM"
+        },
+        {
+            "layer_type": "CONV",
+            "layer_sub_type": "2D",
+            "number_of_filters": 128,
+            "padding": [
+                1,
+                1
+            ],
+            "stride": 1,
+            "kernel_size": [
+                3,
+                3
+            ],
+            "weight_init_type": "XAVIER_UNIFORM"
+        },
+        {
+            "layer_type": "CONV",
+            "layer_sub_type": "2D",
+            "number_of_filters": 128,
+            "padding": [
+                1,
+                1
+            ],
+            "stride": 1,
+            "kernel_size": [
+                3,
+                3
+            ],
+            "weight_init_type": "XAVIER_UNIFORM"
+        },
+        {
+            "layer_type": "CONV",
+            "layer_sub_type": "2D",
+            "number_of_filters": 128,
+            "padding": [
+                1,
+                1
+            ],
+            "stride": 1,
+            "kernel_size": [
+                3,
+                3
+            ],
+            "weight_init_type": "XAVIER_UNIFORM"
+        },
+        {
+            "layer_type": "POOL",
+            "layer_sub_type": "GLOBAL_AVERAGE"
+        },
+        {
+            "layer_type": "FULLY-CONNECTED",
+            "layer_sub_type": "LINEAR",
+            "weight_init_type": "XAVIER_UNIFORM",
+            "num_nodes_in_fc": 10
+        }
+    ]
+}

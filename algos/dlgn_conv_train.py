@@ -10,7 +10,7 @@ from model.dlgn_conv_nn_model import DLGN_CONV_Network
 from utils.generic_utils import create_nested_dir_if_not_exists
 
 
-def train_one_epoch(model, training_loader, optimizer, loss_fn, epoch_index, params_to_update, tb_writer):
+def train_one_epoch(model, training_loader, optimizer, loss_fn, epoch_index, params_to_update, tb_writer, verbose=1):
     running_loss = 0.
     last_loss = 0.
     avg_loss = 0.
@@ -27,19 +27,21 @@ def train_one_epoch(model, training_loader, optimizer, loss_fn, epoch_index, par
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     for i, data in enumerate(loader):
         # Every data instance is an input + label pair
-        inputs, labels, orig_labels = data
-        inputs, labels, orig_labels = inputs.to(
-            device), labels.to(device), orig_labels.to(device)
+        inputs, labels = data
+        inputs, labels = inputs.to(
+            device), labels.to(device)
 
         # Zero your gradients for every batch!
         optimizer.zero_grad()
 
         # Make predictions for this batch
-        outputs = model(inputs)
-        # print("labels: ",labels)
-        # print("outputs: ",outputs)
+        outputs = model(inputs, verbose)
 
         # Compute the loss and its gradients
+        # print("Labels:", labels)
+        # print("Labels size:", labels.size())
+        # print("outputs:", outputs)
+        # print("outputs size:", outputs.size())
         loss = loss_fn(outputs, labels)
 
         loader.set_description('Loss %.02f at step %d' % (loss, step))
@@ -49,12 +51,13 @@ def train_one_epoch(model, training_loader, optimizer, loss_fn, epoch_index, par
         optimizer.step()
         step += 1
 
+        outputs = outputs.softmax(dim=1).max(1).indices
         yhat = outputs.cpu().clone().detach().numpy()
-        actual = orig_labels.cpu().numpy()
+        actual = labels.cpu().numpy()
+
         actual = actual.reshape((len(actual), 1))
-        # round to class values
-        yhat = yhat.round()
         yhat = yhat.reshape((len(yhat), 1))
+
         # store
         predictions.append(yhat)
         actuals.append(actual)
@@ -98,12 +101,13 @@ def evaluate_model(model, data_loader, loss_fn):
         vloss = loss_fn(voutputs, vlabels)
         running_vloss += vloss.item()
 
+        voutputs = voutputs.softmax(dim=1).max(1).indices
         vyhat = voutputs.cpu().clone().detach().numpy()
         vactual = vlabels.cpu().numpy()
+
         vactual = vactual.reshape((len(vactual), 1))
-        # round to class values
-        vyhat = vyhat.round()
         vyhat = vyhat.reshape((len(vyhat), 1))
+
         # store
         vpredictions.append(vyhat)
         vactuals.append(vactual)
@@ -115,7 +119,7 @@ def evaluate_model(model, data_loader, loss_fn):
     return avg_vloss, avg_vacc
 
 
-def train_DLGN(model, train_data_loader, valid_data_loader, hp, writer, model_path):
+def train_DLGN(model, train_data_loader, valid_data_loader, hp, writer, model_path, verbose=1, log_wandb=False):
     loss_fn = hp.loss_fn
 
     if hp.optimizer == 'ADAM':
@@ -145,20 +149,24 @@ def train_DLGN(model, train_data_loader, valid_data_loader, hp, writer, model_pa
 
         EPOCHS = hp.epochs
 
+        constant_params = [p.clone().detach()
+                           for p in model.linear_conv_net.parameters()]
+
         for epoch in range(EPOCHS):
             print('EPOCH {}:'.format(epoch_number + 1))
 
             # Make sure gradient tracking is on, and do a pass over the data
             model.train(True)
             avg_loss, avg_acc = train_one_epoch(
-                model, train_data_loader, optimizer, loss_fn, epoch_number, model.parameters(), writer)
+                model, train_data_loader, optimizer, loss_fn, epoch_number, model.parameters(), writer, verbose)
 
             avg_vloss, avg_vacc = evaluate_model(
                 model, valid_data_loader, loss_fn)
 
-            # wandb.log({"current_epoch": epoch_number+1,
-            #            "train_metric_epoch": {'acc_epoch': round(avg_acc, 5), 'loss_epoch': round(avg_loss, 5)},
-            #            "valid_metric_epoch": {'acc_epoch': round(avg_vacc, 5), 'loss_epoch': round(avg_vloss, 5)}})
+            if(log_wandb):
+                wandb.log({"current_epoch": epoch_number+1,
+                           "train_metric_epoch": {'acc_epoch': round(avg_acc, 5), 'loss_epoch': round(avg_loss, 5)},
+                           "valid_metric_epoch": {'acc_epoch': round(avg_vacc, 5), 'loss_epoch': round(avg_vloss, 5)}})
 
             print('LOSS train {} valid {}'.format(avg_loss, avg_vloss))
             print('Accuracy train {} valid {}'.format(avg_acc, avg_vacc))
@@ -184,6 +192,15 @@ def train_DLGN(model, train_data_loader, valid_data_loader, hp, writer, model_pa
                 'loss': loss_fn,
             }, model_path+"_ep_"+str(epoch_number)+".pt")
 
+            target_params = [p for p in model.linear_conv_net.parameters()]
+
+            temp = True
+            for indx in range(len(target_params)):
+                each_target = target_params[indx]
+                each_constant = constant_params[indx]
+                temp = temp and torch.all(each_target.eq(each_constant))
+            assert temp == False, 'No change after an epoch in gate param bug exists!'
+
     except Exception as e:
         print("Exiting due to exception: %s" % e)
         traceback.print_exc()
@@ -196,7 +213,7 @@ def initialise_DLGN_conv_model(gate_net_conv_info, is_DLGN_all_ones, seed, weigh
     return dlgn_net
 
 
-def construct_train_evaluate_DLGN_model(gate_net_conv_info, weight_net_conv_info, train_data_loader, valid_data_loader, test_data_loader, hp_obj, runs_out_dir, save_out_dir, conf_name, all_param_hash, seed=2022, writer=None, is_DLGN_all_ones=True):
+def construct_train_evaluate_DLGN_model(gate_net_conv_info, weight_net_conv_info, train_data_loader, valid_data_loader, test_data_loader, hp_obj, runs_out_dir, save_out_dir, conf_name, all_param_hash, seed=2022, writer=None, is_DLGN_all_ones=True, verbose=1):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # Initializing in a separate cell so we can easily add more epochs to the same run
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -207,15 +224,16 @@ def construct_train_evaluate_DLGN_model(gate_net_conv_info, weight_net_conv_info
     dlgn_net = initialise_DLGN_conv_model(
         gate_net_conv_info, is_DLGN_all_ones, seed, weight_net_conv_info, hp_obj.activ_func)
 
-    # wandb.watch(dlgn_net, log="all", log_freq=100, log_graph=(True))
+    if(not(all_param_hash is None)):
+        wandb.watch(dlgn_net, log="all", log_freq=100, log_graph=(True))
 
     dlgn_net.to(device)
 
-    num_params_total = sum([p.size()[0] for p in dlgn_net.parameters()])
-    num_params_gate = sum([p.size()[0]
-                          for p in dlgn_net.linear_net.parameters()])
-    num_params_weight = sum([p.size()[0]
-                            for p in dlgn_net.weight_net.parameters()])
+    num_params_total = sum(p.numel() for p in dlgn_net.parameters())
+    num_params_gate = sum(p.numel()
+                          for p in dlgn_net.linear_conv_net.parameters())
+    num_params_weight = sum(p.numel()
+                            for p in dlgn_net.weight_conv_net.parameters())
 
     print("Number of params total is:"+str(num_params_total))
     print("Number of params in gate net is:"+str(num_params_gate))
@@ -226,8 +244,11 @@ def construct_train_evaluate_DLGN_model(gate_net_conv_info, weight_net_conv_info
     model_path = str(save_out_dir)+'/model_{}.pt'.format(conf_name)
     full_save_model_path = str(save_out_dir) + \
         '/model_{}.pt'.format(all_param_hash)
+
+    log_wandb = not(all_param_hash is None)
+
     train_loss, train_acc, valid_loss, valid_acc, optimizer = train_DLGN(
-        dlgn_net, train_data_loader, valid_data_loader, hp_obj, writer, str(model_per_epoch_dir)+'/model_{}'.format(conf_name))
+        dlgn_net, train_data_loader, valid_data_loader, hp_obj, writer, str(model_per_epoch_dir)+'/model_{}'.format(conf_name), verbose, log_wandb)
     test_loss, test_acc = evaluate_model(
         dlgn_net, test_data_loader, hp_obj.loss_fn)
 

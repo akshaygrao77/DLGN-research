@@ -1,26 +1,69 @@
 import math
 from structure.dlgn_conv_config_structure import Configs, HPParams
+from structure.dlgn_conv_structure import All_Conv_info, Conv_info
 import json
 import hashlib
 import os
 
+
 def create_nested_dir_if_not_exists(directory):
     os.makedirs(directory, exist_ok=True)
+
 
 def get_hash_for_string_of_length(inputstr, length=None):
     if(length is None):
         return int(hashlib.sha1(inputstr.encode("utf-8")).hexdigest(), 32)
     return int(hashlib.sha1(inputstr.encode("utf-8")).hexdigest(), 32) % (10 ** length)
 
+
 def convert_from_integer_to_tuple_if_not(inp):
-    if(type(inp) is tuple == True):
+    if(inp is None):
+        return inp
+
+    if(isinstance(inp, tuple)):
         return inp
     else:
         return (inp, inp)
 
 
+def convert_from_list_to_tuple_or_int(inp):
+    if(inp is None):
+        return inp
+
+    if(isinstance(inp, list) == True):
+        assert len(inp) == 2, 'Length of list input is not equal to two'
+
+        return (inp[0], inp[1])
+    else:
+        return inp
+
+
+def convert_generic_object_list_to_All_Conv_info(list_of_gen_all_conv_obj):
+    list_of_conv_obj = []
+    for each_gen_hp_obj in list_of_gen_all_conv_obj:
+        list_of_conv_obj.append(
+            convert_generic_object_to_Conv_info_object(each_gen_hp_obj))
+
+    return All_Conv_info(list_of_conv_obj, None)
+
+
+def convert_generic_object_to_Conv_info_object(gen_conv_obj):
+    padding = convert_from_list_to_tuple_or_int(gen_conv_obj.padding)
+    stride = convert_from_list_to_tuple_or_int(gen_conv_obj.stride)
+    kernel_size = convert_from_list_to_tuple_or_int(gen_conv_obj.kernel_size)
+
+    return Conv_info(gen_conv_obj.layer_type, gen_conv_obj.layer_sub_type, gen_conv_obj.in_ch, gen_conv_obj.number_of_filters, padding, stride, kernel_size, gen_conv_obj.num_nodes_in_fc, gen_conv_obj.weight_init_type)
+
+
 def calculate_output_size_for_conv_per_dimension(input_dim, padding_dim, kernel_dim, stride_dim):
     return math.floor(((input_dim + 2 * padding_dim - kernel_dim) / stride_dim) + 1)
+
+
+def set_inputchannel_for_first_conv_layer(all_conv_info, input_channel):
+    for each_conv_info in all_conv_info.list_of_each_conv_info:
+        if(each_conv_info.layer_type == "CONV"):
+            each_conv_info.in_ch = input_channel
+            return
 
 
 def calculate_output_size_for_conv(input_size, padding_size, kernel_size, stride_size):
@@ -34,7 +77,7 @@ def calculate_output_size_for_conv(input_size, padding_size, kernel_size, stride
     out_dim_2 = calculate_output_size_for_conv_per_dimension(
         input_size[1], padding_size[1], kernel_size[1], stride_size[1])
 
-    return out_dim_1, out_dim_2
+    return (out_dim_1, out_dim_2)
 
 
 def get_object_from_json_file(json_file_path):

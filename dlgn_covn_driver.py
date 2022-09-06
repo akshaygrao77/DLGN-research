@@ -1,6 +1,6 @@
+from tabnanny import verbose
 import wandb
-from structure.dlgn_conv_structure import convert_generic_object_list_to_All_Conv_info
-from utils.generic_utils import get_object_from_json_file, convert_generic_object_list_to_HPParam_object_list
+from utils.generic_utils import get_object_from_json_file, convert_generic_object_list_to_HPParam_object_list, convert_generic_object_list_to_All_Conv_info
 from algos.model_runners import run_deep_dream
 import argparse
 import torch
@@ -30,11 +30,14 @@ def run_script_based_on_configuration(config_file_path):
     list_of_hp_obj = convert_generic_object_list_to_HPParam_object_list(
         conf_obj.list_of_hp_obj)
     print(str(list_of_hp_obj[0]))
-    all_conv_info = convert_generic_object_list_to_All_Conv_info(
-        conf_obj.list_of_layer_configs)
+    gate_net_conv_info = convert_generic_object_list_to_All_Conv_info(
+        conf_obj.gate_net_list_of_layer_configs)
+
+    weight_net_conv_info = convert_generic_object_list_to_All_Conv_info(
+        conf_obj.weight_net_list_of_layer_configs)
 
     run_deep_dream(wandb_project_name=conf_obj.wandb_project_name, is_DLGN_all_ones=bool(conf_obj.is_DLGN_all_ones == "True"),
-                   dataset_folder=conf_obj.dataset_folder, version=conf_obj.version,all_conv_info=all_conv_info,list_of_hp_obj = list_of_hp_obj)
+                   dataset_folder=conf_obj.dataset_folder, version=conf_obj.version, gate_net_conv_info=gate_net_conv_info, weight_net_conv_info=weight_net_conv_info, list_of_hp_obj=list_of_hp_obj, verbose=1)
 
 
 def init_argparse() -> argparse.ArgumentParser:

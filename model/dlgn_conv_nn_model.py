@@ -47,7 +47,7 @@ class Basic_Network(nn.Module):
                     self.module_list.append(
                         nn.AvgPool2d(kernel_size=input_size))
                     last_output_size = calculate_output_size_for_conv(
-                        input_size, each_conv_info.padding, each_conv_info.kernel_size, each_conv_info.stride)
+                        input_size, 0, input_size, 1)
                     input_size = last_output_size
 
             elif(each_conv_info.layer_type == "ACTIVATION"):
@@ -58,7 +58,8 @@ class Basic_Network(nn.Module):
             elif(each_conv_info.layer_type == "FULLY-CONNECTED"):
                 if(each_conv_info.layer_sub_type == "LINEAR"):
                     if(last_fc_nodes is None):
-                        inp_size = last_output_size[0] * last_output_size[1]
+                        inp_size = last_output_size[0] * \
+                            last_output_size[1] * last_out_ch_size
                     else:
                         inp_size = last_fc_nodes
 
@@ -68,6 +69,8 @@ class Basic_Network(nn.Module):
                     self.initialize_weights(
                         each_conv_info.weight_init_type, mod_obj)
                     last_fc_nodes = each_conv_info.num_nodes_in_fc
+
+        self.module_list = nn.ModuleList(self.module_list)
 
 
 class DLGN_CONV_Network(nn.Module):
@@ -82,32 +85,34 @@ class DLGN_CONV_Network(nn.Module):
 
         self.linear_conv_net = DLGN_CONV_LinearNetwork(
             gate_net_conv_info, seed, is_enable_gate_net_weight_restore)
-        print("self.linear_net ", self.linear_conv_net)
+        print("self.linear_conv_net ", self.linear_conv_net)
 
         self.weight_conv_net = DLGN_CONV_WeightNetwork(
             weight_net_conv_info, seed, is_enable_weight_net_weight_restore)
 
+        print("self.weight_conv_net ", self.weight_conv_net)
+
     def forward(self, inp, verbose=2):
-        linear_conv_outputs = self.linear_conv_net(inp, verbose=verbose)
+        linear_conv_outputs, _ = self.linear_conv_net(inp, verbose=verbose)
 
         self.gating_node_outputs = [None] * len(linear_conv_outputs)
         for indx in range(len(linear_conv_outputs)):
             each_linear_conv_output = linear_conv_outputs[indx]
             self.gating_node_outputs[indx] = self.gating_activation_func(
                 each_linear_conv_output)
-
+        # print("gating_node_outputs[0]", self.gating_node_outputs[0])
         if(self.is_weight_net_all_ones == True):
             device = torch.device(
                 "cuda:0" if torch.cuda.is_available() else "cpu")
             # inp = torch.ones((2,5),dtype=torch.double, requires_grad=True,device=device)
-            inp = torch.ones((inp.size()[0], inp.size()[
-                             1]), dtype=torch.double, requires_grad=True, device=device)
+            inp = torch.ones(inp.size(),
+                             requires_grad=True, device=device)
 
-        final_outs = self.weight_conv_net(
+        final_outs, final_layer_out = self.weight_conv_net(
             inp, self.gating_node_outputs, verbose=verbose)
         self.final_outs = final_outs
 
-        return final_outs
+        return final_layer_out
 
 
 class DLGN_CONV_WeightNetwork(Basic_Network):
@@ -122,36 +127,47 @@ class DLGN_CONV_WeightNetwork(Basic_Network):
     def forward(self, inp, gating_signal, verbose=2):
         each_mod_outputs = [None] * len(self.module_list)
         previous_output = inp
+        first_fc = True
         if(verbose > 2):
-            print("Inp size", inp.size())
+            print("WeightNetwork Inp size", inp.size())
         if(verbose > 4):
-            print("Input:: ", inp)
+            print("WeightNetwork Input:: ", inp)
 
         for indx in range(len(self.module_list)):
             each_module = self.module_list[indx]
+            if(self.weight_net_conv_info.list_of_each_conv_info[indx].layer_type == "FULLY-CONNECTED" and first_fc):
+                previous_output = torch.flatten(previous_output, 1)
+                first_fc = False
+
             previous_output = each_module(previous_output)
             if(verbose > 2):
-                print("Module {} immediate output size is:: {}".format(
+                print("WeightNetwork Module {} immediate output size is:: {}".format(
                     indx, previous_output.size()))
             if(verbose > 4):
-                print("Module {} immediate output is:: {}".format(
+                print("WeightNetwork Module {} immediate output is:: {}".format(
                     indx, previous_output))
             if(not(gating_signal is None) and len(gating_signal) > indx):
                 previous_output = previous_output * gating_signal[indx]
                 if(verbose > 2):
-                    print("Module {} after gating output size is:: {}".format(
+                    print("WeightNetwork Module {} after gating output size is:: {}".format(
                         indx, previous_output.size()))
                 if(verbose > 4):
-                    print("Module {} after gating output is:: {}".format(
+                    print("WeightNetwork Module {} after gating output is:: {}".format(
                         indx, previous_output))
 
             each_mod_outputs[indx] = previous_output
 
         self.each_mod_outputs = each_mod_outputs
-        return each_mod_outputs
+        return each_mod_outputs, previous_output
 
     def __str__(self):
-        return "weight_net_conv_info"+str(self.weight_net_conv_info)
+        ret = "weight_net_conv_info: " + \
+            str(self.weight_net_conv_info)+" \n module_list:"
+        for each_module in self.module_list:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+
+        return ret
 
 
 class DLGN_CONV_LinearNetwork(Basic_Network):
@@ -167,23 +183,28 @@ class DLGN_CONV_LinearNetwork(Basic_Network):
         each_mod_outputs = [None] * len(self.module_list)
         previous_output = inp
         if(verbose > 2):
-            print("Inp size", inp.size())
+            print("LinearNetwork Inp size", inp.size())
         if(verbose > 4):
-            print("Input:: ", inp)
+            print("LinearNetwork Input:: ", inp)
 
         for indx in range(len(self.module_list)):
             each_module = self.module_list[indx]
             previous_output = each_module(previous_output)
             if(verbose > 2):
-                print("Module {} immediate output size is:: {}".format(
+                print("LinearNetwork Module {} immediate output size is:: {}".format(
                     indx, previous_output.size()))
             if(verbose > 4):
-                print("Module {} immediate output is:: {}".format(
+                print("LinearNetwork Module {} immediate output is:: {}".format(
                     indx, previous_output))
             each_mod_outputs[indx] = previous_output
 
         self.each_mod_outputs = each_mod_outputs
-        return each_mod_outputs
+        return each_mod_outputs, previous_output
 
     def __str__(self):
-        return "gate_net_conv_info: "+str(self.gate_net_conv_info)
+        ret = "gate_net_conv_info: " + \
+            str(self.gate_net_conv_info)+" \n module_list:"
+        for each_module in self.module_list:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+        return ret

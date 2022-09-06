@@ -1,0 +1,7 @@
+root
+wandb
+__pycache__
+outputs
+errorfile.err
+logfile.log
+data
