@@ -52,11 +52,11 @@ class Basic_Network(nn.Module):
 
             elif(each_conv_info.layer_type == "POOL"):
                 if(each_conv_info.layer_sub_type == "GLOBAL_AVERAGE"):
+                    output_size = (1, 1)
                     self.module_list.append(
-                        nn.AdaptiveAvgPool2d(output_size=(1, 1)))
+                        nn.AdaptiveAvgPool2d(output_size=output_size))
 
-                    last_output_size = calculate_output_size_for_conv(
-                        input_size, 0, input_size, 1)
+                    last_output_size = output_size
                     input_size = last_output_size
 
             elif(each_conv_info.layer_type == "ACTIVATION"):
@@ -103,13 +103,12 @@ class DLGN_CONV_Network(nn.Module):
 
     def forward(self, inp, verbose=2):
         linear_conv_outputs, _ = self.linear_conv_net(inp, verbose=verbose)
-        linear_conv_outputs = 4 * linear_conv_outputs
 
         self.gating_node_outputs = [None] * len(linear_conv_outputs)
         for indx in range(len(linear_conv_outputs)):
             each_linear_conv_output = linear_conv_outputs[indx]
-            self.gating_node_outputs[indx] = self.gating_activation_func(
-                each_linear_conv_output)
+            self.gating_node_outputs[indx] = self.gating_activation_func(4 *
+                                                                         each_linear_conv_output)
         # print("gating_node_outputs[0]", self.gating_node_outputs[0])
         if(self.is_weight_net_all_ones == True):
             device = torch.device(
