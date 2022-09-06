@@ -5,13 +5,13 @@
     "version": "V1",
     "list_of_hp_obj": [
         {
-            "optimizer": "SGD",
+            "optimizer": "ADAM",
             "momentum": 0.9,
-            "lr": 0.001,
-            "epochs": 50,
+            "lr": 3e-4,
+            "epochs": 20,
             "activ_func": "SIGMOID",
             "output_activ_func": "SIGMOID",
-            "weight_init": "XAVIER_UNIFORM",
+            "weight_init": "KAIMING_NORMAL_FIN",
             "loss_fn": "CCE"
         }
     ],
@@ -29,7 +29,7 @@
                 3,
                 3
             ],
-            "weight_init_type": "XAVIER_UNIFORM"
+            "weight_init_type": "KAIMING_NORMAL_FIN"
         },
         {
             "layer_type": "CONV",
@@ -44,7 +44,7 @@
                 3,
                 3
             ],
-            "weight_init_type": "XAVIER_UNIFORM"
+            "weight_init_type": "KAIMING_NORMAL_FIN"
         },
         {
             "layer_type": "CONV",
@@ -59,7 +59,7 @@
                 3,
                 3
             ],
-            "weight_init_type": "XAVIER_UNIFORM"
+            "weight_init_type": "KAIMING_NORMAL_FIN"
         },
         {
             "layer_type": "CONV",
@@ -74,7 +74,7 @@
                 3,
                 3
             ],
-            "weight_init_type": "XAVIER_UNIFORM"
+            "weight_init_type": "KAIMING_NORMAL_FIN"
         }
     ],
     "weight_net_list_of_layer_configs": [
@@ -91,7 +91,7 @@
                 3,
                 3
             ],
-            "weight_init_type": "XAVIER_UNIFORM"
+            "weight_init_type": "KAIMING_NORMAL_FIN"
         },
         {
             "layer_type": "CONV",
@@ -106,7 +106,7 @@
                 3,
                 3
             ],
-            "weight_init_type": "XAVIER_UNIFORM"
+            "weight_init_type": "KAIMING_NORMAL_FIN"
         },
         {
             "layer_type": "CONV",
@@ -121,7 +121,7 @@
                 3,
                 3
             ],
-            "weight_init_type": "XAVIER_UNIFORM"
+            "weight_init_type": "KAIMING_NORMAL_FIN"
         },
         {
             "layer_type": "CONV",
@@ -136,7 +136,7 @@
                 3,
                 3
             ],
-            "weight_init_type": "XAVIER_UNIFORM"
+            "weight_init_type": "KAIMING_NORMAL_FIN"
         },
         {
             "layer_type": "POOL",
@@ -145,7 +145,7 @@
         {
             "layer_type": "FULLY-CONNECTED",
             "layer_sub_type": "LINEAR",
-            "weight_init_type": "XAVIER_UNIFORM",
+            "weight_init_type": "KAIMING_NORMAL_FIN",
             "num_nodes_in_fc": 10
         }
     ]

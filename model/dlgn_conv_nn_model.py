@@ -13,6 +13,14 @@ class Basic_Network(nn.Module):
             nn.init.xavier_normal_(mod_obj.weight)
         elif(init_type == "XAVIER_UNIFORM"):
             nn.init.xavier_uniform_(mod_obj.weight)
+        elif(init_type == "KAIMING_UNIFORM_FIN"):
+            nn.init.kaiming_uniform_(mod_obj.weight, mode='fan_in')
+        elif(init_type == "KAIMING_UNIFORM_FOUT"):
+            nn.init.kaiming_uniform_(mod_obj.weight, mode='fan_out')
+        elif(init_type == "KAIMING_NORMAL_FIN"):
+            nn.init.kaiming_normal_(mod_obj.weight, mode='fan_in')
+        elif(init_type == "KAIMING_NORMAL_FOUT"):
+            nn.init.kaiming_normal_(mod_obj.weight, mode='fan_out')
 
     def initialize_layers(self, all_conv_info):
         input_size = all_conv_info.input_image_size
@@ -45,7 +53,8 @@ class Basic_Network(nn.Module):
             elif(each_conv_info.layer_type == "POOL"):
                 if(each_conv_info.layer_sub_type == "GLOBAL_AVERAGE"):
                     self.module_list.append(
-                        nn.AvgPool2d(kernel_size=input_size))
+                        nn.AdaptiveAvgPool2d(output_size=(1, 1)))
+
                     last_output_size = calculate_output_size_for_conv(
                         input_size, 0, input_size, 1)
                     input_size = last_output_size
@@ -94,6 +103,7 @@ class DLGN_CONV_Network(nn.Module):
 
     def forward(self, inp, verbose=2):
         linear_conv_outputs, _ = self.linear_conv_net(inp, verbose=verbose)
+        linear_conv_outputs = 4 * linear_conv_outputs
 
         self.gating_node_outputs = [None] * len(linear_conv_outputs)
         for indx in range(len(linear_conv_outputs)):
