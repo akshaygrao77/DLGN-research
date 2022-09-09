@@ -98,7 +98,7 @@ net.to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(net.parameters(), lr=3e-4)
 
-for epoch in range(50):  # loop over the dataset multiple times
+for epoch in range(20):  # loop over the dataset multiple times
     print('EPOCH {}:'.format(epoch + 1))
     running_loss = 0.0
     loader = tqdm.tqdm(trainloader, desc='Train data loader')
@@ -130,3 +130,9 @@ print('Finished Training')
 
 test_acc = evaluate_model(testloader)
 print("Test_acc: ", test_acc)
+
+torch.save({
+    'model_state_dict': net.state_dict(),
+    'optimizer_state_dict': optimizer.state_dict(),
+    'loss': criterion,
+}, 'root/model/cross-verification.pt')

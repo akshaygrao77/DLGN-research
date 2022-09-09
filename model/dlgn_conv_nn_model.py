@@ -103,6 +103,7 @@ class DLGN_CONV_Network(nn.Module):
 
     def forward(self, inp, verbose=2):
         linear_conv_outputs, _ = self.linear_conv_net(inp, verbose=verbose)
+        self.linear_conv_outputs = linear_conv_outputs
 
         self.gating_node_outputs = [None] * len(linear_conv_outputs)
         for indx in range(len(linear_conv_outputs)):
@@ -117,9 +118,9 @@ class DLGN_CONV_Network(nn.Module):
             inp = torch.ones(inp.size(),
                              requires_grad=True, device=device)
 
-        final_outs, final_layer_out = self.weight_conv_net(
+        final_layer_out = self.weight_conv_net(
             inp, self.gating_node_outputs, verbose=verbose)
-        self.final_outs = final_outs
+        # self.final_outs = final_outs
 
         return final_layer_out
 
@@ -134,7 +135,7 @@ class DLGN_CONV_WeightNetwork(Basic_Network):
         self.initialize_layers(self.weight_net_conv_info)
 
     def forward(self, inp, gating_signal, verbose=2):
-        each_mod_outputs = [None] * len(self.module_list)
+        # each_mod_outputs = [None] * len(self.module_list)
         previous_output = inp
         first_fc = True
         if(verbose > 2):
@@ -164,10 +165,10 @@ class DLGN_CONV_WeightNetwork(Basic_Network):
                     print("WeightNetwork Module {} after gating output is:: {}".format(
                         indx, previous_output))
 
-            each_mod_outputs[indx] = previous_output
+            # each_mod_outputs[indx] = previous_output
 
-        self.each_mod_outputs = each_mod_outputs
-        return each_mod_outputs, previous_output
+        # self.each_mod_outputs = each_mod_outputs
+        return previous_output
 
     def __str__(self):
         ret = "weight_net_conv_info: " + \
@@ -207,7 +208,6 @@ class DLGN_CONV_LinearNetwork(Basic_Network):
                     indx, previous_output))
             each_mod_outputs[indx] = previous_output
 
-        self.each_mod_outputs = each_mod_outputs
         return each_mod_outputs, previous_output
 
     def __str__(self):
