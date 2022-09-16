@@ -219,7 +219,7 @@ def construct_train_evaluate_DLGN_model(gate_net_conv_info, weight_net_conv_info
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     if(writer is None):
         writer = SummaryWriter(
-            str(runs_out_dir)+'/mnist_4_9_trainer_{}_{}'.format(conf_name, timestamp))
+            str(runs_out_dir)+'/cifar10_{}_{}'.format(conf_name, timestamp))
 
     dlgn_net = initialise_DLGN_conv_model(
         gate_net_conv_info, is_DLGN_all_ones, seed, weight_net_conv_info, hp_obj.activ_func)
@@ -243,7 +243,9 @@ def construct_train_evaluate_DLGN_model(gate_net_conv_info, weight_net_conv_info
     create_nested_dir_if_not_exists(model_per_epoch_dir)
     model_path = str(save_out_dir)+'/model_{}.pt'.format(conf_name)
     full_save_model_path = str(save_out_dir) + \
-        '/model_{}.pt'.format(all_param_hash)
+        '/model_mnist_norm_{}.pt'.format(all_param_hash)
+    entire_full_save_model_path = str(save_out_dir) + \
+        '/model_mnist_norm_dir_{}.pt'.format(all_param_hash)
 
     log_wandb = not(all_param_hash is None)
 
@@ -257,6 +259,6 @@ def construct_train_evaluate_DLGN_model(gate_net_conv_info, weight_net_conv_info
         'optimizer_state_dict': optimizer.state_dict(),
         'loss': hp_obj.loss_fn,
     }, full_save_model_path)
-    # torch.save(dlgn_net, full_save_model_path)
+    torch.save(dlgn_net, entire_full_save_model_path)
 
     return test_acc, train_acc, valid_acc, test_loss, train_loss, valid_loss, dlgn_net

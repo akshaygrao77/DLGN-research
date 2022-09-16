@@ -9,14 +9,22 @@ import wandb
 def run_deep_dream(wandb_project_name, is_DLGN_all_ones, dataset_folder, version, gate_net_conv_info, weight_net_conv_info, list_of_hp_obj, verbose=1):
     hp_obj = list_of_hp_obj[0]
 
-    cifar10_config = DatasetConfig(
-        'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=hp_obj.batch_size)
+    # cifar10_config = DatasetConfig(
+    #     'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=hp_obj.batch_size)
+
+    # trainloader, validloader, testloader = preprocess_dataset_get_data_loader(
+    #     cifar10_config, verbose=1, dataset_folder=dataset_folder)
+
+    mnist_config = DatasetConfig(
+        'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=hp_obj.batch_size)
 
     trainloader, validloader, testloader = preprocess_dataset_get_data_loader(
-        cifar10_config, verbose=1, dataset_folder=dataset_folder)
+        mnist_config, verbose=verbose, dataset_folder=dataset_folder)
 
     trainBatch = next(iter(trainloader))
     input_image_size = (trainBatch[0].size()[-2], trainBatch[0].size()[-1])
+    print("input_image_size", input_image_size)
+    print("trainBatch [0]", trainBatch[0][0])
     gate_net_conv_info.input_image_size = input_image_size
     weight_net_conv_info.input_image_size = input_image_size
 

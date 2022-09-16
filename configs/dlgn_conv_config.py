@@ -3,18 +3,19 @@ import torch
 
 class HardRelu(torch.nn.Module):
     def __init__(self):
-        super().__init__() # init the base class
+        super().__init__()  # init the base class
 
     def forward(self, inputs):
-        return HardReLU_F.apply(inputs) 
-        
+        return HardReLU_F.apply(inputs)
+
+
 class HardReLU_F(torch.autograd.Function):
-    #both forward and backward are @staticmethods
+    # both forward and backward are @staticmethods
     @staticmethod
     def forward(ctx, inputs):
-        ctx.save_for_backward(inputs) # save input for backward pass
+        ctx.save_for_backward(inputs)  # save input for backward pass
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        values = torch.tensor([0.],device=device)
+        values = torch.tensor([0.], device=device)
         retval = torch.heaviside(inputs, values)
         return retval
 
@@ -25,9 +26,9 @@ class HardReLU_F(torch.autograd.Function):
         with respect to the output, and we need to compute the gradient of the loss
         with respect to the input.
         """
-        grad_input = None # set output to None
+        grad_input = None  # set output to None
 
-        inputs, = ctx.saved_tensors # restore input from context
+        inputs, = ctx.saved_tensors  # restore input from context
 
         # check that input requires grad
         # if not requires grad we will return None to speed up computation
