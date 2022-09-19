@@ -31,33 +31,31 @@ std = tf.reshape((0.2023, 0.1994, 0.2010), shape=(1, 1, 3))
 mean = tf.reshape((0.4914, 0.4822, 0.4465), shape=(1, 1, 3))
 
 
-def prep_data_with_TF(x):
-    # x = tf.cast(x, tf.float32)/255.
-    # print("x1", x.shape)
-    # print("x1", x)
+def prep_train_data_with_TF(x):
     x = tf.image.random_flip_left_right(x)
-    # print("x2", x.shape)
-    # print("x2", x)
     x = tf.image.pad_to_bounding_box(x, 4, 4, 40, 40)
-    # print("x3", x.shape)
-    # print("x3 max", tf.reduce_max(x))
-    # print("x3 min", tf.reduce_min(x))
-    # print("x3", x)
     x = tf.image.random_crop(x, (32, 32, 3))
-    # print("x4", x.shape)
-    # print("x4", x)
     x = (x - mean) / std
-    # print("x5", x.shape)
-    # print("x5", x)
     return x
 
 
-def preprocess_dataset_in_tensorflow(dataset):
+def prep_valid_data_with_TF(x):
+    x = (x - mean) / std
+    return x
+
+
+def preprocess_dataset_in_tensorflow(dataset, is_train=True):
     dataset_x_np = []
     dataset_y_np = []
     for (x, y) in dataset:
         x_np = x.numpy()
-        x_preprocessed_np = prep_data_with_TF(x_np.transpose(1, 2, 0)).numpy()
+        if(is_train == True):
+            x_preprocessed_np = prep_train_data_with_TF(
+                x_np.transpose(1, 2, 0)).numpy()
+        else:
+            x_preprocessed_np = prep_valid_data_with_TF(
+                x_np.transpose(1, 2, 0)).numpy()
+
         final_x_np = x_preprocessed_np.transpose(2, 0, 1)
         dataset_x_np.append(final_x_np)
         dataset_y_np.append(y)
@@ -80,15 +78,15 @@ def preprocess_data():
 
     print("Preprocessing train set")
     preprocessed_x_train, preprocessed_y_train = preprocess_dataset_in_tensorflow(
-        trainset)
+        trainset, is_train=True)
 
     print("Preprocessing validation set")
     preprocessed_x_val, preprocessed_y_val = preprocess_dataset_in_tensorflow(
-        val_set)
+        val_set, is_train=False)
 
     print("Preprocessing test set")
     preprocessed_x_test, preprocessed_y_test = preprocess_dataset_in_tensorflow(
-        testset)
+        testset, is_train=False)
 
     preprocessed_trainset = FromNumpyDataset(
         preprocessed_x_train, preprocessed_y_train)
@@ -101,13 +99,13 @@ def preprocess_data():
 
     batch_size = 128
     trainloader = torch.utils.data.DataLoader(preprocessed_trainset, batch_size=batch_size,
-                                              shuffle=True, num_workers=2)
+                                              shuffle=True, num_workers=1, pin_memory=True)
 
     validloader = torch.utils.data.DataLoader(preprocessed_val_set, batch_size=batch_size,
-                                              shuffle=True, num_workers=2)
+                                              shuffle=True, num_workers=1, pin_memory=True)
 
     testloader = torch.utils.data.DataLoader(preprocessed_testset, batch_size=batch_size,
-                                             shuffle=False, num_workers=2)
+                                             shuffle=False, num_workers=1, pin_memory=True)
 
     return trainloader, validloader, testloader
 
@@ -153,10 +151,13 @@ class DLGN_VGG_Network(nn.Module):
         #         indx, each_conv_out.size()))
 
         self.gating_node_outputs = [None] * len(linear_conv_outputs)
+        print("self.gating_node_outputs before", self.gating_node_outputs)
         for indx in range(len(linear_conv_outputs)):
             each_linear_conv_output = linear_conv_outputs[indx]
             self.gating_node_outputs[indx] = nn.Sigmoid()(
-                4 * each_linear_conv_output)
+                10 * each_linear_conv_output)
+
+        print("self.gating_node_outputs after", self.gating_node_outputs)
 
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
@@ -171,32 +172,52 @@ class DLGN_VGG_Network(nn.Module):
         return final_layer_out
 
 
+def initialize_weights(mod_obj):
+    nn.init.kaiming_normal_(mod_obj.weight, mode='fan_in')
+    if mod_obj.bias is not None:
+        nn.init.constant_(mod_obj.bias, 0)
+
+
 class DLGN_VGG_LinearNetwork(nn.Module):
     def __init__(self):
         super(DLGN_VGG_LinearNetwork, self).__init__()
         self.conv_64_1 = nn.Conv2d(3, 64, 3, padding=1)
+        initialize_weights(self.conv_64_1)
         self.conv_64_2 = nn.Conv2d(64, 64, 3, padding=1)
+        initialize_weights(self.conv_64_2)
         self.bn_11 = nn.BatchNorm2d(64)
         self.bn_12 = nn.BatchNorm2d(64)
 
         self.conv_128_1 = nn.Conv2d(64, 128, 3, padding=1)
+        initialize_weights(self.conv_128_1)
         self.conv_128_2 = nn.Conv2d(128, 128, 3, padding=1)
+        initialize_weights(self.conv_128_2)
         self.bn_21 = nn.BatchNorm2d(128)
         self.bn_22 = nn.BatchNorm2d(128)
 
         self.conv_256_1 = nn.Conv2d(128, 256, 3, padding=1)
+        initialize_weights(self.conv_256_1)
         self.conv_256_2 = nn.Conv2d(256, 256, 3, padding=1)
+        initialize_weights(self.conv_256_2)
         self.conv_256_3 = nn.Conv2d(256, 256, 3, padding=1)
+        initialize_weights(self.conv_256_3)
         self.bn_31 = nn.BatchNorm2d(256)
         self.bn_32 = nn.BatchNorm2d(256)
         self.bn_33 = nn.BatchNorm2d(256)
 
         self.conv_512_1 = nn.Conv2d(256, 512, 3, padding=1)
+        initialize_weights(self.conv_512_1)
         self.conv_512_2 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_2)
         self.conv_512_3 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_3)
         self.conv_512_4 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_4)
         self.conv_512_5 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_5)
         self.conv_512_6 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_6)
+
         self.bn_41 = nn.BatchNorm2d(512)
         self.bn_42 = nn.BatchNorm2d(512)
         self.bn_43 = nn.BatchNorm2d(512)
@@ -294,28 +315,42 @@ class DLGN_VGG_WeightNetwork(nn.Module):
         super(DLGN_VGG_WeightNetwork, self).__init__()
 
         self.conv_64_1 = nn.Conv2d(3, 64, 3, padding=1)
+        initialize_weights(self.conv_64_1)
         self.conv_64_2 = nn.Conv2d(64, 64, 3, padding=1)
+        initialize_weights(self.conv_64_2)
         self.bn_11 = nn.BatchNorm2d(64)
         self.bn_12 = nn.BatchNorm2d(64)
 
         self.conv_128_1 = nn.Conv2d(64, 128, 3, padding=1)
+        initialize_weights(self.conv_128_1)
         self.conv_128_2 = nn.Conv2d(128, 128, 3, padding=1)
+        initialize_weights(self.conv_128_2)
         self.bn_21 = nn.BatchNorm2d(128)
         self.bn_22 = nn.BatchNorm2d(128)
 
         self.conv_256_1 = nn.Conv2d(128, 256, 3, padding=1)
+        initialize_weights(self.conv_256_1)
         self.conv_256_2 = nn.Conv2d(256, 256, 3, padding=1)
+        initialize_weights(self.conv_256_2)
         self.conv_256_3 = nn.Conv2d(256, 256, 3, padding=1)
+        initialize_weights(self.conv_256_3)
         self.bn_31 = nn.BatchNorm2d(256)
         self.bn_32 = nn.BatchNorm2d(256)
         self.bn_33 = nn.BatchNorm2d(256)
 
         self.conv_512_1 = nn.Conv2d(256, 512, 3, padding=1)
+        initialize_weights(self.conv_512_1)
         self.conv_512_2 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_2)
         self.conv_512_3 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_3)
         self.conv_512_4 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_4)
         self.conv_512_5 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_5)
         self.conv_512_6 = nn.Conv2d(512, 512, 3, padding=1)
+        initialize_weights(self.conv_512_6)
+
         self.bn_41 = nn.BatchNorm2d(512)
         self.bn_42 = nn.BatchNorm2d(512)
         self.bn_43 = nn.BatchNorm2d(512)
@@ -327,6 +362,7 @@ class DLGN_VGG_WeightNetwork(nn.Module):
 
         self.adapt_pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc_1 = nn.Linear(512, 10)
+        initialize_weights(self.fc_1)
 
     def forward(self, inp, gating_signals, verbose=2):
         indx = 0
@@ -497,7 +533,7 @@ def evaluate_model_and_loss(model, data_loader, loss_fn):
 def train(net, trainloader, validloader):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.01,
-                          nesterov=True, momentum=0.9)
+                          nesterov=False, momentum=0.9, weight_decay=2.5e-4)
     step = 0
 
     # for epoch in range(20):
@@ -552,5 +588,5 @@ if __name__ == '__main__':
 
     train(net, trainloader, validloader)
 
-    test_acc = evaluate_model(testloader)
+    test_acc = evaluate_model(net, testloader)
     print("Test_acc: ", test_acc)

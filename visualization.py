@@ -3,7 +3,7 @@ from torch.optim import SGD
 import os
 from PIL import Image
 import numpy as np
-import tqdm
+from tqdm import tqdm, trange
 from torch.autograd import Variable
 import subprocess
 import copy
@@ -12,6 +12,11 @@ import math
 from structure.dlgn_conv_config_structure import DatasetConfig
 from algos.dlgn_conv_preprocess import preprocess_dataset_get_data_loader
 from configs.dlgn_conv_config import HardRelu
+
+import torch.backends.cudnn as cudnn
+
+import time
+from external_utils import format_time
 
 from vgg_net_16 import DLGN_VGG_Network, DLGN_VGG_LinearNetwork, DLGN_VGG_WeightNetwork
 
@@ -66,7 +71,7 @@ def segregate_input_over_labels(model, data_loader, num_classes):
     for i in range(num_classes):
         input_data_list_per_class[i] = []
 
-    data_loader = tqdm.tqdm(data_loader, desc='Processing loader')
+    data_loader = tqdm(data_loader, desc='Processing loader')
     for i, inp_data in enumerate(data_loader):
         input_data, _ = inp_data
 
@@ -211,7 +216,7 @@ class SaveOutput:
         self.outputs = []
 
 
-image_save_prefix_folder = "root/cifar10-vggnet_16/generated/zero_image_init_50_active/"
+image_save_prefix_folder = "root/cifar10-vggnet_16/generated_more_iter/new_loss_zero_image_init_50_active/"
 
 
 class TemplateImageGenerator():
@@ -242,11 +247,11 @@ class TemplateImageGenerator():
     def initialise_y_plus_and_y_minus(self):
         self.y_plus_list = []
         self.y_minus_list = []
-        # conv_outs = self.saved_output.outputs
+        # conv_outs = self.model.module.linear_conv_outputs
         conv_outs = self.model.linear_conv_outputs
         for each_conv_output in conv_outs:
             current_y_plus = torch.ones(size=each_conv_output.size()[
-                                        1:], requires_grad=True, device=device)
+                                        1:], requires_grad=True, device=self.device)
             current_y_minus = -torch.ones(size=each_conv_output.size()[
                 1:], requires_grad=True, device=self.device)
 
@@ -266,7 +271,7 @@ class TemplateImageGenerator():
                 hook_handles.append(handle)
 
     def update_y_lists(self):
-        # conv_outs = self.saved_output.outputs
+        # conv_outs = self.model.module.linear_conv_outputs
         conv_outs = self.model.linear_conv_outputs
         with torch.no_grad():
             for indx in range(len(conv_outs)):
@@ -287,7 +292,7 @@ class TemplateImageGenerator():
     def collect_all_active_pixels_into_ymaps(self, per_class_data_loader, class_label):
         self.model.train(False)
 
-        per_class_data_loader = tqdm.tqdm(
+        per_class_data_loader = tqdm(
             per_class_data_loader, desc='Collecting active maps class label:'+str(class_label))
         for i, per_class_data in enumerate(per_class_data_loader):
             torch.cuda.empty_cache()
@@ -323,7 +328,7 @@ class TemplateImageGenerator():
 
     def calculate_loss_for_template_image(self):
         loss = None
-        # conv_outs = self.saved_output.outputs
+        # conv_outs = self.model.module.linear_conv_outputs
         conv_outs = self.model.linear_conv_outputs
         total_pixel_points = 0
         active_pixel_points = 0
@@ -369,7 +374,41 @@ class TemplateImageGenerator():
                     else:
                         loss += log_term
 
-        print("Percentage of active pixels:", float((
+        print("old raw loss", loss)
+        print("old active_pixel_points", active_pixel_points)
+        print("old total_pixel_points", total_pixel_points)
+        print("old Percentage of active pixels:", float((
+            active_pixel_points/total_pixel_points)*100))
+        return loss/active_pixel_points
+
+    def new_calculate_loss_for_template_image(self):
+        loss = 0
+        # conv_outs = self.model.module.linear_conv_outputs
+        conv_outs = self.model.linear_conv_outputs
+        total_pixel_points = 0
+        active_pixel_points = 0
+        for indx in range(len(conv_outs)):
+            each_conv_output = conv_outs[indx]
+            each_overall_y = self.overall_y[indx]
+
+            total_pixel_points += torch.numel(each_conv_output)
+            current_active_pixel = torch.count_nonzero(each_overall_y)
+            active_pixel_points += current_active_pixel.item()
+            pre_exponent = torch.exp(-each_overall_y *
+                                     each_conv_output * 0.004)
+            exp_product_active_pixels = torch.where(
+                each_overall_y == 0, each_overall_y, pre_exponent)
+
+            log_term = torch.log(1 + exp_product_active_pixels)
+
+            each_conv_loss = torch.sum(log_term)
+
+            loss += each_conv_loss
+
+        print("new raw loss", loss)
+        print("new active_pixel_points", active_pixel_points)
+        print("new total_pixel_points", total_pixel_points)
+        print("new Percentage of active pixels:", float((
             active_pixel_points/total_pixel_points)*100))
         return loss/active_pixel_points
 
@@ -388,70 +427,83 @@ class TemplateImageGenerator():
         print("self.initial_image size", self.initial_image.size())
 
         step_size = 0.01
-        for i in range(11):
-            print("Iteration number:", i)
-            print("self.initial_image grad", self.initial_image.grad)
-            # self.initial_image.grad = None
+        with trange(101, unit="iter") as pbar:
+            for i in pbar:
+                begin_time = time.time()
+                pbar.set_description(f"Iteration {i+1}")
+                print("self.initial_image grad", self.initial_image.grad)
+                # self.initial_image.grad = None
 
-            # conv = torch.nn.Conv2d(
-            #     3, 3, 3, padding=1)
-            # conv = conv.to(self.device)
-            # self.initial_image_tilda = conv(self.initial_image)
+                # conv = torch.nn.Conv2d(
+                #     3, 3, 3, padding=1)
+                # conv = conv.to(self.device)
+                # self.initial_image_tilda = conv(self.initial_image)
 
-            outputs = self.model(self.initial_image)
+                outputs = self.model(self.initial_image)
 
-            loss = self.calculate_loss_for_template_image()
-            # actual = torch.tensor(
-            #     [class_indx] * len(outputs), device=self.device)
-            # loss = self.calculate_loss_for_output_class_max_image(
-            #     outputs, actual)
+                # loss = self.calculate_loss_for_template_image()
+                loss = self.new_calculate_loss_for_template_image()
 
-            print('Loss:', loss)
-            # Backward
-            loss.backward()
+                # print("new_loss", new_loss)
+                print("loss", loss)
+                # assert new_loss == loss, ' New loss not equal to old loss function. Old loss:{}, New Loss:{} ' % (
+                #     loss, new_loss)
+                # actual = torch.tensor(
+                #     [class_indx] * len(outputs), device=self.device)
+                # loss = self.calculate_loss_for_output_class_max_image(
+                #     outputs, actual)
 
-            gradients = self.initial_image.grad
-            print("Original self.initial_image gradients", gradients)
+                # Backward
+                loss.backward()
 
-            gradients /= torch.std(gradients) + 1e-8
-            print("After normalize self.initial_image gradients", gradients)
+                gradients = self.initial_image.grad
+                print("Original self.initial_image gradients", gradients)
 
-            with torch.no_grad():
-                self.initial_image = self.initial_image - gradients*step_size
-                # self.initial_image = 0.9 * self.initial_image
-                self.initial_image = torch.clamp(self.initial_image, -1, 1)
+                gradients /= torch.std(gradients) + 1e-8
+                print("After normalize self.initial_image gradients", gradients)
 
-            self.initial_image.requires_grad_()
-            # Recreate image
-            print("self.initial_image", self.initial_image)
+                with torch.no_grad():
+                    self.initial_image = self.initial_image - gradients*step_size
+                    # self.initial_image = 0.9 * self.initial_image
+                    self.initial_image = torch.clamp(self.initial_image, -1, 1)
 
-            # Save image every 20 iteration
-            if i % 5 == 0:
-                # self.created_image = recreate_image(
-                #     self.initial_image_tilda, normalize_image)
-                # print("self.created_image.shape::", self.created_image.shape)
-                # save_folder = image_save_prefix_folder + \
-                #     "class_"+str(class_label)+"/"
-                # if not os.path.exists(save_folder):
-                #     os.makedirs(save_folder)
-                # im_path = save_folder+'/no_optimizer_tilda_c_' + \
-                #     str(class_label)+'_iter' + str(i) + '.jpg'
-                # # numpy_image = self.created_image.cpu().clone().detach().numpy()
-                # numpy_image = self.created_image
-                # save_image(numpy_image, im_path)
+                self.initial_image.requires_grad_()
+                # Recreate image
+                print("self.initial_image", self.initial_image)
 
-                self.created_image = recreate_image(
-                    self.initial_image, normalize_image)
-                print("self.created_image.shape::", self.created_image.shape)
-                save_folder = image_save_prefix_folder + \
-                    "class_"+str(class_label)+"/"
-                if not os.path.exists(save_folder):
-                    os.makedirs(save_folder)
-                im_path = save_folder+'/no_optimizer_actual_c_' + \
-                    str(class_label)+'_iter' + str(i) + '.jpg'
-                # numpy_image = self.created_image.cpu().clone().detach().numpy()
-                numpy_image = self.created_image
-                save_image(numpy_image, im_path)
+                cur_time = time.time()
+                tot_time = cur_time - begin_time
+
+                pbar.set_postfix(loss=loss, it_time=format_time(tot_time))
+
+                # Save image every 5 iteration
+                if i % 5 == 0:
+                    # self.created_image = recreate_image(
+                    #     self.initial_image_tilda, normalize_image)
+                    # print("self.created_image.shape::", self.created_image.shape)
+                    # save_folder = image_save_prefix_folder + \
+                    #     "class_"+str(class_label)+"/"
+                    # if not os.path.exists(save_folder):
+                    #     os.makedirs(save_folder)
+                    # im_path = save_folder+'/no_optimizer_tilda_c_' + \
+                    #     str(class_label)+'_iter' + str(i) + '.jpg'
+                    # # numpy_image = self.created_image.cpu().clone().detach().numpy()
+                    # numpy_image = self.created_image
+                    # save_image(numpy_image, im_path)
+                    with torch.no_grad():
+                        self.created_image = recreate_image(
+                            self.initial_image, normalize_image)
+                        print("self.created_image.shape::",
+                              self.created_image.shape)
+                        save_folder = image_save_prefix_folder + \
+                            "class_"+str(class_label)+"/"
+                        if not os.path.exists(save_folder):
+                            os.makedirs(save_folder)
+                        im_path = save_folder+'/no_optimizer_actual_c_' + \
+                            str(class_label)+'_iter' + str(i) + '.jpg'
+
+                        numpy_image = self.created_image
+                        save_image(numpy_image, im_path)
 
     # def generate_template_image_per_class(self, per_class_data_loader, class_label, class_indx):
     #     normalize_image = False
@@ -579,8 +631,15 @@ if __name__ == '__main__':
             cifar10_config, verbose=1, dataset_folder="./Datasets/")
 
         print("Loading model")
-        # model = torch.load("root/model/save/model_dir_None.pt")
-        model = torch.load("root/model/save/vggnet_16_dir.pt")
+        model = torch.load("root/model/save/vggnet_ext_parallel_16_dir.pt")
+        device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
+        if device_str == 'cuda':
+            if(torch.cuda.device_count() > 1):
+                print("Parallelizing model")
+                model = torch.nn.DataParallel(model)
+            cudnn.benchmark = True
+
+        # model = torch.load("root/model/save/vggnet_16_dir.pt")
         print("Model loaded")
 
     elif(dataset == "mnist"):
@@ -591,6 +650,12 @@ if __name__ == '__main__':
             mnist_config, verbose=1, dataset_folder="./Datasets/")
 
         model = torch.load("root/model/save/model_mnist_norm_dir_None.pt")
+        device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
+        if device_str == 'cuda':
+            if(torch.cuda.device_count() > 1):
+                print("Parallelizing model")
+                model = torch.nn.DataParallel(model)
+            cudnn.benchmark = True
 
     model.to(device)
 
@@ -623,10 +688,10 @@ if __name__ == '__main__':
         #     model, input_data_list_per_class[c_indx][0])
         if(dataset == "cifar"):
             tmp_gen = TemplateImageGenerator(
-                model, torch.tensor(np.uint8(np.random.uniform(0, 1, (3, 32, 32)))))
+                model, torch.from_numpy(np.uint8(np.random.uniform(0, 1, (3, 32, 32)))))
         elif(dataset == "mnist"):
             tmp_gen = TemplateImageGenerator(
-                model, torch.tensor(np.uint8(np.random.uniform(0, 1, (1, 28, 28)))))
+                model, torch.from_numpy(np.uint8(np.random.uniform(0, 1, (1, 28, 28)))))
 
         tmp_gen.generate_template_image_per_class(
             per_class_loader, class_label, c_indx)

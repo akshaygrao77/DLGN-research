@@ -5,3 +5,4 @@ outputs
 errorfile.err
 logfile.log
 data
+input_images
