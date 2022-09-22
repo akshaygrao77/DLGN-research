@@ -100,13 +100,13 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
                 0.9 * len(trainset)), len(trainset) - (math.ceil(0.9 * len(trainset)))])
 
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=dataset_config.batch_size,
-                                                  shuffle=True, num_workers=2)
+                                                  shuffle=False, num_workers=2)
         if(is_split_validation):
             validloader = torch.utils.data.DataLoader(val_set, batch_size=dataset_config.batch_size,
-                                                      shuffle=True, num_workers=2)
+                                                      shuffle=False, num_workers=2)
 
         testset = torchvision.datasets.CIFAR10(root='./data', train=False,
-                                               download=True, transform=transform)
+                                               download=False, transform=transform)
 
         testloader = torch.utils.data.DataLoader(testset, batch_size=dataset_config.batch_size,
                                                  shuffle=False, num_workers=2)
@@ -834,8 +834,7 @@ class TemplateImageGenerator():
             if(is_log_wandb):
                 accuracies_of_reconst_img_data = [[(plot_iteration_interval * ind), list_of_accuracies_of_reconst_img[ind]]
                                                   for ind in range(number_of_intervals)]
-                print("accuracies_of_reconst_img_data",
-                      accuracies_of_reconst_img_data)
+
                 accuracies_of_reconst_img_table = wandb.Table(
                     data=accuracies_of_reconst_img_data, columns=["Optimization_iteration", "Average_Accuracies_Reconstructed_Images"])
 
@@ -1031,113 +1030,6 @@ class TemplateImageGenerator():
             print("Class predicted on original image was :", classes[outputs])
             print("Original label was:", class_label)
 
-    # def generate_template_image_per_class(self, per_class_data_loader, class_label, class_indx):
-    #     normalize_image = False
-    #     self.collect_all_active_pixels_into_ymaps(
-    #         per_class_data_loader, class_label)
-
-    #     self.initial_image = preprocess_image(
-    #         self.original_image.cpu().clone().detach().numpy(), normalize_image)
-
-    #     self.initial_image = self.initial_image.to(self.device)
-
-    #     self.initial_image.requires_grad_()
-
-    #     print("self.initial_image size", self.initial_image.size())
-
-    #     step_size = 0.01
-    #     for i in range(100):
-    #         print("Iteration number:", i)
-    #         print("self.initial_image grad", self.initial_image.grad)
-    #         # self.initial_image.grad = None
-
-    #         outputs = self.model(self.initial_image)
-
-    #         loss = self.calculate_loss_for_template_image()
-    #         # actual = torch.tensor(
-    #         #     [class_indx] * len(outputs), device=self.device)
-    #         # loss = self.calculate_loss_for_output_class_max_image(
-    #         #     outputs, actual)
-
-    #         print('Loss:', loss)
-    #         # Backward
-    #         loss.backward()
-
-    #         gradients = self.initial_image.grad
-    #         print("Original self.initial_image gradients", gradients)
-
-    #         gradients /= torch.std(gradients) + 1e-8
-    #         print("After normalize self.initial_image gradients", gradients)
-
-    #         with torch.no_grad():
-    #             self.initial_image = self.initial_image - gradients*step_size
-    #             # self.initial_image = 0.9 * self.initial_image
-    #             self.initial_image = torch.clamp(self.initial_image, -1, 1)
-
-    #         self.initial_image.requires_grad_()
-    #         # Recreate image
-    #         print("self.initial_image", self.initial_image)
-
-    #         # Save image every 20 iteration
-    #         if i % 5 == 0:
-    #             self.created_image = recreate_image(
-    #                 self.initial_image, normalize_image)
-    #             print("self.created_image.shape::", self.created_image.shape)
-    #             save_folder = self.image_save_prefix_folder + \
-    #                 "class_"+str(class_label)+"/"
-    #             if not os.path.exists(save_folder):
-    #                 os.makedirs(save_folder)
-    #             im_path = save_folder+'/no_optimizer_template_c_' + \
-    #                 str(class_label)+'_iter' + str(i) + '.jpg'
-    #             # numpy_image = self.created_image.cpu().clone().detach().numpy()
-    #             numpy_image = self.created_image
-    #             save_image(numpy_image, im_path)
-
-    # def generate_template_image_per_class(self, per_class_data_loader, class_label, c_indx):
-    #     normalize_image = False
-    #     self.collect_all_active_pixels_into_ymaps(
-    #         per_class_data_loader, class_label)
-
-    #     self.initial_image = preprocess_image(
-    #         self.original_image.cpu().clone().detach().numpy(), normalize_image)
-
-    #     self.initial_image = self.initial_image.to(self.device)
-
-    #     self.initial_image.requires_grad_()
-
-    #     print("self.initial_image size", self.initial_image.size())
-
-    #     # Define optimizer for the image
-    #     optimizer = torch.optim.SGD(
-    #         [self.initial_image], lr=100, momentum=0.9)
-    #     for i in range(100):
-    #         optimizer.zero_grad()
-
-    #         self.model(self.initial_image)
-
-    #         loss = self.calculate_loss_for_template_image()
-    #         print('Loss:', loss)
-    #         # Backward
-    #         loss.backward()
-
-    #         # Update image
-    #         optimizer.step()
-    #         # Recreate image
-    #         print("Iteration number:", i)
-    #         print("self.initial_image grad", self.initial_image.grad)
-    #         print("self.initial_image", self.initial_image)
-
-    #         # Save image every 20 iteration
-    #         if i % 5 == 0:
-    #             self.created_image = recreate_image(
-    #                 self.initial_image, normalize_image)
-    #             print("self.created_image.shape::", self.created_image.shape)
-    #             im_path = 'root/generated/template_from_rand_image_c_' + \
-    #                 str(class_label)+'_iter' + str(i) + '.jpg'
-    #             # numpy_image = self.created_image.cpu().clone().detach().numpy()
-    #             numpy_image = self.created_image
-    #             save_image(numpy_image, im_path)
-
 
 def print_segregation_info(input_data_list_per_class):
     sum = 0
@@ -1296,13 +1188,13 @@ if __name__ == '__main__':
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED
     template_loss_type = "CCE_TEMP_LOSS_MIXED"
     number_of_batch_to_collect = 1
-    wand_project_name = "test_template_visualization"
+    wand_project_name = "template_visualization"
     # wand_project_name = None
-    wandb_group_name = "test_grp-3"
+    wandb_group_name = "vgg_16_iter1000"
     is_split_validation = True
     valid_split_size = 0.1
     torch_seed = 2022
-    number_of_image_optimization_steps = 21
+    number_of_image_optimization_steps = 1001
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES
     exp_type = "TEMPLATE_ACC_WITH_CUSTOM_PLOTS"
 
