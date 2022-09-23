@@ -590,7 +590,7 @@ class TemplateImageGenerator():
 
         correct = outputs_final.eq(original_label).sum().item()
 
-        return outputs_raw, outputs_logits[0], outputs_final, correct
+        return outputs_raw, outputs_logits, outputs_final, correct
 
     def generate_accuracies_of_template_image_per_class(self, per_class_dataset, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                                         is_class_segregation_on_ground_truth, template_initial_image_type,
@@ -610,12 +610,13 @@ class TemplateImageGenerator():
 
         self.model.train(False)
         self.image_save_prefix_folder = "root/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/"
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"/"
 
         per_class_one_img_per_batch_data_loader = tqdm(
             per_class_one_img_per_batch_data_loader, desc='Image being processed:'+str(class_label))
         total = 0
         reconst_correct = 0
+        original_correct = 0
         alpha = 0
         normalize_image = False
         overall_step = 0
@@ -626,12 +627,22 @@ class TemplateImageGenerator():
             list_correct_prediction_of_reconst_img = [0] * number_of_intervals
             list_sum_norm_prediction_of_reconst_img = [
                 0.] * number_of_intervals
-            if(template_image_calculation_batch_size == 1):
-                num_classes = len(classes)
-                list_sum_softmax_of_reconst_img = [
-                    None] * number_of_intervals
-                for ind in range(len(list_sum_softmax_of_reconst_img)):
-                    list_sum_softmax_of_reconst_img[ind] = [0.] * num_classes
+            list_sum_norm_unnorm_gradients = [
+                0.] * number_of_intervals
+            list_sum_loss = [
+                0.] * number_of_intervals
+
+            list_of_optimized_image = [None] * number_of_intervals
+
+            list_of_unnorm_gradients = [None] * number_of_intervals
+
+            list_of_norm_gradients = [None] * number_of_intervals
+
+            num_classes = len(classes)
+            list_sum_softmax_of_reconst_img = [
+                None] * number_of_intervals
+            for ind in range(len(list_sum_softmax_of_reconst_img)):
+                list_sum_softmax_of_reconst_img[ind] = [0.] * num_classes
 
         if(is_log_wandb):
             wandb_run_name = self.image_save_prefix_folder.replace(
@@ -652,6 +663,9 @@ class TemplateImageGenerator():
         for batch_indx, per_class_data in enumerate(per_class_one_img_per_batch_data_loader):
             self.reset_state()
             torch.cuda.empty_cache()
+
+            if(batch_indx > 50):
+                break
 
             class_image, original_label = per_class_data
             class_image = class_image.to(self.device, non_blocking=True)
@@ -677,10 +691,6 @@ class TemplateImageGenerator():
                     #     3, 3, 3, padding=1)
                     # conv = conv.to(self.device)
                     # self.initial_image_tilda = conv()
-                    if(is_log_wandb):
-                        init_image_cpu = self.initial_image.cpu().detach().numpy()
-                        wandb.log(
-                            {"Optimized_Image": wandb.Histogram(init_image_cpu), "reconst_img_norm": torch.norm(self.initial_image.cpu()).item()}, step=(overall_step+1))
 
                     outputs = self.model(self.initial_image)
 
@@ -716,7 +726,7 @@ class TemplateImageGenerator():
                         if(is_log_wandb):
                             wandb.log(
                                 {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points,
-                                 "Percent_active_pixels": percent_active_pixels}, step=(overall_step+1))
+                                 "Percent_active_pixels": percent_active_pixels}, step=(batch_indx+1))
 
                     # print("loss", loss)
                     # Backward
@@ -742,21 +752,31 @@ class TemplateImageGenerator():
                                 self.initial_image, original_label)
                             list_correct_prediction_of_reconst_img[update_indx] += correct
                             list_sum_norm_prediction_of_reconst_img[update_indx] += torch.norm(
-                                self.initial_image)
-                            if(template_image_calculation_batch_size == 1):
-                                list_sum_softmax_of_reconst_img[update_indx] = [
-                                    x + y for x, y in zip(outputs_logits, list_sum_softmax_of_reconst_img[update_indx])]
+                                self.initial_image).item()
+                            list_sum_norm_unnorm_gradients[update_indx] += torch.norm(
+                                unnorm_gradients).item()
+                            list_sum_loss[update_indx] += loss
 
-                            if(is_log_wandb):
-                                wandb.log(
-                                    {"normalized_gradients": wandb.Histogram(gradients.cpu().detach().numpy()), "unnormalized_gradients": wandb.Histogram(unnorm_gradients.cpu().detach().numpy()),
-                                     "loss": loss, "batch_indx": batch_indx, "iter": (step_iter+1), "optimizing_img_gradient_norm": torch.norm(unnorm_gradients).item(), "reconst_pred_indx": outputs_final}, step=(overall_step+1))
+                            init_image_cpu = self.initial_image.cpu().detach().numpy()
+                            if(list_of_optimized_image[update_indx] is None):
+                                list_of_optimized_image[update_indx] = init_image_cpu
+                            else:
+                                list_of_optimized_image[update_indx] += init_image_cpu
 
-                        else:
-                            if(is_log_wandb):
-                                wandb.log(
-                                    {"normalized_gradients": wandb.Histogram(gradients.cpu().detach().numpy()), "unnormalized_gradients": wandb.Histogram(unnorm_gradients.cpu().detach().numpy()),
-                                     "loss": loss, "batch_indx": batch_indx, "iter": (step_iter+1), "optimizing_img_gradient_norm": torch.norm(unnorm_gradients).item()}, step=(overall_step+1))
+                            unnorm_grads_np = unnorm_gradients.cpu().detach().numpy()
+                            if(list_of_unnorm_gradients[update_indx] is None):
+                                list_of_unnorm_gradients[update_indx] = unnorm_grads_np
+                            else:
+                                list_of_unnorm_gradients[update_indx] += unnorm_grads_np
+
+                            grads_np = gradients.cpu().detach().numpy()
+                            if(list_of_norm_gradients[update_indx] is None):
+                                list_of_norm_gradients[update_indx] = grads_np
+                            else:
+                                list_of_norm_gradients[update_indx] += grads_np
+
+                            list_sum_softmax_of_reconst_img[update_indx] = [
+                                x + y for x, y in zip((torch.sum(outputs_logits, 0)/outputs_logits.size()[0]), list_sum_softmax_of_reconst_img[update_indx])]
 
                     self.initial_image.requires_grad_()
                     overall_step += 1
@@ -802,47 +822,60 @@ class TemplateImageGenerator():
                 print("Class {} => {}".format(
                     classes[i], original_image_outputs_softmax[0][i]))
             original_image_pred = original_image_outputs_softmax.max(1).indices
+            original_correct += original_image_pred.eq(
+                original_label).sum().item()
             print("Class predicted on original image was :",
                   classes[original_image_pred])
             print("Original label was:", class_label)
 
             if(is_log_wandb):
                 wandb.log(
-                    {"batch_indx": batch_indx, "reconst_img_norm": reconst_img_norm,
-                     "reconst_softmax_out": reconst_outputs_softmax, "reconst_img_label_pred": classes[reconst_pred], "reconst_img_pred_indx": reconst_pred,
+                    {"batch_indx": batch_indx,
                      "original_image_outputs_softmax": original_image_outputs_softmax, "original_img_label_pred": classes[original_image_pred], "original_img_pred_indx": original_image_pred,
-                     }, step=(overall_step+1))
+                     }, step=(batch_indx+1))
 
+        final_original_accuracy = (100. * original_correct/total)
         final_accuracy = (100. * reconst_correct/total)
         print("Overall class accuracy by template images:", final_accuracy)
+        print("Overall class accuracy over template images:",
+              final_original_accuracy)
 
         if(not(plot_iteration_interval is None)):
             number_of_intervals = (
                 number_of_image_optimization_steps//plot_iteration_interval)+1
-            list_of_accuracies_of_reconst_img = [0.0] * number_of_intervals
-            list_of_avg_norm_of_reconst_img = [0.0] * number_of_intervals
 
-            if(template_image_calculation_batch_size == 1):
-                list_avg_softmax_of_reconst_img = [None] * number_of_intervals
+            list_avg_softmax_of_reconst_img = [None] * number_of_intervals
 
             for indx in range(number_of_intervals):
-                list_of_accuracies_of_reconst_img[indx] = 100. * \
-                    list_correct_prediction_of_reconst_img[indx] / total
-                list_of_avg_norm_of_reconst_img[indx] = list_sum_norm_prediction_of_reconst_img[indx] / total
                 list_avg_softmax_of_reconst_img[indx] = [
                     x/total for x in list_sum_softmax_of_reconst_img[indx]]
 
+                if(is_log_wandb):
+                    current_avg_reconst_accuracy = 100. * \
+                        list_correct_prediction_of_reconst_img[indx] / total
+                    current_avg_reconst_img = list_sum_norm_prediction_of_reconst_img[indx] / total
+                    current_avg_norm_unnorm_grads = list_sum_norm_unnorm_gradients[indx] / total
+                    current_avg_optimized_image = list_of_optimized_image[indx] / total
+                    current_avg_unnorm_grads = list_of_unnorm_gradients[indx] / total
+                    current_avg_norm_grads = list_of_norm_gradients[indx] / total
+                    current_avg_loss = list_sum_loss[indx] / total
+
+                    wandb.log({
+                        "avg_optimized_Image": wandb.Histogram(current_avg_optimized_image), "avg_norm_optimized_image": current_avg_reconst_img,
+                        "avg_normalized_gradients": wandb.Histogram(current_avg_norm_grads), "avg_unnormalized_gradients": wandb.Histogram(current_avg_unnorm_grads),
+                        "avg_loss": current_avg_loss, "avg_norm_unnormalized_grad": current_avg_norm_unnorm_grads, "avg_acc_reconst_img": current_avg_reconst_accuracy}, step=(total+indx))
+
             if(is_log_wandb):
-                accuracies_of_reconst_img_data = [[(plot_iteration_interval * ind), list_of_accuracies_of_reconst_img[ind]]
-                                                  for ind in range(number_of_intervals)]
+                # accuracies_of_reconst_img_data = [[(plot_iteration_interval * ind), list_of_accuracies_of_reconst_img[ind]]
+                #                                   for ind in range(number_of_intervals)]
 
-                accuracies_of_reconst_img_table = wandb.Table(
-                    data=accuracies_of_reconst_img_data, columns=["Optimization_iteration", "Average_Accuracies_Reconstructed_Images"])
+                # accuracies_of_reconst_img_table = wandb.Table(
+                #     data=accuracies_of_reconst_img_data, columns=["Optimization_iteration", "Average_Accuracies_Reconstructed_Images"])
 
-                avg_norm_of_reconst_img_data = [[(plot_iteration_interval * ind), list_of_avg_norm_of_reconst_img[ind]]
-                                                for ind in range(number_of_intervals)]
-                avg_norm_of_reconst_img_table = wandb.Table(
-                    data=avg_norm_of_reconst_img_data, columns=["Optimization_iteration", "Average_Norm_Reconstructed_Images"])
+                # avg_norm_of_reconst_img_data = [[(plot_iteration_interval * ind), list_of_avg_norm_of_reconst_img[ind]]
+                #                                 for ind in range(number_of_intervals)]
+                # avg_norm_of_reconst_img_table = wandb.Table(
+                #     data=avg_norm_of_reconst_img_data, columns=["Optimization_iteration", "Average_Norm_Reconstructed_Images"])
 
                 step_lists = [(plot_iteration_interval * indx)
                               for indx in range(number_of_intervals)]
@@ -856,13 +889,7 @@ class TemplateImageGenerator():
                             list_avg_softmax_of_reconst_img[indx][c_ind])
                     each_class_softmax_ordered_by_steps[c_ind] = current_class_softmax_list
 
-                wandb.log({"final_acc_by_reconst": final_accuracy,
-                           "accuracies_of_reconst_img_table": wandb.plot.line(accuracies_of_reconst_img_table,
-                                                                              "Optimization_iteration", "Average_Accuracies_Reconstructed_Images",
-                                                                              title="Average Accuracies of reconstructed images vs Optimization iteration"),
-                           "avg_norm_of_reconst_img_table": wandb.plot.line(avg_norm_of_reconst_img_table,
-                                                                            "Optimization_iteration", "Average_Norm_Reconstructed_Images",
-                                                                            title="Average Norm of reconstructed images vs Optimization iteration"),
+                wandb.log({"final_acc_ov_reconst": final_accuracy, "final_acc_ov_orig": final_original_accuracy,
                            "softmax_reconst_img_opt_steps_plt": wandb.plot.line_series(xs=step_lists,
                                                                                        ys=each_class_softmax_ordered_by_steps,
                                                                                        keys=classes,
@@ -872,7 +899,8 @@ class TemplateImageGenerator():
 
         else:
             if(is_log_wandb):
-                wandb.log({"final_acc_by_reconst": final_accuracy})
+                wandb.log({"final_acc_ov_reconst": final_accuracy,
+                          "final_acc_ov_orig": final_original_accuracy})
 
         if(is_log_wandb):
             wandb.finish()
@@ -898,9 +926,9 @@ class TemplateImageGenerator():
 
         alpha = 0
         self.image_save_prefix_folder = "root/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/"
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"/"
 
-        self.image_save_prefix_folder += "_alp_" + str(alpha)
+        self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
         normalize_image = False
 
         self.collect_all_active_pixels_into_ymaps(
@@ -914,8 +942,8 @@ class TemplateImageGenerator():
             if(repeat == 1):
                 alpha = 0.1
                 self.image_save_prefix_folder = "root/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-                    seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/"
-                self.image_save_prefix_folder += "_alp_" + str(alpha)
+                    seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"/"
+                self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
 
             print(
                 "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ alpha", alpha)
@@ -1259,9 +1287,9 @@ if __name__ == '__main__':
     print("Start")
     dataset = 'cifar10'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16
-    model_arch_type = 'cifar10_conv4_dlgn'
+    model_arch_type = 'cifar10_vgg_dlgn_16'
     # If False, then on test
-    is_template_image_on_train = True
+    is_template_image_on_train = False
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     template_initial_image_type = 'zero_init_image'
@@ -1270,15 +1298,15 @@ if __name__ == '__main__':
     template_loss_type = "CCE_TEMP_LOSS_MIXED"
     number_of_batch_to_collect = 1
     # wand_project_name = "template_visualization"
-    wand_project_name = "test_gen_visualization"
+    wand_project_name = "test_acc_visualization"
     # wand_project_name = None
-    wandb_group_name = "conv4_dlgn_iter1000"
+    wandb_group_name = "test_cifar10_vgg_dlgn_16_iter1000"
     is_split_validation = True
     valid_split_size = 0.1
     torch_seed = 2022
-    number_of_image_optimization_steps = 101
+    number_of_image_optimization_steps = 51
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS
-    exp_type = "GENERATE_TEMPLATE_IMAGES"
+    exp_type = "TEMPLATE_ACC_WITH_CUSTOM_PLOTS"
 
     if(not(wand_project_name is None)):
         wandb.login()
