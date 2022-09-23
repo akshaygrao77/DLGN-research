@@ -27,22 +27,22 @@ def add_channel_to_image(X):
     return out_X
 
 
-def preprocess_dataset_get_data_loader(dataset_config, verbose=1, dataset_folder='./Datasets/'):
+def preprocess_dataset_get_data_loader(dataset_config, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):
     if(dataset_config.name == 'cifar10'):
         transform = transforms.Compose(
             [transforms.ToTensor()])
-
+        validloader = None
         trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                                 download=True, transform=transform)
-
-        trainset, val_set = torch.utils.data.random_split(trainset, [math.ceil(
-            0.9 * len(trainset)), len(trainset) - (math.ceil(0.9 * len(trainset)))])
+        if(is_split_validation):
+            trainset, val_set = torch.utils.data.random_split(trainset, [math.ceil(
+                0.9 * len(trainset)), len(trainset) - (math.ceil(0.9 * len(trainset)))])
 
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=dataset_config.batch_size,
                                                   shuffle=True, num_workers=2)
-
-        validloader = torch.utils.data.DataLoader(val_set, batch_size=dataset_config.batch_size,
-                                                  shuffle=True, num_workers=2)
+        if(is_split_validation):
+            validloader = torch.utils.data.DataLoader(val_set, batch_size=dataset_config.batch_size,
+                                                      shuffle=True, num_workers=2)
 
         testset = torchvision.datasets.CIFAR10(root='./data', train=False,
                                                download=True, transform=transform)
@@ -71,12 +71,12 @@ def preprocess_dataset_get_data_loader(dataset_config, verbose=1, dataset_folder
                     X_train.shape, y_train.shape))
                 print("filtered_X_test size:{} y_test size:{}".format(
                     X_test.shape, y_test.shape))
-        
+
         X_train = add_channel_to_image(X_train)
         X_test = add_channel_to_image(X_test)
         X_train, X_valid, y_train, y_valid = train_test_split(
             X_train, y_train, test_size=dataset_config.valid_split_size, random_state=42)
-        
+
         train_data_loader = get_data_loader(
             X_train, y_train, dataset_config.batch_size)
         valid_data_loader = get_data_loader(

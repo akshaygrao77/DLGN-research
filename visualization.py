@@ -664,9 +664,6 @@ class TemplateImageGenerator():
             self.reset_state()
             torch.cuda.empty_cache()
 
-            if(batch_indx > 50):
-                break
-
             class_image, original_label = per_class_data
             class_image = class_image.to(self.device, non_blocking=True)
             original_label = original_label.to(self.device, non_blocking=True)
@@ -1113,6 +1110,7 @@ class TemplateImageGenerator():
             print("Class predicted on original image was :",
                   classes[original_image_pred])
             print("Original label was:", class_label)
+
             if(is_log_wandb):
                 step_lists = [(plot_iteration_interval * indx)
                               for indx in range(number_of_intervals)]
@@ -1126,16 +1124,34 @@ class TemplateImageGenerator():
                             list_of_reconst_softmax_pred[indx][c_ind])
                     each_class_softmax_ordered_by_steps[c_ind] = current_class_softmax_list
 
+                reconst_img = recreate_image(
+                    self.initial_image, normalize_image)
+                if isinstance(reconst_img, (np.ndarray, np.generic)):
+                    reconst_img = format_np_output(reconst_img)
+                    reconst_img = Image.fromarray(reconst_img)
+                reconst_img = wandb.Image(
+                    reconst_img, caption="Reconstructed final image")
+
+                orig_img = recreate_image(
+                    class_image, normalize_image)
+                if isinstance(orig_img, (np.ndarray, np.generic)):
+                    orig_img = format_np_output(orig_img)
+                    orig_img = Image.fromarray(orig_img)
+                orig_img = wandb.Image(
+                    orig_img, caption="Original image")
+
                 wandb.log(
-                    {"reconst_img_norm": reconst_img_norm,
-                     "reconst_img_label_pred": classes[reconst_pred], "reconst_img_pred_indx":  reconst_pred,
-                     "original_image_outputs_softmax": original_image_outputs_softmax, "original_img_label_pred": classes[original_image_pred], "original_img_pred_indx": original_image_pred,
-                     "softmax_reconst_img_opt_steps_plt": wandb.plot.line_series(xs=step_lists,
-                                                                                 ys=each_class_softmax_ordered_by_steps,
-                                                                                 keys=classes,
-                                                                                 title="Variation of softmax values across classes vs Optimization steps",
-                                                                                 xname="Optimization steps")
-                     }, step=(step_iter+1))
+                    {
+                        "reconst_img": reconst_img, "orig_img": orig_img,
+                        "reconst_img_norm": reconst_img_norm,
+                        "reconst_img_label_pred": classes[reconst_pred], "reconst_img_pred_indx":  reconst_pred,
+                        "original_image_outputs_softmax": original_image_outputs_softmax, "original_img_label_pred": classes[original_image_pred], "original_img_pred_indx": original_image_pred,
+                        "softmax_reconst_img_opt_steps_plt": wandb.plot.line_series(xs=step_lists,
+                                                                                    ys=each_class_softmax_ordered_by_steps,
+                                                                                    keys=classes,
+                                                                                    title="Variation of softmax values across classes vs Optimization steps",
+                                                                                    xname="Optimization steps")
+                    }, step=(step_iter+1))
                 wandb.finish()
 
 
@@ -1287,7 +1303,7 @@ if __name__ == '__main__':
     print("Start")
     dataset = 'cifar10'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16
-    model_arch_type = 'cifar10_vgg_dlgn_16'
+    model_arch_type = 'cifar10_conv4_dlgn'
     # If False, then on test
     is_template_image_on_train = False
     # If False, then segregation is over model prediction
@@ -1298,15 +1314,15 @@ if __name__ == '__main__':
     template_loss_type = "CCE_TEMP_LOSS_MIXED"
     number_of_batch_to_collect = 1
     # wand_project_name = "template_visualization"
-    wand_project_name = "test_acc_visualization"
+    wand_project_name = "test_gen_visualization"
     # wand_project_name = None
-    wandb_group_name = "test_cifar10_vgg_dlgn_16_iter1000"
+    wandb_group_name = "test_1_51"
     is_split_validation = True
     valid_split_size = 0.1
     torch_seed = 2022
     number_of_image_optimization_steps = 51
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS
-    exp_type = "TEMPLATE_ACC_WITH_CUSTOM_PLOTS"
+    exp_type = "GENERATE_TEMPLATE_IMAGES"
 
     if(not(wand_project_name is None)):
         wandb.login()
