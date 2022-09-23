@@ -1314,21 +1314,29 @@ if __name__ == '__main__':
     template_loss_type = "CCE_TEMP_LOSS_MIXED"
     number_of_batch_to_collect = 1
     # wand_project_name = "template_visualization"
-    wand_project_name = "test_gen_visualization"
+    wand_project_name = "template_images_visualization"
     # wand_project_name = None
     wandb_group_name = "test_1_51"
     is_split_validation = True
     valid_split_size = 0.1
     torch_seed = 2022
-    number_of_image_optimization_steps = 51
+    number_of_image_optimization_steps = 501
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS
     exp_type = "GENERATE_TEMPLATE_IMAGES"
 
     if(not(wand_project_name is None)):
         wandb.login()
 
-    run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
-                                template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
-                                valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type)
+    for torch_seed in [222, 22, 2, 2222]:
+        for is_template_image_on_train in [True, False]:
+            wandb_group_name = "iter_500_seed_"+str(torch_seed)+"on_train_"+str(is_template_image_on_train)
+            for model_arch_type in ["cifar10_conv4_dlgn", "cifar10_vgg_dlgn_16"]:
+                run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                                        template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
+                                        valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type)
+    
+    # run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+    #                     template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
+    #                     valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type)
 
     print("Execution completed")
