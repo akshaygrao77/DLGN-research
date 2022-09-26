@@ -595,6 +595,14 @@ class TemplateImageGenerator():
         overall_loss = alpha * cce_loss + (1-alpha)*template_loss
         return overall_loss, active_pixel_points, total_pixel_points
 
+    def calculate_mixed_loss_output_class_and_template_image_with_entropy(self, outputs, labels, alpha=0.1):
+        cce_loss = self.calculate_loss_for_output_class_max_image(
+            outputs, labels)
+        template_loss, active_pixel_points, total_pixel_points = self.calculate_template_loss_with_entropy()
+
+        overall_loss = alpha * cce_loss + (1-alpha)*template_loss
+        return overall_loss, active_pixel_points, total_pixel_points
+
     def calculate_loss_for_template_image(self):
         loss = None
         if(isinstance(self.model, torch.nn.DataParallel)):
@@ -772,6 +780,11 @@ class TemplateImageGenerator():
             actual = torch.tensor(
                 [class_indx] * len(outputs), device=self.device)
             loss, active_pixel_points, total_pixel_points = self.calculate_mixed_loss_output_class_and_template_image(
+                outputs, actual, alpha)
+        elif(template_loss_type == "CCE_ENTR_TEMP_LOSS_MIXED"):
+            actual = torch.tensor(
+                [class_indx] * len(outputs), device=self.device)
+            loss, active_pixel_points, total_pixel_points = self.calculate_mixed_loss_output_class_and_template_image_with_entropy(
                 outputs, actual, alpha)
         elif(template_loss_type == "CCE_LOSS"):
             actual = torch.tensor(
@@ -1514,37 +1527,50 @@ if __name__ == '__main__':
     is_class_segregation_on_ground_truth = True
     template_initial_image_type = 'zero_init_image'
     template_image_calculation_batch_size = 1
-    # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS
-    template_loss_type = "CCE_TEMP_LOSS_MIXED"
+    # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED
+    template_loss_type = "CCE_ENTR_TEMP_LOSS_MIXED"
     number_of_batch_to_collect = 1
     # wand_project_name = "template_visualization"
-    wand_project_name = "test_entr_visualization"
+    wand_project_name = "template_images_visualization-2"
     # wand_project_name = None
     wandb_group_name = "test_tmp_one_image_template_cifar10_conv4_dlgn"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
-    number_of_image_optimization_steps = 121
+    number_of_image_optimization_steps = 501
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS
     exp_type = "GENERATE_TEMPLATE_IMAGES"
     collect_threshold = 0.9
-    entropy_calculation_batch_size = 32
+    entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
     if(not(wand_project_name is None)):
         wandb.login()
 
-    # for torch_seed in [222, 22, 2, 2222]:
-    #     for is_template_image_on_train in [True, False]:
-    #         wandb_group_name = "iter_500_seed_" + \
-    #             str(torch_seed)+"on_train_"+str(is_template_image_on_train)
-    #         for model_arch_type in ["cifar10_conv4_dlgn", "cifar10_vgg_dlgn_16"]:
-    #             run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
-    #                                         template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
-    #                                         valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type,collect_threshold,entropy_calculation_batch_size,number_of_batches_to_calculate_entropy_on)
+    for torch_seed in [222, 22, 2222]:
+        for is_template_image_on_train in [True, False]:
+            for template_loss_type in ["CCE_ENTR_TEMP_LOSS_MIXED", "CCE_TEMP_LOSS_MIXED"]:
+                for collect_threshold in [0.5, 0.9]:
+                    for template_image_calculation_batch_size in [1, 5, 10]:
+                        wandb_group_name = "iter_500_seed_" + \
+                            str(torch_seed)+"on_train_"+str(is_template_image_on_train) + \
+                            "_LSS_"+str(template_loss_type) + \
+                            "_thres_"+str(collect_threshold)+"_BS_COLL_" + \
+                            str(template_image_calculation_batch_size)
+                        for model_arch_type in ["cifar10_conv4_dlgn", "cifar10_vgg_dlgn_16"]:
+                            if("ENTR" in template_loss_type):
+                                for number_of_batches_to_calculate_entropy_on in [10, 20, None]:
+                                    wandb_group_name += "_BS_ENTR_"+str(number_of_batches_to_calculate_entropy_on)
+                                    run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                                                                template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
+                                                                valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
+                            else:
+                                run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                                                            template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
+                                                            valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
 
-    run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
-                                template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
-                                valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
+    # run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+    #                             template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
+    #                             valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
 
     print("Execution completed")
