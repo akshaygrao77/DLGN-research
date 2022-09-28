@@ -194,11 +194,11 @@ def train(dlgn_fc_model, trainloader, testloader):
         step_per_batch = 0
         last_time = time.time()
         begin_time = last_time
+        correct = 0
+        total = 0
         with tqdm(trainloader, unit="batch", desc='Training') as loader:
             for batch_idx, (inputs, labels) in enumerate(loader):
                 loader.set_description(f"Epoch {epoch+1}")
-                correct = 0
-                total = 0
                 cur_time = time.time()
                 step_time = cur_time - last_time
                 last_time = cur_time

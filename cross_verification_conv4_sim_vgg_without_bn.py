@@ -6,6 +6,7 @@ import torchvision
 import torchvision.transforms as transforms
 import math
 import tqdm
+
 import time
 from external_utils import format_time
 
@@ -29,16 +30,17 @@ def evaluate_model(dataloader):
     return 100 * correct // total
 
 
-class Net(nn.Module):
+class Net_sim_VGG_without_BN(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1_g = nn.Conv2d(3, 128, 3, padding=1)
-        self.conv2_g = nn.Conv2d(128, 128, 3, padding=1)
-        self.conv3_g = nn.Conv2d(128, 128, 3, padding=1)
+        self.conv1_g = nn.Conv2d(3, 64, 3, padding=1)
+        self.conv2_g = nn.Conv2d(64, 64, 3, padding=1)
+        self.conv3_g = nn.Conv2d(64, 128, 3, padding=1)
         self.conv4_g = nn.Conv2d(128, 128, 3, padding=1)
-        self.conv1_w = nn.Conv2d(3, 128, 3, padding=1)
-        self.conv2_w = nn.Conv2d(128, 128, 3, padding=1)
-        self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
+
+        self.conv1_w = nn.Conv2d(3, 64, 3, padding=1)
+        self.conv2_w = nn.Conv2d(64, 64, 3, padding=1)
+        self.conv3_w = nn.Conv2d(64, 128, 3, padding=1)
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(128, 10)
@@ -48,20 +50,21 @@ class Net(nn.Module):
             "cuda:0" if torch.cuda.is_available() else "cpu")
         conv_outs = []
         x_g1 = self.conv1_g(inp)
-        conv_outs.append(x_g1)
-        x_g2 = self.conv2_g(x_g1)
-        conv_outs.append(x_g2)
-        x_g3 = self.conv3_g(x_g2)
-        conv_outs.append(x_g3)
-        x_g4 = self.conv4_g(x_g3)
-        conv_outs.append(x_g4)
-
-        self.linear_conv_outputs = conv_outs
-
         g1 = nn.Sigmoid()(4 * x_g1)
+        conv_outs.append(x_g1)
+
+        x_g2 = self.conv2_g(x_g1)
         g2 = nn.Sigmoid()(4 * x_g2)
+        conv_outs.append(x_g2)
+
+        x_g3 = self.conv3_g(x_g2)
         g3 = nn.Sigmoid()(4 * x_g3)
+        conv_outs.append(x_g3)
+
+        x_g4 = self.conv4_g(x_g3)
         g4 = nn.Sigmoid()(4 * x_g4)
+        conv_outs.append(x_g4)
+        self.linear_conv_outputs = conv_outs
 
         inp_all_ones = torch.ones(inp.size(),
                                   requires_grad=True, device=device)
@@ -79,8 +82,11 @@ class Net(nn.Module):
 
 
 if __name__ == '__main__':
-    transform = transforms.Compose(
-        [transforms.ToTensor()])
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465),
+                             (0.2023, 0.1994, 0.2010)),
+    ])
 
     trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                             download=True, transform=transform)
@@ -100,7 +106,7 @@ if __name__ == '__main__':
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    net = Net()
+    net = Net_sim_VGG_without_BN()
     net.to(device)
 
     criterion = nn.CrossEntropyLoss()
@@ -148,7 +154,10 @@ if __name__ == '__main__':
         print("Test_acc: ", test_acc)
         if(test_acc > best_test_acc):
             best_test_acc = test_acc
+            path = 'root/model/save/cross_verification_conv4_sim_vgg_wo_bn_norm_dir.pt'
             torch.save(
-                net, 'root/model/save/cross_verification_pure_conv4_dir.pt')
+                net, path)
+            print("Model saved at:",path)
+            print("Current best test accuracy:",best_test_acc)
 
     print('Finished Training: Best saved model test acc is:', best_test_acc)

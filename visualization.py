@@ -27,6 +27,11 @@ from external_utils import format_time
 
 from vgg_net_16 import DLGN_VGG_Network, DLGN_VGG_LinearNetwork, DLGN_VGG_WeightNetwork
 from mnist_dlgn_fc import DLGN_FC_Network, DLGN_FC_Gating_Network, DLGN_FC_Value_Network
+from cross_verification import Net
+from cross_verification_conv4_sim_vgg_with_dn import Net_sim_VGG_with_BN
+from cross_verification_conv4_sim_vgg_without_bn import Net_sim_VGG_without_BN
+from vgg_dlgn import vgg19
+from cross_verification_inbuilt_norm import Net_with_inbuilt_norm
 
 
 def format_np_output(np_arr):
@@ -91,9 +96,71 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
             ])
+
+        elif(model_arch_type == 'cifar10_conv4_dlgn_with_inbuilt_norm'):
+            transform = transforms.Compose([
+                transforms.ToTensor()])
+                
+        elif(model_arch_type == 'random_cifar10_conv4_dlgn_with_inbuilt_norm'):
+            transform = transforms.Compose([
+                transforms.ToTensor()])
+
         elif(model_arch_type == 'cifar10_conv4_dlgn'):
             transform = transforms.Compose([
                 transforms.ToTensor()])
+
+            # transform = transforms.Compose([
+            #     transforms.ToTensor(),
+            #     transforms.Normalize((0.4914, 0.4822, 0.4465),
+            #                          (0.2023, 0.1994, 0.2010)),
+            # ])
+
+        elif(model_arch_type == 'random_conv4_dlgn'):
+            transform = transforms.Compose([
+                transforms.ToTensor()
+            ])
+        elif(model_arch_type == 'random_vggnet_dlgn'):
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                     (0.2023, 0.1994, 0.2010)),
+            ])
+        elif(model_arch_type == 'cifar10_conv4_dlgn_sim_vgg_with_bn'):
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                     (0.2023, 0.1994, 0.2010)),
+            ])
+
+            # transform = transforms.Compose([
+            #     transforms.ToTensor()])
+        elif(model_arch_type == 'cifar10_conv4_dlgn_sim_vgg_wo_bn'):
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                     (0.2023, 0.1994, 0.2010)),
+            ])
+
+            # transform = transforms.Compose([
+            #     transforms.ToTensor()])
+        elif(model_arch_type == 'random_conv4_dlgn_sim_vgg_wo_bn'):
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                     (0.2023, 0.1994, 0.2010)),
+            ])
+
+            # transform = transforms.Compose([
+            #     transforms.ToTensor()])
+        elif(model_arch_type == 'random_conv4_dlgn_sim_vgg_with_bn'):
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                     (0.2023, 0.1994, 0.2010)),
+            ])
+
+            # transform = transforms.Compose([
+            #     transforms.ToTensor()])
 
         validloader = None
         trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
@@ -420,6 +487,7 @@ class TemplateImageGenerator():
             conv_outs = self.model.linear_conv_outputs
         with torch.no_grad():
             for indx in range(len(conv_outs)):
+                # for indx in range(0, 4):
                 each_conv_output = conv_outs[indx]
                 positives = HardRelu()(each_conv_output)
                 # [B,C,W,H]
@@ -1386,6 +1454,27 @@ def get_model_from_loader(model_arch_type, dataset):
             model = torch.load("root/model/save/vggnet_ext_parallel_16_dir.pt")
         elif(model_arch_type == 'cifar10_conv4_dlgn'):
             model = torch.load("root/model/save/model_norm_dir_None.pt")
+        elif(model_arch_type == 'cifar10_conv4_dlgn_sim_vgg_with_bn'):
+            model = torch.load(
+                "root/model/save/cross_verification_conv4_sim_vgg_with_bn_norm_dir.pt")
+        elif(model_arch_type == 'cifar10_conv4_dlgn_sim_vgg_wo_bn'):
+            model = torch.load(
+                "root/model/save/cross_verification_conv4_sim_vgg_wo_bn_norm_dir.pt")
+        elif(model_arch_type == 'random_conv4_dlgn_sim_vgg_wo_bn'):
+            model = Net_sim_VGG_without_BN()
+        elif(model_arch_type == 'random_conv4_dlgn_sim_vgg_with_bn'):
+            model = Net_sim_VGG_with_BN()
+        elif(model_arch_type == 'random_conv4_dlgn'):
+            model = Net()
+        elif(model_arch_type == 'random_vggnet_dlgn'):
+            allones = np.ones((1, 3, 32, 32)).astype(np.float32)
+            allones = torch.tensor(allones)
+            model = vgg19(allones)
+        elif(model_arch_type == "cifar10_conv4_dlgn_with_inbuilt_norm"):
+            model = torch.load(
+                "root/model/save/cross_verification_pure_inbuilt_norm_conv4_dir.pt") 
+        elif(model_arch_type == "random_cifar10_conv4_dlgn_with_inbuilt_norm"):
+            model = Net_with_inbuilt_norm()
 
         device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
         if device_str == 'cuda':
@@ -1519,8 +1608,10 @@ if __name__ == '__main__':
     print("Start")
     # mnist , cifar10
     dataset = 'cifar10'
-    # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4
-    model_arch_type = 'cifar10_conv4_dlgn'
+    # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
+    # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
+    # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
+    model_arch_type = 'random_cifar10_conv4_dlgn_with_inbuilt_norm'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
@@ -1528,49 +1619,50 @@ if __name__ == '__main__':
     template_initial_image_type = 'zero_init_image'
     template_image_calculation_batch_size = 1
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED
-    template_loss_type = "CCE_ENTR_TEMP_LOSS_MIXED"
+    template_loss_type = "CCE_TEMP_LOSS_MIXED"
     number_of_batch_to_collect = 1
     # wand_project_name = "template_visualization"
-    wand_project_name = "template_images_visualization-2"
+    wand_project_name = "template_images_visualization-test"
     # wand_project_name = None
-    wandb_group_name = "test_tmp_one_image_template_cifar10_conv4_dlgn"
+    wandb_group_name = "one_image_template_random_cifar10_conv4_dlgn_with_inbuilt_norm"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
-    number_of_image_optimization_steps = 501
+    number_of_image_optimization_steps = 271
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS
     exp_type = "GENERATE_TEMPLATE_IMAGES"
-    collect_threshold = 0.9
+    collect_threshold = 0.5
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
     if(not(wand_project_name is None)):
         wandb.login()
 
-    for torch_seed in [222, 22, 2222]:
-        for is_template_image_on_train in [True, False]:
-            for template_loss_type in ["CCE_ENTR_TEMP_LOSS_MIXED", "CCE_TEMP_LOSS_MIXED"]:
-                for collect_threshold in [0.5, 0.9]:
-                    for template_image_calculation_batch_size in [1, 5, 10]:
-                        wandb_group_name = "iter_500_seed_" + \
-                            str(torch_seed)+"on_train_"+str(is_template_image_on_train) + \
-                            "_LSS_"+str(template_loss_type) + \
-                            "_thres_"+str(collect_threshold)+"_BS_COLL_" + \
-                            str(template_image_calculation_batch_size)
-                        for model_arch_type in ["cifar10_conv4_dlgn", "cifar10_vgg_dlgn_16"]:
-                            if("ENTR" in template_loss_type):
-                                for number_of_batches_to_calculate_entropy_on in [10, 20, None]:
-                                    wandb_group_name += "_BS_ENTR_"+str(number_of_batches_to_calculate_entropy_on)
-                                    run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
-                                                                template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
-                                                                valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
-                            else:
-                                run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
-                                                            template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
-                                                            valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
+    # for torch_seed in [22, 2222]:
+    #     for is_template_image_on_train in [True, False]:
+    #         for template_loss_type in ["CCE_ENTR_TEMP_LOSS_MIXED"]:
+    #             for collect_threshold in [0.5, 0.9]:
+    #                 for template_image_calculation_batch_size in [1, 5, 10]:
+    #                     wandb_group_name = "iter_500_seed_" + \
+    #                         str(torch_seed)+"on_train_"+str(is_template_image_on_train) + \
+    #                         "_LSS_"+str(template_loss_type) + \
+    #                         "_thres_"+str(collect_threshold)+"_BS_COLL_" + \
+    #                         str(template_image_calculation_batch_size)
+    #                     for model_arch_type in ["cifar10_conv4_dlgn", "cifar10_vgg_dlgn_16"]:
+    #                         if("ENTR" in template_loss_type):
+    #                             for number_of_batches_to_calculate_entropy_on in [10, 20, None]:
+    #                                 wandb_group_name += "_BS_ENTR_" + \
+    #                                     str(number_of_batches_to_calculate_entropy_on)
+    #                                 run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+    #                                                             template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
+    #                                                             valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
+    #                         else:
+    #                             run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+    #                                                         template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
+    #                                                         valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
 
-    # run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
-    #                             template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
-    #                             valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
+    run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                                template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
+                                valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
 
     print("Execution completed")

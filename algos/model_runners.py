@@ -23,8 +23,8 @@ def run_deep_dream(wandb_project_name, is_DLGN_all_ones, dataset_folder, version
 
     trainBatch = next(iter(trainloader))
     input_image_size = (trainBatch[0].size()[-2], trainBatch[0].size()[-1])
-    print("input_image_size", input_image_size)
-    print("trainBatch [0]", trainBatch[0][0])
+    # print("input_image_size", input_image_size)
+    # print("trainBatch [0]", trainBatch[0][0])
     gate_net_conv_info.input_image_size = input_image_size
     weight_net_conv_info.input_image_size = input_image_size
 

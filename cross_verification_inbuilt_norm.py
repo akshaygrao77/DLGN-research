@@ -29,7 +29,20 @@ def evaluate_model(dataloader):
     return 100 * correct // total
 
 
-class Net(nn.Module):
+class DataNormalization_Layer(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, inp):
+        # print("inp before norm:", inp)
+        norm_transform = transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                              (0.2023, 0.1994, 0.2010))
+        norm_data = norm_transform(inp)
+        # print("inp after norm:", norm_data)
+        return norm_data
+
+
+class Net_with_inbuilt_norm(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv1_g = nn.Conv2d(3, 128, 3, padding=1)
@@ -46,6 +59,7 @@ class Net(nn.Module):
     def forward(self, inp):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
+        inp = DataNormalization_Layer()(inp)
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         conv_outs.append(x_g1)
@@ -100,7 +114,7 @@ if __name__ == '__main__':
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    net = Net()
+    net = Net_with_inbuilt_norm()
     net.to(device)
 
     criterion = nn.CrossEntropyLoss()
@@ -149,6 +163,6 @@ if __name__ == '__main__':
         if(test_acc > best_test_acc):
             best_test_acc = test_acc
             torch.save(
-                net, 'root/model/save/cross_verification_pure_conv4_dir.pt')
+                net, 'root/model/save/cross_verification_pure_inbuilt_norm_conv4_dir.pt')
 
     print('Finished Training: Best saved model test acc is:', best_test_acc)
