@@ -11,6 +11,21 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 
+import torchvision.transforms as transforms
+
+class DataNormalization_Layer(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, inp):
+        inp.requires_grad_()
+
+        norm_transform = transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                              (0.2023, 0.1994, 0.2010))
+        norm_data = norm_transform(inp)
+
+        return norm_data
+
 
 def get_mean_and_std(dataset):
     '''Compute the mean and std value of dataset.'''

@@ -30,8 +30,9 @@ from mnist_dlgn_fc import DLGN_FC_Network, DLGN_FC_Gating_Network, DLGN_FC_Value
 from cross_verification import Net
 from cross_verification_conv4_sim_vgg_with_dn import Net_sim_VGG_with_BN
 from cross_verification_conv4_sim_vgg_without_bn import Net_sim_VGG_without_BN
-from vgg_dlgn import vgg19
-from cross_verification_inbuilt_norm import Net_with_inbuilt_norm
+from vgg_dlgn import vgg19, vgg19_with_inbuilt_norm
+from cross_verification_inbuilt_norm import Net_with_inbuilt_norm, Net_with_inbuilt_norm_with_bn
+from external_utils import DataNormalization_Layer
 
 
 def format_np_output(np_arr):
@@ -100,8 +101,35 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
         elif(model_arch_type == 'cifar10_conv4_dlgn_with_inbuilt_norm'):
             transform = transforms.Compose([
                 transforms.ToTensor()])
-                
+
         elif(model_arch_type == 'random_cifar10_conv4_dlgn_with_inbuilt_norm'):
+            transform = transforms.Compose([
+                transforms.ToTensor()])
+        elif(model_arch_type == 'random_cifar10_conv4_dlgn_with_bn_with_inbuilt_norm'):
+            transform = transforms.Compose([
+                transforms.ToTensor()])
+
+        elif(model_arch_type == 'random_cifar10_vgg_dlgn_16_with_inbuilt_norm'):
+            transform = transforms.Compose([
+                transforms.ToTensor()])
+
+        elif(model_arch_type == 'cifar10_conv4_dlgn_with_bn_with_inbuilt_norm'):
+            transform = transforms.Compose([
+                transforms.ToTensor()])
+        elif(model_arch_type == 'cifar10_conv4_dlgn_with_inbuilt_norm_with_flip_crop'):
+            transform = transforms.Compose([
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor()
+            ])
+        elif(model_arch_type == 'cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop'):
+            transform = transforms.Compose([
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor()
+            ])
+
+        elif(model_arch_type == 'cifar10_vgg_dlgn_16_with_inbuilt_norm'):
             transform = transforms.Compose([
                 transforms.ToTensor()])
 
@@ -486,8 +514,8 @@ class TemplateImageGenerator():
         else:
             conv_outs = self.model.linear_conv_outputs
         with torch.no_grad():
-            for indx in range(len(conv_outs)):
-                # for indx in range(0, 4):
+            # for indx in range(len(conv_outs)):
+            for indx in range(0, 4):
                 each_conv_output = conv_outs[indx]
                 positives = HardRelu()(each_conv_output)
                 # [B,C,W,H]
@@ -1472,9 +1500,30 @@ def get_model_from_loader(model_arch_type, dataset):
             model = vgg19(allones)
         elif(model_arch_type == "cifar10_conv4_dlgn_with_inbuilt_norm"):
             model = torch.load(
-                "root/model/save/cross_verification_pure_inbuilt_norm_conv4_dir.pt") 
+                "root/model/save/cross_verification_pure_inbuilt_norm_conv4_dir.pt")
         elif(model_arch_type == "random_cifar10_conv4_dlgn_with_inbuilt_norm"):
             model = Net_with_inbuilt_norm()
+        elif(model_arch_type == "random_cifar10_conv4_dlgn_with_bn_with_inbuilt_norm"):
+            model = Net_with_inbuilt_norm_with_bn()
+
+        elif(model_arch_type == "cifar10_vgg_dlgn_16_with_inbuilt_norm"):
+            model = torch.load(
+                "root/model/save/vggnet_with_inbuilt_norm_ext_parallel_16_dir.pt")
+
+        elif(model_arch_type == "random_cifar10_vgg_dlgn_16_with_inbuilt_norm"):
+            allones = np.ones((1, 3, 32, 32)).astype(np.float32)
+            allones = torch.tensor(allones)
+            model = vgg19_with_inbuilt_norm(allones)
+
+        elif(model_arch_type == "cifar10_conv4_dlgn_with_bn_with_inbuilt_norm"):
+            model = torch.load(
+                "root/model/save/cross_verification_pure_inbuilt_norm_with_bn_conv4_dir.pt")
+        elif(model_arch_type == "cifar10_conv4_dlgn_with_inbuilt_norm_with_flip_crop"):
+            model = torch.load(
+                "root/model/save/cross_verification_pure_inbuilt_norm_conv4_with_flip_crop_dir.pt")
+        elif(model_arch_type == "cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop"):
+            model = torch.load(
+                "root/model/save/cross_verification_pure_inbuilt_norm_with_bn_conv4_with_flip_crop_dir.pt")
 
         device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
         if device_str == 'cuda':
@@ -1611,7 +1660,11 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
-    model_arch_type = 'random_cifar10_conv4_dlgn_with_inbuilt_norm'
+    # cifar10_vgg_dlgn_16_with_inbuilt_norm , random_cifar10_vgg_dlgn_16_with_inbuilt_norm
+    # random_cifar10_conv4_dlgn_with_bn_with_inbuilt_norm , cifar10_conv4_dlgn_with_bn_with_inbuilt_norm
+    # cifar10_conv4_dlgn_with_inbuilt_norm_with_flip_crop
+    # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
+    model_arch_type = 'cifar10_vgg_dlgn_16_with_inbuilt_norm'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
@@ -1624,7 +1677,7 @@ if __name__ == '__main__':
     # wand_project_name = "template_visualization"
     wand_project_name = "template_images_visualization-test"
     # wand_project_name = None
-    wandb_group_name = "one_image_template_random_cifar10_conv4_dlgn_with_inbuilt_norm"
+    wandb_group_name = "4lyrs_one_image_template_cifar10_vgg_dlgn_16_with_inbuilt_norm"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022

@@ -9,6 +9,8 @@ import tqdm
 import time
 from external_utils import format_time
 
+from external_utils import DataNormalization_Layer
+
 
 def evaluate_model(dataloader):
     correct = 0
@@ -29,19 +31,6 @@ def evaluate_model(dataloader):
     return 100 * correct // total
 
 
-class DataNormalization_Layer(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, inp):
-        # print("inp before norm:", inp)
-        norm_transform = transforms.Normalize((0.4914, 0.4822, 0.4465),
-                                              (0.2023, 0.1994, 0.2010))
-        norm_data = norm_transform(inp)
-        # print("inp after norm:", norm_data)
-        return norm_data
-
-
 class Net_with_inbuilt_norm(nn.Module):
     def __init__(self):
         super().__init__()
@@ -55,11 +44,12 @@ class Net_with_inbuilt_norm(nn.Module):
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(128, 10)
+        self.data_normalization = DataNormalization_Layer()
 
     def forward(self, inp):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
-        inp = DataNormalization_Layer()(inp)
+        inp = self.data_normalization(inp)
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         conv_outs.append(x_g1)
@@ -92,9 +82,96 @@ class Net_with_inbuilt_norm(nn.Module):
         return x_w6
 
 
+class Net_with_inbuilt_norm_with_bn(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1_g = nn.Conv2d(3, 128, 3, padding=1)
+        self.conv2_g = nn.Conv2d(128, 128, 3, padding=1)
+        self.conv3_g = nn.Conv2d(128, 128, 3, padding=1)
+        self.conv4_g = nn.Conv2d(128, 128, 3, padding=1)
+
+        self.bn1_g = nn.BatchNorm2d(128)
+        self.bn2_g = nn.BatchNorm2d(128)
+        self.bn3_g = nn.BatchNorm2d(128)
+        self.bn4_g = nn.BatchNorm2d(128)
+
+        self.conv1_w = nn.Conv2d(3, 128, 3, padding=1)
+        self.conv2_w = nn.Conv2d(128, 128, 3, padding=1)
+        self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
+        self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
+
+        self.bn1_v = nn.BatchNorm2d(128)
+        self.bn2_v = nn.BatchNorm2d(128)
+        self.bn3_v = nn.BatchNorm2d(128)
+        self.bn4_v = nn.BatchNorm2d(128)
+
+        self.avgpool = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
+        self.fc1 = nn.Linear(128, 10)
+        self.data_normalization = DataNormalization_Layer()
+
+    def forward(self, inp):
+        device = torch.device(
+            "cuda:0" if torch.cuda.is_available() else "cpu")
+        inp = self.data_normalization(inp)
+        conv_outs = []
+        x_g1 = self.conv1_g(inp)
+        x_g1 = self.bn1_g(x_g1)
+        g1 = nn.Sigmoid()(4 * x_g1)
+        conv_outs.append(x_g1)
+
+        x_g2 = self.conv2_g(x_g1)
+        x_g2 = self.bn2_g(x_g2)
+        g2 = nn.Sigmoid()(4 * x_g2)
+        conv_outs.append(x_g2)
+
+        x_g2 = self.avgpool(x_g2)
+
+        x_g3 = self.conv3_g(x_g2)
+        x_g3 = self.bn3_g(x_g3)
+        g3 = nn.Sigmoid()(4 * x_g3)
+        conv_outs.append(x_g3)
+
+        x_g4 = self.conv4_g(x_g3)
+        x_g4 = self.bn4_g(x_g4)
+        g4 = nn.Sigmoid()(4 * x_g4)
+        conv_outs.append(x_g4)
+        self.linear_conv_outputs = conv_outs
+
+        inp_all_ones = torch.ones(inp.size(),
+                                  requires_grad=True, device=device)
+
+        x_w1 = self.conv1_w(inp_all_ones)
+        x_w1 = self.bn1_v(x_w1) * g1
+
+        x_w2 = self.conv2_w(x_w1)
+        x_w2 = self.bn2_v(x_w2) * g2
+
+        x_w2 = self.avgpool(x_w2)
+
+        x_w3 = self.conv3_w(x_w2)
+        x_w3 = self.bn3_v(x_w3) * g3
+
+        x_w4 = self.conv4_w(x_w3)
+        x_w4 = self.bn4_v(x_w4) * g4
+
+        x_w5 = self.pool(x_w4)
+        x_w5 = torch.flatten(x_w5, 1)
+        x_w6 = self.fc1(x_w5)
+
+        return x_w6
+
+
 if __name__ == '__main__':
-    transform = transforms.Compose(
-        [transforms.ToTensor()])
+    # transform = transforms.Compose(
+    #     [transforms.ToTensor()])
+
+    transform = transforms.Compose([
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor()
+    ])
 
     trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                             download=True, transform=transform)
@@ -114,7 +191,8 @@ if __name__ == '__main__':
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    net = Net_with_inbuilt_norm()
+    # net = Net_with_inbuilt_norm()
+    net = Net_with_inbuilt_norm_with_bn()
     net.to(device)
 
     criterion = nn.CrossEntropyLoss()
@@ -163,6 +241,6 @@ if __name__ == '__main__':
         if(test_acc > best_test_acc):
             best_test_acc = test_acc
             torch.save(
-                net, 'root/model/save/cross_verification_pure_inbuilt_norm_conv4_dir.pt')
+                net, 'root/model/save/cross_verification_pure_inbuilt_norm_with_bn_conv4_with_flip_crop_dir.pt')
 
     print('Finished Training: Best saved model test acc is:', best_test_acc)

@@ -13,7 +13,7 @@ import argparse
 
 # from models import *
 from external_utils import progress_bar
-from vgg_dlgn import vgg19
+from vgg_dlgn import vgg19, vgg19_with_inbuilt_norm
 # from vgg_dlgn import vgg19
 import numpy as np
 
@@ -128,8 +128,9 @@ def train(net, criterion):
         'model_state_dict': net.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'loss': criterion,
-    }, 'root/model/save/vggnet_ext_parallel_16.pt')
-    torch.save(net, 'root/model/save/vggnet_ext_parallel_16_dir.pt')
+    }, 'root/model/save/vggnet_with_inbuilt_norm_ext_parallel_16.pt')
+    torch.save(
+        net, 'root/model/save/vggnet_with_inbuilt_norm_ext_parallel_16_dir.pt')
     print('Finished Training')
 
 
@@ -185,15 +186,14 @@ if __name__ == '__main__':
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465),
-                             (0.2023, 0.1994, 0.2010)),
+        transforms.ToTensor()
+
     ])
+    # transforms.Normalize((0.4914, 0.4822, 0.4465),
+    #                     (0.2023, 0.1994, 0.2010)),
 
     transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465),
-                             (0.2023, 0.1994, 0.2010)),
+        transforms.ToTensor()
     ])
 
     trainset = torchvision.datasets.CIFAR10(
@@ -213,23 +213,11 @@ if __name__ == '__main__':
     print('==> Building model..')
     allones = np.ones((1, 3, 32, 32)).astype(np.float32)
     allones = torch.tensor(allones)
-    net = vgg19(allones)
-    #net= vgg19()
-    #net = VGG('VGG19')
-    # net = ResNet18()
-    # net = PreActResNet18()
-    # net = GoogLeNet()
-    # net = DenseNet121()
-    # net = ResNeXt29_2x64d()
-    # net = MobileNet()
-    # net = MobileNetV2()
-    # net = DPN92()
-    # net = ShuffleNetG2()
-    # net = SENet18()
-    # net = ShuffleNetV2(1)
-    # net = EfficientNetB0()
-    # net = RegNetX_200MF()
-    #net = SimpleDLA()
+
+    # net = vgg19(allones)
+
+    net = vgg19_with_inbuilt_norm(allones)
+
     net = net.to(device)
     if device == 'cuda':
         net = torch.nn.DataParallel(net)
