@@ -191,8 +191,8 @@ if __name__ == '__main__':
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # net = Net_with_inbuilt_norm()
-    net = Net_with_inbuilt_norm_with_bn()
+    net = Net_with_inbuilt_norm()
+    # net = Net_with_inbuilt_norm_with_bn()
     net.to(device)
 
     criterion = nn.CrossEntropyLoss()
@@ -241,6 +241,6 @@ if __name__ == '__main__':
         if(test_acc > best_test_acc):
             best_test_acc = test_acc
             torch.save(
-                net, 'root/model/save/cross_verification_pure_inbuilt_norm_with_bn_conv4_with_flip_crop_dir.pt')
+                net, 'root/model/save/cross_verification_pure_inbuilt_norm_conv4_with_flip_crop_dir.pt')
 
     print('Finished Training: Best saved model test acc is:', best_test_acc)
