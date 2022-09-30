@@ -13,7 +13,7 @@ import argparse
 
 # from models import *
 from external_utils import progress_bar
-from vgg_dlgn import vgg19, vgg19_with_inbuilt_norm
+from vgg_dlgn import vgg19, vgg19_with_inbuilt_norm, vgg19_with_inbuilt_norm_without_bn
 # from vgg_dlgn import vgg19
 import numpy as np
 
@@ -130,7 +130,7 @@ def train(net, criterion):
         'loss': criterion,
     }, 'root/model/save/vggnet_with_inbuilt_norm_ext_parallel_16.pt')
     torch.save(
-        net, 'root/model/save/vggnet_with_inbuilt_norm_ext_parallel_16_dir.pt')
+        net, 'root/model/save/vggnet_with_inbuilt_norm_wo_bn_ext_parallel_16_dir.pt')
     print('Finished Training')
 
 
@@ -216,7 +216,9 @@ if __name__ == '__main__':
 
     # net = vgg19(allones)
 
-    net = vgg19_with_inbuilt_norm(allones)
+    # net = vgg19_with_inbuilt_norm(allones)
+
+    net = vgg19_with_inbuilt_norm_without_bn(allones)
 
     net = net.to(device)
     if device == 'cuda':
