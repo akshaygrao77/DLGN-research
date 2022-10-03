@@ -25,6 +25,7 @@ def get_data_loader(x_data, labels, bs, orig_labels=None):
 
 def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):
     valid_data_loader = None
+    transform = None
     if(dataset_config.name == 'cifar10'):
         if(model_arch_type == 'cifar10_vgg_dlgn_16'):
             transform = transforms.Compose([
@@ -83,6 +84,9 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             #     transforms.Normalize((0.4914, 0.4822, 0.4465),
             #                          (0.2023, 0.1994, 0.2010)),
             # ])
+        elif(model_arch_type == 'conv4_dlgn'):
+            transform = transforms.Compose([
+                transforms.ToTensor()])
 
         elif(model_arch_type == 'random_conv4_dlgn'):
             transform = transforms.Compose([
@@ -132,6 +136,8 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             #     transforms.ToTensor()])
 
         validloader = None
+        if(transform is None):
+            return None, None, None
         trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                                 download=True, transform=transform)
         if(is_split_validation):
