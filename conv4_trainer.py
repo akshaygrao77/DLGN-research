@@ -192,23 +192,37 @@ if __name__ == '__main__':
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "template_images_visualization-test"
         wand_project_name = 'template_visualisation_augmentation'
+        # wand_project_name = 'test_visualisation_augmentation'
         wandb_group_name = "DS_"+str(dataset) + \
             "_template_vis_aug_"+str(model_arch_type)
         is_split_validation = False
         valid_split_size = 0.1
         torch_seed = 2022
-        number_of_image_optimization_steps = 151
+        number_of_image_optimization_steps = 161
         # GENERATE_ALL_FINAL_TEMPLATE_IMAGES
         exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
         collect_threshold = 0.95
         entropy_calculation_batch_size = 64
         number_of_batches_to_calculate_entropy_on = None
+
+        tmp_image_over_what_str = 'test'
+        if(is_template_image_on_train):
+            tmp_image_over_what_str = 'train'
+
+        seg_over_what_str = 'MP'
+        if(is_class_segregation_on_ground_truth):
+            seg_over_what_str = 'GT'
+
         root_save_prefix = "root/AUG_RECONS_SAVE/"
         model_and_data_save_prefix = "root/model/save/" + \
-            str(dataset)+"/iterative_augmenting/"
+            str(dataset)+"/iterative_augmenting/DS_"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+                seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"
 
         number_of_augment_iterations = 5
         epochs_in_each_augment_iteration = [32, 10, 10, 10, 5]
+
+        # number_of_augment_iterations = 2
+        # epochs_in_each_augment_iteration = [2, 1, 10, 10, 5]
 
         current_augmented_x_train = None
         current_augmented_y_train = None
@@ -381,3 +395,4 @@ if __name__ == '__main__':
     else:
         best_test_acc = train_model(net,
                                     trainloader, testloader, epochs, criterion, optimizer, best_model_save_path)
+    print("Finished execution!!!")

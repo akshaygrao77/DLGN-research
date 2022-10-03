@@ -649,7 +649,7 @@ class TemplateImageGenerator():
 
         print("Percentage of non_zero pixels",
               (100. * (non_zero_pixel_points/total_pixel_points)))
-        return loss/active_pixel_points, active_pixel_points, total_pixel_points
+        return loss/active_pixel_points, active_pixel_points, total_pixel_points, non_zero_pixel_points
 
     def calculate_only_active_loss_for_template_image(self):
         loss = 0
@@ -686,7 +686,7 @@ class TemplateImageGenerator():
 
         print("Percentage of non_zero pixels",
               (100. * (non_zero_pixel_points/total_pixel_points)))
-        return loss/active_pixel_points, active_pixel_points, total_pixel_points
+        return loss/active_pixel_points, active_pixel_points, total_pixel_points, non_zero_pixel_points
 
     def get_wandb_config(self, exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                          is_class_segregation_on_ground_truth, template_initial_image_type,
@@ -729,11 +729,12 @@ class TemplateImageGenerator():
     def get_loss_value(self, template_loss_type, class_indx, outputs=None, class_image=None, alpha=None):
         active_pixel_points = None
         total_pixel_points = None
+        non_zero_pixel_points = None
 
         if(template_loss_type == "TEMP_LOSS"):
-            loss, active_pixel_points, total_pixel_points = self.new_calculate_loss_for_template_image()
+            loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.new_calculate_loss_for_template_image()
         elif(template_loss_type == "TEMP_ACT_ONLY_LOSS"):
-            loss, active_pixel_points, total_pixel_points = self.calculate_only_active_loss_for_template_image()
+            loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.calculate_only_active_loss_for_template_image()
         elif(template_loss_type == "ENTR_TEMP_LOSS"):
             loss, active_pixel_points, total_pixel_points = self.calculate_template_loss_with_entropy()
         elif(template_loss_type == "CCE_TEMP_LOSS_MIXED"):
@@ -766,7 +767,7 @@ class TemplateImageGenerator():
             loss, active_pixel_points, total_pixel_points = self.calculate_mixed_loss_maximise_logit_and_template_image(
                 outputs, targets)
 
-        return loss, active_pixel_points, total_pixel_points
+        return loss, active_pixel_points, total_pixel_points, non_zero_pixel_points
 
     def generate_accuracies_of_template_image_per_class(self, per_class_dataset, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                                         is_class_segregation_on_ground_truth, template_initial_image_type,
@@ -884,7 +885,7 @@ class TemplateImageGenerator():
 
                     outputs = self.model(self.initial_image)
 
-                    loss, active_pixel_points, total_pixel_points = self.get_loss_value(
+                    loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
                         template_loss_type, class_indx, outputs, class_image, alpha)
 
                     if(step_iter == 0 and "TEMP" in template_loss_type):
@@ -897,7 +898,7 @@ class TemplateImageGenerator():
                         if(is_log_wandb):
                             wandb.log(
                                 {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points,
-                                 "Percent_active_pixels": percent_active_pixels}, step=(batch_indx+1))
+                                 "Percent_active_pixels": percent_active_pixels, "non_zero_pixel_points": non_zero_pixel_points}, step=(batch_indx+1))
 
                     # print("loss", loss)
                     # Backward
@@ -1109,7 +1110,7 @@ class TemplateImageGenerator():
 
         self.model.train(False)
         self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+ str(final_postfix_for_save) + "/"
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/" + str(final_postfix_for_save) + "/"
 
         per_class_per_batch_data_loader = tqdm(
             per_class_per_batch_data_loader, desc='Image being processed:'+str(class_label))
@@ -1194,7 +1195,7 @@ class TemplateImageGenerator():
 
                     outputs = self.model(self.initial_image)
 
-                    loss, active_pixel_points, total_pixel_points = self.get_loss_value(
+                    loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
                         template_loss_type, class_indx, outputs, class_image, alpha)
 
                     if(step_iter == 0 and "TEMP" in template_loss_type):
@@ -1206,7 +1207,7 @@ class TemplateImageGenerator():
                               percent_active_pixels)
                         if(is_log_wandb):
                             wandb.log(
-                                {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points,
+                                {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points, "non_zero_pixel_points": non_zero_pixel_points,
                                  "Percent_active_pixels": percent_active_pixels, "final_postfix_for_save": final_postfix_for_save}, step=(batch_indx+1))
 
                     # print("loss", loss)
@@ -1504,7 +1505,7 @@ class TemplateImageGenerator():
 
                     outputs = self.model(self.initial_image)
 
-                    loss, active_pixel_points, total_pixel_points = self.get_loss_value(
+                    loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
                         template_loss_type, class_indx, outputs, class_image, alpha)
 
                     print("{} Loss: {}".format(template_loss_type, loss))
@@ -1519,7 +1520,7 @@ class TemplateImageGenerator():
                         if(is_log_wandb):
                             wandb.log(
                                 {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points,
-                                 "Percent_active_pixels": percent_active_pixels}, step=(step_iter+1))
+                                 "Percent_active_pixels": percent_active_pixels, "non_zero_pixel_points": non_zero_pixel_points}, step=(step_iter+1))
                     # Backward
                     loss.backward()
 
@@ -1882,7 +1883,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                                                                    is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                                    template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                                                    exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
-                                                                                   plot_iteration_interval=None, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save)
+                                                                                   plot_iteration_interval=10, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save)
             output_template_list_per_class[c_indx] = list_of_reconst_images
 
     return output_template_list_per_class
