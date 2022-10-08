@@ -1083,7 +1083,7 @@ class TemplateImageGenerator():
         print("Reconstructed images written at:",
               self.image_save_prefix_folder)
 
-    def generate_all_template_image_per_class(self, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
+    def generate_all_template_image_per_class(self, per_class_dataset, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                               is_class_segregation_on_ground_truth, template_initial_image_type,
                                               template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                               exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
@@ -1150,7 +1150,7 @@ class TemplateImageGenerator():
             wandb_config = self.get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                                  is_class_segregation_on_ground_truth, template_initial_image_type,
                                                  template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
-                                                 plot_iteration_interval, collect_threshold=collect_threshold, number_of_batch_to_collect=number_of_batch_to_collect)
+                                                 plot_iteration_interval, collect_threshold=collect_threshold)
             wandb_config["alpha"] = alpha
 
             wandb.init(
@@ -1323,9 +1323,6 @@ class TemplateImageGenerator():
                      "original_image_outputs_softmax": original_image_outputs_softmax, "original_img_label_pred": classes[original_image_pred], "original_img_pred_indx": original_image_pred,
                      }, step=(batch_indx+1))
 
-            if(not(number_of_batch_to_collect is None) and batch_indx == number_of_batch_to_collect - 1):
-                break
-
         final_original_accuracy = (100. * original_correct/total)
         final_accuracy = (100. * reconst_correct/total)
         print("Overall class accuracy over original images:",
@@ -1403,7 +1400,8 @@ class TemplateImageGenerator():
 
     def generate_template_image_per_class(self, exp_type, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                           is_class_segregation_on_ground_truth, template_initial_image_type,
-                                          template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on):
+                                          template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold,
+                                          entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix="root", final_postfix_for_save=""):
         is_log_wandb = not(wand_project_name is None)
         plot_iteration_interval = 5
 
@@ -1427,8 +1425,8 @@ class TemplateImageGenerator():
             seg_over_what_str = 'GT'
 
         alpha = 0
-        self.image_save_prefix_folder = "root/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"
+        self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/" + str(final_postfix_for_save) + "/"
 
         self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
         normalize_image = False
@@ -1445,12 +1443,12 @@ class TemplateImageGenerator():
         class_image, _ = next(iter(per_class_data_loader))
         class_image = class_image.to(self.device, non_blocking=True)
 
-        for repeat in range(2):
+        for repeat in range(1):
 
             if(repeat == 1):
                 alpha = 0.1
-            self.image_save_prefix_folder = "root/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-                seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"
+            self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+                seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/" + str(final_postfix_for_save) + "/"
 
             self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
             if("ENTR" in template_loss_type):
@@ -1468,7 +1466,7 @@ class TemplateImageGenerator():
 
             if(is_log_wandb):
                 wandb_run_name = self.image_save_prefix_folder.replace(
-                    "/", "").replace("root", class_label)
+                    "/", "").replace(root_save_prefix, class_label)
                 wandb_config = self.get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                                      is_class_segregation_on_ground_truth, template_initial_image_type,
                                                      template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
@@ -1520,7 +1518,8 @@ class TemplateImageGenerator():
                         if(is_log_wandb):
                             wandb.log(
                                 {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points,
-                                 "Percent_active_pixels": percent_active_pixels, "non_zero_pixel_points": non_zero_pixel_points}, step=(step_iter+1))
+                                 "Percent_active_pixels": percent_active_pixels, "non_zero_pixel_points": non_zero_pixel_points,
+                                 "final_postfix_for_save": final_postfix_for_save}, step=(step_iter+1))
                     # Backward
                     loss.backward()
 
@@ -1762,7 +1761,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
                                 entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix='root', final_postfix_for_save="aug_indx_1",
                                 custom_model=None, custom_data_loader=None, class_indx_to_visualize=None):
-
+    output_template_list_per_class = None
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     if(dataset == "cifar10"):
         print("Running for CIFAR 10")
@@ -1865,7 +1864,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
             tmp_gen.generate_template_image_per_class(exp_type,
                                                       per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                                       is_class_segregation_on_ground_truth, template_initial_image_type,
-                                                      template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
+                                                      template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save)
 
         elif(exp_type == "TEMPLATE_ACC_WITH_CUSTOM_PLOTS"):
             tmp_gen.generate_accuracies_of_template_image_per_class(
@@ -1879,7 +1878,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                 is_class_segregation_on_ground_truth, template_initial_image_type,
                 template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
         elif(exp_type == "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"):
-            list_of_reconst_images = tmp_gen.generate_all_template_image_per_class(per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
+            list_of_reconst_images = tmp_gen.generate_all_template_image_per_class(per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                                                                    is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                                    template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                                                    exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
