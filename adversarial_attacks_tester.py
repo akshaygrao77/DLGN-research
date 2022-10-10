@@ -139,6 +139,8 @@ def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_ad
     list_of_adv_images = None
     list_of_labels = None
 
+    data_loader = tqdm.tqdm(
+        data_loader, desc='Generating adversarial examples for current class')
     for i, per_class_per_batch_data in enumerate(data_loader):
         images, labels = per_class_per_batch_data
         images, labels = images.to(
@@ -156,7 +158,7 @@ def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_ad
         if(list_of_labels is None):
             list_of_labels = labels
         else:
-            list_of_labels = torch.vstack(
+            list_of_labels = torch.cat(
                 (list_of_labels, labels))
 
         if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
@@ -299,12 +301,12 @@ if __name__ == '__main__':
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK
         exp_type = "ACTIVATION_COMPARE"
-        is_adv_attack_on_train = True
+        is_adv_attack_on_train = False
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_test/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
-        number_of_augment_iterations = 4
+        number_of_augment_iterations = 5
 
         is_targetted = adv_target is not None
         is_log_wandb = not(wand_project_name is None)
@@ -363,8 +365,8 @@ if __name__ == '__main__':
                         wandb.finish()
 
                 elif(exp_type == "ACTIVATION_COMPARE"):
-                    template_image_calculation_batch_size = 1
-                    number_of_batch_to_collect = 1
+                    template_image_calculation_batch_size = 32
+                    number_of_batch_to_collect = None
                     collect_threshold = 0.5
                     torch_seed = 2022
 
