@@ -14,7 +14,9 @@ from external_utils import format_time
 from data_preprocessing import preprocess_dataset_get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
-from visualization import recreate_image, save_image
+from visualization import recreate_image, save_image, true_segregation, PerClassDataset, TemplateImageGenerator, seed_worker
+
+from utils.visualise_utils import calculate_common_among_two_activation_patterns
 
 from cleverhans.torch.attacks.fast_gradient_method import fast_gradient_method
 from cleverhans.torch.attacks.projected_gradient_descent import (
@@ -22,6 +24,21 @@ from cleverhans.torch.attacks.projected_gradient_descent import (
 )
 
 from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net
+
+
+class CustomSimpleDataset(torch.utils.data.Dataset):
+    def __init__(self, list_of_x, list_of_y):
+        self.list_of_x = list_of_x
+        self.list_of_y = list_of_y
+
+    def __len__(self):
+        return len(self.list_of_x)
+
+    def __getitem__(self, idx):
+        x = self.list_of_x[idx]
+        y = self.list_of_y[idx]
+
+        return x, y
 
 
 def apply_adversarial_attack_on_input(input_data, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted):
@@ -54,6 +71,7 @@ def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv
 
 
 def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix="root/adv_images"):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
     acc = 0.
@@ -116,6 +134,125 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
     return acc
 
 
+def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None):
+    is_targetted = adv_target is not None
+    list_of_adv_images = None
+    list_of_labels = None
+
+    for i, per_class_per_batch_data in enumerate(data_loader):
+        images, labels = per_class_per_batch_data
+        images, labels = images.to(
+            device), labels.to(device)
+
+        current_adv_image = apply_adversarial_attack_on_input(
+            images, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted)
+
+        if(list_of_adv_images is None):
+            list_of_adv_images = current_adv_image
+        else:
+            list_of_adv_images = torch.vstack(
+                (list_of_adv_images, current_adv_image))
+
+        if(list_of_labels is None):
+            list_of_labels = labels
+        else:
+            list_of_labels = torch.vstack(
+                (list_of_labels, labels))
+
+        if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
+            break
+
+    per_class_adv_dataset = CustomSimpleDataset(
+        list_of_adv_images, list_of_labels)
+    return per_class_adv_dataset
+
+
+def extract_common_activation_patterns_between_adv_and_normal(true_input_data_list_per_class, model,
+                                                              template_image_calculation_batch_size, number_of_batch_to_collect, collect_threshold, torch_seed, classes,
+                                                              eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target,
+                                                              wand_project_name, wandb_group_name, wandb_run_name, wandb_config):
+    is_log_wandb = not(wand_project_name is None)
+
+    class_indx_to_visualize = [i for i in range(len(classes))]
+    per_class_common_active_percentages = [None] * num_classes
+    per_class_common_active_pixel_counts = [None] * num_classes
+    per_class_common_total_pixel_counts = [None] * num_classes
+
+    for c_indx in class_indx_to_visualize:
+        class_label = classes[c_indx]
+        print("************************************************************ Class:", class_label)
+        if(is_log_wandb):
+            wandb_config["class_label"] = class_label
+            wandb.init(
+                project=f"{wand_project_name}",
+                name=f"{wandb_run_name}",
+                group=f"{wandb_group_name}",
+                config=wandb_config,
+            )
+
+        per_class_dataset = PerClassDataset(
+            true_input_data_list_per_class[c_indx], c_indx)
+
+        coll_seed_gen = torch.Generator()
+        coll_seed_gen.manual_seed(torch_seed)
+
+        model.train(False)
+
+        per_class_data_loader = torch.utils.data.DataLoader(per_class_dataset, batch_size=template_image_calculation_batch_size,
+                                                            shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+
+        tmp_gen = TemplateImageGenerator(
+            model, None)
+
+        print("$$$$$$$$$$$$$$$$$$$$$$$$ Collecting active pixels for original images $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+        # Sending original images for collection
+        tmp_gen.collect_all_active_pixels_into_ymaps(
+            per_class_data_loader, class_label, number_of_batch_to_collect, collect_threshold, is_save_original_image=False)
+        active_maps_actual_images = tmp_gen.get_active_maps()
+        tmp_gen.reset_collection_state()
+
+        per_class_adv_dataset = generate_adv_examples(
+            per_class_data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect)
+
+        coll_seed_gen2 = torch.Generator()
+        coll_seed_gen2.manual_seed(torch_seed)
+
+        per_class_avg_data_loader = torch.utils.data.DataLoader(per_class_adv_dataset, batch_size=template_image_calculation_batch_size,
+                                                                shuffle=True, generator=coll_seed_gen2, worker_init_fn=seed_worker)
+
+        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$ Collecting active pixels for adversarial images $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+        # Sending adversarial images for collection
+        tmp_gen.collect_all_active_pixels_into_ymaps(
+            per_class_avg_data_loader, class_label, number_of_batch_to_collect, collect_threshold, is_save_original_image=False)
+        active_maps_adv_images = tmp_gen.get_active_maps()
+        tmp_gen.reset_collection_state()
+
+        common_active_percentage, common_active_pixels, total_pixels, active_pixels_actual_images, active_pixels_adv_images = calculate_common_among_two_activation_patterns(
+            active_maps_actual_images, active_maps_adv_images)
+
+        percentage_active_original_images = (
+            100. * (active_pixels_actual_images/total_pixels))
+        percentage_active_adversarial_images = (
+            100. * (active_pixels_adv_images/total_pixels))
+
+        per_class_common_active_percentages[c_indx] = common_active_percentage
+        per_class_common_active_pixel_counts[c_indx] = common_active_pixels
+        per_class_common_total_pixel_counts[c_indx] = total_pixels
+
+        print("common_active_pixel_points", common_active_pixels)
+        print("common_percent_active_pixels", common_active_percentage)
+        print("total_pixel_points", total_pixels)
+
+        if(is_log_wandb):
+            wandb.log({"common_active_pixel_points": common_active_pixels, "total_pixel_points": total_pixels,
+                       "percent_common_active_pixels_adv_orig": common_active_percentage, "percentage_active_original_images": percentage_active_original_images,
+                       "percentage_active_adversarial_images": percentage_active_adversarial_images, "active_pixels_original_images": active_pixels_actual_images,
+                       "active_pixels_adversarial_images": active_pixels_adv_images})
+            wandb.finish()
+
+    return per_class_common_active_percentages, per_class_common_active_pixel_counts, per_class_common_total_pixel_counts
+
+
 if __name__ == '__main__':
     dataset = 'mnist'
     model_arch_type = 'conv4_dlgn'
@@ -153,22 +290,21 @@ if __name__ == '__main__':
     if(scheme_type == 'iterative_augmented_model_attack'):
         dataset = 'mnist'
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
-        # wand_project_name = "template_images_visualization-test"
-        wand_project_name = 'adv_attack_on_reconst_augmentation'
+        # wand_project_name = "test_active_adv_attack_on_reconst_augmentation"
+        wand_project_name = 'adv_attack_for_active_pixels_on_reconst_augmentation'
         # wand_project_name = None
-        wandb_group_name = "DS_"+str(dataset) + \
-            "_adv_attack_over_aug_"+str(model_arch_type)
 
         number_of_adversarial_optimization_steps = 161
         adv_attack_type = "PGD"
         adv_target = None
-        exp_type = "ADV_ATTACK"
-        is_adv_attack_on_train = False
+        # ACTIVATION_COMPARE , ADV_ATTACK
+        exp_type = "ACTIVATION_COMPARE"
+        is_adv_attack_on_train = True
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_test/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
-        number_of_augment_iterations = 5
+        number_of_augment_iterations = 4
 
         is_targetted = adv_target is not None
         is_log_wandb = not(wand_project_name is None)
@@ -199,27 +335,57 @@ if __name__ == '__main__':
                 else:
                     eval_loader = testloader
 
-                if(is_log_wandb):
-                    wandb_run_name = str(
-                        model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
-                    wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
-                                                    eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
-                    wandb.init(
-                        project=f"{wand_project_name}",
-                        name=f"{wandb_run_name}",
-                        group=f"{wandb_group_name}",
-                        config=wandb_config,
-                    )
-
                 print("Net:", net)
                 final_postfix_for_save = "ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/aug_indx_{}".format(
                     adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, current_aug_iter_num)
                 save_folder = model_and_data_save_prefix + final_postfix_for_save
-                acc = evaluate_model(net, eval_loader, classes, eps, adv_attack_type,
-                                     number_of_adversarial_optimization_steps, eps_step_size, adv_target, save_folder)
+                if(exp_type == "ADV_ATTACK"):
+                    wandb_group_name = "DS_"+str(dataset) + \
+                        "_adv_attack_over_aug_"+str(model_arch_type)
 
-                if(is_log_wandb):
-                    wandb.log({"eval_acc": acc})
-                    wandb.finish()
+                    if(is_log_wandb):
+                        wandb_run_name = str(
+                            model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
+                                                        eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                        wandb_config["aug_iter_num"] = current_aug_iter_num
+                        wandb.init(
+                            project=f"{wand_project_name}",
+                            name=f"{wandb_run_name}",
+                            group=f"{wandb_group_name}",
+                            config=wandb_config,
+                        )
+
+                    acc = evaluate_model(net, eval_loader, classes, eps, adv_attack_type,
+                                         number_of_adversarial_optimization_steps, eps_step_size, adv_target, save_folder)
+                    if(is_log_wandb):
+                        wandb.log({"eval_acc": acc})
+                        wandb.finish()
+
+                elif(exp_type == "ACTIVATION_COMPARE"):
+                    template_image_calculation_batch_size = 1
+                    number_of_batch_to_collect = 1
+                    collect_threshold = 0.5
+                    torch_seed = 2022
+
+                    wandb_group_name = "DS_"+str(dataset) + "_EXP_"+str(exp_type) +\
+                        "_adv_attack_over_aug_"+str(model_arch_type)
+                    wandb_run_name = str(
+                        model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                    wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
+                                                    eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                    wandb_config["template_image_calculation_batch_size"] = template_image_calculation_batch_size
+                    wandb_config["number_of_batch_to_collect"] = number_of_batch_to_collect
+                    wandb_config["collect_threshold"] = collect_threshold
+                    wandb_config["torch_seed"] = torch_seed
+                    wandb_config["aug_iter_num"] = current_aug_iter_num
+
+                    true_input_data_list_per_class = true_segregation(
+                        eval_loader, num_classes)
+
+                    per_class_common_active_percentages, per_class_common_active_pixel_counts, per_class_common_total_pixel_counts = extract_common_activation_patterns_between_adv_and_normal(true_input_data_list_per_class, net,
+                                                                                                                                                                                               template_image_calculation_batch_size, number_of_batch_to_collect, collect_threshold, torch_seed,
+                                                                                                                                                                                               classes, eps, adv_attack_type,
+                                                                                                                                                                                               number_of_adversarial_optimization_steps, eps_step_size, adv_target, wand_project_name, wandb_group_name, wandb_run_name, wandb_config)
 
     print("Finished execution!!!")

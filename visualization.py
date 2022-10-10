@@ -454,7 +454,7 @@ class TemplateImageGenerator():
 
         self.calculate_entropy_from_maps()
 
-    def collect_all_active_pixels_into_ymaps(self, per_class_data_loader, class_label, number_of_batch_to_collect, collect_threshold):
+    def collect_all_active_pixels_into_ymaps(self, per_class_data_loader, class_label, number_of_batch_to_collect, collect_threshold, is_save_original_image=True):
         self.reset_collection_state()
         self.model.train(False)
 
@@ -463,7 +463,7 @@ class TemplateImageGenerator():
         for i, per_class_per_batch_data in enumerate(per_class_data_loader):
             torch.cuda.empty_cache()
             c_inputs, _ = per_class_per_batch_data
-            if(i == 0 and c_inputs.size()[0] == 1):
+            if(i == 0 and c_inputs.size()[0] == 1 and is_save_original_image):
                 with torch.no_grad():
                     temp_image = recreate_image(
                         c_inputs, False)
@@ -617,6 +617,20 @@ class TemplateImageGenerator():
 
         return loss, active_pixel_points, total_pixel_points
 
+    def get_active_maps(self):
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            conv_outs = self.model.module.linear_conv_outputs
+        else:
+            conv_outs = self.model.linear_conv_outputs
+
+        list_of_active_maps = []
+        for indx in range(len(conv_outs)):
+            each_overall_y = self.overall_y[indx]
+            current_active_map = HardRelu()(each_overall_y)
+            list_of_active_maps.append(current_active_map.clone().detach())
+
+        return list_of_active_maps
+
     def new_calculate_loss_for_template_image(self):
         loss = 0
         if(isinstance(self.model, torch.nn.DataParallel)):
@@ -631,7 +645,7 @@ class TemplateImageGenerator():
             each_conv_output = conv_outs[indx]
             each_overall_y = self.overall_y[indx]
 
-            total_pixel_points += torch.numel(each_conv_output)
+            total_pixel_points += torch.numel(each_overall_y)
             current_active_pixel = torch.count_nonzero(
                 HardRelu()(each_overall_y))
             non_zero_pixel_points += torch.count_nonzero(each_overall_y).item()
@@ -665,7 +679,7 @@ class TemplateImageGenerator():
             each_conv_output = conv_outs[indx]
             each_overall_y = self.overall_y[indx]
 
-            total_pixel_points += torch.numel(each_conv_output)
+            total_pixel_points += torch.numel(each_overall_y)
             current_active_pixel = torch.count_nonzero(
                 HardRelu()(each_overall_y))
             non_zero_pixel_points += torch.count_nonzero(each_overall_y).item()
@@ -1911,7 +1925,7 @@ if __name__ == '__main__':
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 1
+    template_image_calculation_batch_size = 32
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED
     template_loss_type = "TEMP_LOSS"
@@ -1925,7 +1939,7 @@ if __name__ == '__main__':
     torch_seed = 2022
     number_of_image_optimization_steps = 11
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES
-    exp_type = "TEMPLATE_ACC_WITH_CUSTOM_PLOTS"
+    exp_type = "GENERATE_TEMPLATE_IMAGES"
     collect_threshold = 0.95
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
