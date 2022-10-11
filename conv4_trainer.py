@@ -131,6 +131,7 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     dataset = 'mnist'
+    # conv4_dlgn , plain_pure_conv4_dnn
     model_arch_type = 'conv4_dlgn'
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
@@ -191,8 +192,8 @@ if __name__ == '__main__':
         number_of_batch_to_collect = 1
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "template_images_visualization-test"
-        wand_project_name = 'template_visualisation_augmentation'
-        # wand_project_name = 'test_visualisation_augmentation'
+        wand_project_name = "template_visualisation_augmentation"
+        # wand_project_name = None
         wandb_group_name = "DS_"+str(dataset) + \
             "_template_vis_aug_"+str(model_arch_type)
         is_split_validation = False
@@ -201,7 +202,7 @@ if __name__ == '__main__':
         number_of_image_optimization_steps = 161
         # GENERATE_ALL_FINAL_TEMPLATE_IMAGES
         exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
-        collect_threshold = 0.95
+        collect_threshold = 0.5
         entropy_calculation_batch_size = 64
         number_of_batches_to_calculate_entropy_on = None
 
@@ -302,7 +303,7 @@ if __name__ == '__main__':
             else:
                 net = torch.load(best_model_save_path)
                 print(
-                    "Loaded previously trained model for augment iteration:", current_aug_iter_num)
+                    "Loaded previously trained model for augment iteration:{} from path :{}".format(current_aug_iter_num, best_model_save_path))
 
             final_postfix_for_save = "aug_indx_{}/".format(
                 current_aug_iter_num)
@@ -347,7 +348,7 @@ if __name__ == '__main__':
                                         exp_type="GENERATE_TEMPLATE_IMAGES", collect_threshold=collect_threshold, entropy_calculation_batch_size=entropy_calculation_batch_size,
                                         number_of_batches_to_calculate_entropy_on=number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix,
                                         final_postfix_for_save=final_postfix_for_overall_save, custom_model=net,
-                                        custom_data_loader=(trainloader, testloader), class_indx_to_visualize=None)
+                                        custom_data_loader=(trainloader, testloader), class_indx_to_visualize=class_indx_to_visualize)
 
             for current_c_indx in class_indx_to_visualize:
                 class_label = classes[current_c_indx]
