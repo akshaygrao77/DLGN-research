@@ -1134,6 +1134,9 @@ class TemplateImageGenerator():
         alpha = 0
         normalize_image = False
         overall_step = 0
+        average_percent_active_pixels = 0.
+        max_percent_active_pixels = 0.
+        min_percent_active_pixels = 100.
 
         if(not(plot_iteration_interval is None)):
             number_of_intervals = (
@@ -1183,7 +1186,9 @@ class TemplateImageGenerator():
             self.collect_entropy_of_pixels_into_ymaps(
                 entropy_per_class_data_loader, class_label, number_of_batch_to_collect=number_of_batches_to_calculate_entropy_on)
 
+        batch_count = 0
         for batch_indx, per_class_data in enumerate(per_class_per_batch_data_loader):
+            batch_count += 1
             torch.cuda.empty_cache()
 
             class_image, original_label = per_class_data
@@ -1219,6 +1224,11 @@ class TemplateImageGenerator():
                         print("total_pixel_points", total_pixel_points)
                         print("Percentage of active pixels:",
                               percent_active_pixels)
+                        if(percent_active_pixels > max_percent_active_pixels):
+                            max_percent_active_pixels = percent_active_pixels
+                        if(percent_active_pixels < min_percent_active_pixels):
+                            min_percent_active_pixels = percent_active_pixels
+                        average_percent_active_pixels += percent_active_pixels
                         if(is_log_wandb):
                             wandb.log(
                                 {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points, "non_zero_pixel_points": non_zero_pixel_points,
@@ -1337,6 +1347,7 @@ class TemplateImageGenerator():
                      "original_image_outputs_softmax": original_image_outputs_softmax, "original_img_label_pred": classes[original_image_pred], "original_img_pred_indx": original_image_pred,
                      }, step=(batch_indx+1))
 
+        average_percent_active_pixels = average_percent_active_pixels / batch_count
         final_original_accuracy = (100. * original_correct/total)
         final_accuracy = (100. * reconst_correct/total)
         print("Overall class accuracy over original images:",
@@ -1404,7 +1415,10 @@ class TemplateImageGenerator():
         else:
             if(is_log_wandb):
                 wandb.log({"final_acc_ov_reconst": final_accuracy,
-                          "final_acc_ov_orig": final_original_accuracy})
+                          "final_acc_ov_orig": final_original_accuracy,
+                          "average_percent_active_pixels":average_percent_active_pixels,
+                          "min_percent_active_pixels":min_percent_active_pixels,
+                          "max_percent_active_pixels":max_percent_active_pixels})
 
         if(is_log_wandb):
             wandb.finish()
