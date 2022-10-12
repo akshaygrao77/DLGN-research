@@ -132,7 +132,7 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'plain_pure_conv4_dnn'
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
     batch_size = 32
@@ -295,6 +295,7 @@ if __name__ == '__main__':
                 best_test_acc = train_model(net,
                                             augment_trainloader, testloader, current_epoch, criterion, optimizer, best_model_save_path,
                                             wand_project_name)
+                net = torch.load(best_model_save_path)
                 if(is_log_wandb):
                     wandb.log({"best_test_acc": best_test_acc})
                     wandb.finish()
