@@ -13,7 +13,7 @@ from external_utils import format_time
 from data_preprocessing import preprocess_dataset_get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
-from visualization import recreate_image, save_image, true_segregation, PerClassDataset, TemplateImageGenerator, seed_worker
+from visualization import recreate_image, save_image, true_segregation, PerClassDataset, TemplateImageGenerator, seed_worker, quick_visualization_on_config
 
 from utils.visualise_utils import calculate_common_among_two_activation_patterns
 
@@ -123,6 +123,82 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
 
             save_image(orig_image, orig_im_path)
             save_image(adv_image, adv_im_path)
+
+        cur_time = time.time()
+        step_time = cur_time - begin_time
+        acc = 100.*correct/total
+        loader.set_postfix(
+            acc=acc, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
+
+    return acc
+
+
+def evaluate_model_via_reconstructed(net, dataloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    correct = 0
+    total = 0
+    acc = 0.
+    is_targetted = adv_target is not None
+
+    net.train(False)
+
+    loader = tqdm.tqdm(dataloader, desc='Evaluating via reconstruction')
+    # since we're not training, we don't need to calculate the gradients for our outputs
+    # with torch.no_grad():
+    for batch_idx, data in enumerate(loader, 0):
+        begin_time = time.time()
+        images, labels = data
+        images, labels = images.to(
+            device), labels.to(device)
+
+        adv_images = apply_adversarial_attack_on_input(
+            images, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted)
+
+        reconst_adv_images = quick_visualization_on_config(
+            net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
+            images_to_collect_upon=adv_images, number_of_image_optimization_steps=number_of_image_optimization_steps, template_loss_type=template_loss_type)
+
+        # calculate outputs by running images through the network
+        outputs = net(reconst_adv_images)
+        # the class with the highest energy is what we choose as prediction
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+        if(batch_idx % 20 == 0 and save_adv_image_prefix is not None):
+            orig_image = recreate_image(
+                images[0], unnormalize=False)
+
+            adv_image = recreate_image(
+                adv_images[0], unnormalize=False)
+
+            reconst_adv_image = recreate_image(
+                reconst_adv_images[0], unnormalize=False)
+
+            orig_save_folder = save_adv_image_prefix + "/orig/"
+            adv_save_folder = save_adv_image_prefix + "/adver/"
+            recon_adv_save_folder = save_adv_image_prefix + "/recons_adver/"
+            if not os.path.exists(orig_save_folder):
+                os.makedirs(orig_save_folder)
+            orig_im_path = orig_save_folder+'/original_c' + \
+                str(classes[labels[0]])+'_batch_ind_' + \
+                str(batch_idx) + '.jpg'
+
+            if not os.path.exists(adv_save_folder):
+                os.makedirs(adv_save_folder)
+            adv_im_path = adv_save_folder+'/adv_c' + \
+                str(classes[labels[0]])+'_batch_ind_' + \
+                str(batch_idx) + '.jpg'
+
+            if not os.path.exists(recon_adv_save_folder):
+                os.makedirs(recon_adv_save_folder)
+            recon_adv_im_path = recon_adv_save_folder+'/adv_c' + \
+                str(classes[labels[0]])+'_batch_ind_' + \
+                str(batch_idx) + '.jpg'
+
+            save_image(orig_image, orig_im_path)
+            save_image(adv_image, adv_im_path)
+            save_image(reconst_adv_image, recon_adv_im_path)
 
         cur_time = time.time()
         step_time = cur_time - begin_time
@@ -392,22 +468,22 @@ if __name__ == '__main__':
         dataset = 'mnist'
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "test_common_active_on_reconst_augmentation"
-        # wand_project_name = "test_active_adv_attack_on_reconst_augmentation"
+        wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation"
         # wand_project_name = 'adv_attack_for_active_pixels_on_reconst_augmentation'
-        wand_project_name = 'common_active_pixels_on_reconst_augmentation'
+        # wand_project_name = 'common_active_pixels_on_reconst_augmentation'
         # wand_project_name = None
 
         number_of_adversarial_optimization_steps = 161
         adv_attack_type = "PGD"
         adv_target = None
-        # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL
-        exp_type = "ACT_COMPARE_RECONST_ORIGINAL"
-        is_adv_attack_on_train = True
+        # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST
+        exp_type = "ADV_ATTACK_EVAL_VIA_RECONST"
+        is_adv_attack_on_train = False
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_test/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
-        number_of_augment_iterations = 4
+        number_of_augment_iterations = 5
 
         is_targetted = adv_target is not None
         is_log_wandb = not(wand_project_name is None)
@@ -467,6 +543,35 @@ if __name__ == '__main__':
                                          number_of_adversarial_optimization_steps, eps_step_size, adv_target, save_folder)
                     if(is_log_wandb):
                         wandb.log({"eval_acc": acc})
+                        wandb.finish()
+
+                elif(exp_type == "ADV_ATTACK_EVAL_VIA_RECONST"):
+                    wandb_group_name = "DS_"+str(dataset) + \
+                        "_adv_attack_over_aug_"+str(model_arch_type)
+                    number_of_image_optimization_steps = 141
+                    template_initial_image_type = 'zero_init_image'
+                    template_loss_type = "TEMP_LOSS"
+
+                    if(is_log_wandb):
+                        wandb_run_name = str(
+                            model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
+                                                        eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                        wandb_config["aug_iter_num"] = current_aug_iter_num
+                        wandb_config["number_of_image_optimization_steps"] = number_of_image_optimization_steps
+                        wandb_config["template_initial_image_type"] = template_initial_image_type
+                        wandb_config["template_loss_type"] = template_loss_type
+                        wandb.init(
+                            project=f"{wand_project_name}",
+                            name=f"{wandb_run_name}",
+                            group=f"{wandb_group_name}",
+                            config=wandb_config,
+                        )
+                    acc = evaluate_model_via_reconstructed(net, eval_loader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
+                                                           template_loss_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, save_folder)
+
+                    if(is_log_wandb):
+                        wandb.log({"eval_acc_via_reconst": acc})
                         wandb.finish()
 
                 elif(exp_type == "ACTIVATION_COMPARE"):

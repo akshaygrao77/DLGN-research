@@ -1119,6 +1119,61 @@ class TemplateImageGenerator():
               self.image_save_prefix_folder)
         return list_of_reconst_images
 
+    def generate_template_image_over_given_image(self, image_to_collect_upon, number_of_image_optimization_steps, template_loss_type):
+        self.initial_image = preprocess_image(
+            self.original_image.cpu().clone().detach().numpy(), normalize=False)
+        self.initial_image = self.initial_image.to(self.device)
+        self.initial_image.requires_grad_()
+
+        image_to_collect_upon = torch.unsqueeze(image_to_collect_upon, 0)
+        image_to_collect_upon = image_to_collect_upon.to(self.device)
+        per_class_data = image_to_collect_upon, None
+        self.reset_collection_state()
+        self.collect_active_pixel_per_batch(
+            per_class_data)
+        # Collect threshold doesn't matter since collection it is over a single image
+        self.update_overall_y_maps(collect_threshold=0.95)
+
+        step_size = 0.01
+        with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for given image") as pbar:
+            for step_iter in pbar:
+                pbar.set_description(f"Iteration {step_iter+1}")
+
+                outputs = self.model(self.initial_image)
+
+                loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
+                    template_loss_type, class_indx=0, outputs=outputs)
+
+                if(step_iter == 0 and "TEMP" in template_loss_type):
+                    percent_active_pixels = float((
+                        active_pixel_points/total_pixel_points)*100)
+                    print("active_pixel_points", active_pixel_points)
+                    print("total_pixel_points", total_pixel_points)
+                    print("Percentage of active pixels:",
+                          percent_active_pixels)
+
+                # print("loss", loss)
+                # Backward
+                loss.backward()
+
+                unnorm_gradients = self.initial_image.grad
+                # print("Original self.initial_image gradients", gradients)
+
+                gradients = unnorm_gradients / \
+                    torch.std(unnorm_gradients) + 1e-8
+
+                # print("After normalize self.initial_image gradients", gradients)
+
+                with torch.no_grad():
+                    self.initial_image = self.initial_image - gradients*step_size
+                    # self.initial_image = 0.9 * self.initial_image
+                    self.initial_image = torch.clamp(
+                        self.initial_image, -1, 1)
+
+                self.initial_image.requires_grad_()
+
+        return self.initial_image
+
     def generate_template_image_per_class(self, exp_type, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                           is_class_segregation_on_ground_truth, template_initial_image_type,
                                           template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold,
@@ -1477,6 +1532,35 @@ def get_model_from_loader(model_arch_type, dataset):
     return model
 
 
+def get_initial_image(dataset, template_initial_image_type):
+    if(dataset == "cifar10"):
+        if(template_initial_image_type == 'zero_init_image'):
+            return torch.from_numpy(np.uint8(np.random.uniform(0, 1, (3, 32, 32))))
+    elif(dataset == "mnist"):
+        if(template_initial_image_type == 'zero_init_image'):
+            return torch.from_numpy(np.uint8(np.random.uniform(0, 1, (1, 28, 28))))
+
+
+def quick_visualization_on_config(model, dataset, exp_type, template_initial_image_type, images_to_collect_upon, number_of_image_optimization_steps, template_loss_type):
+    tmp_gen = TemplateImageGenerator(
+        model, get_initial_image(dataset, template_initial_image_type))
+    if(exp_type == "GENERATE_TEMPLATE_GIVEN_IMAGE"):
+        return tmp_gen.generate_template_image_over_given_image(
+            images_to_collect_upon, number_of_image_optimization_steps, template_loss_type)
+    elif(exp_type == "GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES"):
+        list_of_reconst_images = None
+        for each_image_to_collect_upon in images_to_collect_upon:
+            current_reconst_image = tmp_gen.generate_template_image_over_given_image(
+                each_image_to_collect_upon, number_of_image_optimization_steps, template_loss_type)
+            if(list_of_reconst_images is None):
+                list_of_reconst_images = current_reconst_image
+            else:
+                list_of_reconst_images = torch.vstack(
+                    (list_of_reconst_images, current_reconst_image))
+
+        return list_of_reconst_images
+
+
 def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
@@ -1572,14 +1656,8 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
         # per_class_loader = torch.utils.data.DataLoader(per_class_dataset, batch_size=32,
         #                                                shuffle=False)
 
-        if(dataset == "cifar10"):
-            if(template_initial_image_type == 'zero_init_image'):
-                tmp_gen = TemplateImageGenerator(
-                    model, torch.from_numpy(np.uint8(np.random.uniform(0, 1, (3, 32, 32)))))
-        elif(dataset == "mnist"):
-            if(template_initial_image_type == 'zero_init_image'):
-                tmp_gen = TemplateImageGenerator(
-                    model, torch.from_numpy(np.uint8(np.random.uniform(0, 1, (1, 28, 28)))))
+        tmp_gen = TemplateImageGenerator(
+            model, get_initial_image(dataset, template_initial_image_type))
 
         if(exp_type == "GENERATE_TEMPLATE_IMAGES"):
             tmp_gen.generate_template_image_per_class(exp_type,
