@@ -69,7 +69,7 @@ def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv
     return wandb_config
 
 
-def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix="root/adv_images"):
+def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
@@ -96,7 +96,7 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-        if(batch_idx % 10 == 0):
+        if(batch_idx % 20 == 0 and save_adv_image_prefix is not None):
             orig_image = recreate_image(
                 images[0], unnormalize=False)
             # print("orig_image.shape::",
