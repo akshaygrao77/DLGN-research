@@ -78,6 +78,12 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, best
             wandb.log({"train_acc": train_acc, "test_acc": test_acc})
 
         print("Test_acc: ", test_acc)
+        per_epoch_model_save_path = best_model_save_path.replace(
+            "_dir.pt", "")
+        if not os.path.exists(per_epoch_model_save_path):
+            os.makedirs(per_epoch_model_save_path)
+        per_epoch_model_save_path += "/epoch_{}_dir.pt".format(epoch)
+        torch.save(net, per_epoch_model_save_path)
         if(test_acc > best_test_acc):
             best_test_acc = test_acc
             torch.save(
@@ -181,7 +187,7 @@ if __name__ == '__main__':
     if(scheme_type == 'iterative_augmenting'):
         dataset = 'mnist'
         # If False, then on test
-        is_template_image_on_train = False
+        is_template_image_on_train = True
         # If False, then segregation is over model prediction
         is_class_segregation_on_ground_truth = True
         template_initial_image_type = 'zero_init_image'
@@ -202,7 +208,7 @@ if __name__ == '__main__':
         number_of_image_optimization_steps = 161
         # GENERATE_ALL_FINAL_TEMPLATE_IMAGES
         exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
-        collect_threshold = 0.5
+        collect_threshold = 0.75
         entropy_calculation_batch_size = 64
         number_of_batches_to_calculate_entropy_on = None
 
