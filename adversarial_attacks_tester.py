@@ -468,8 +468,8 @@ if __name__ == '__main__':
         dataset = 'mnist'
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "test_common_active_on_reconst_augmentation"
-        wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation"
-        # wand_project_name = 'adv_attack_for_active_pixels_on_reconst_augmentation'
+        # wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation"
+        wand_project_name = 'adv_attack_for_active_pixels_on_reconst_augmentation'
         # wand_project_name = 'common_active_pixels_on_reconst_augmentation'
         # wand_project_name = None
 
@@ -477,11 +477,11 @@ if __name__ == '__main__':
         adv_attack_type = "PGD"
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST
-        exp_type = "ADV_ATTACK_EVAL_VIA_RECONST"
-        is_adv_attack_on_train = False
+        exp_type = "ACTIVATION_COMPARE"
+        is_adv_attack_on_train = True
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_test/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
         number_of_augment_iterations = 5
 
@@ -519,8 +519,8 @@ if __name__ == '__main__':
                     eval_loader = testloader
 
                 print("Net:", net)
-                final_postfix_for_save = "ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/aug_indx_{}".format(
-                    adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, current_aug_iter_num)
+                final_postfix_for_save = "ADV_SAVES/exp_type_{}/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/aug_indx_{}".format(
+                    exp_type,adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, current_aug_iter_num)
                 save_folder = model_and_data_save_prefix + final_postfix_for_save
                 if(exp_type == "ADV_ATTACK"):
                     wandb_group_name = "DS_"+str(dataset) + \
@@ -577,7 +577,7 @@ if __name__ == '__main__':
                 elif(exp_type == "ACTIVATION_COMPARE"):
                     template_image_calculation_batch_size = 32
                     number_of_batch_to_collect = None
-                    collect_threshold = 0.5
+                    collect_threshold = 0.95
                     torch_seed = 2022
 
                     wandb_group_name = "DS_"+str(dataset) + "_EXP_"+str(exp_type) +\
@@ -602,7 +602,7 @@ if __name__ == '__main__':
                 elif(exp_type == "ACT_COMPARE_RECONST_ORIGINAL"):
                     template_image_calculation_batch_size = 32
                     number_of_batch_to_collect = None
-                    collect_threshold = 0.5
+                    collect_threshold = 0.95
                     torch_seed = 2022
 
                     wandb_group_name = "DS_"+str(dataset) + "_EXP_"+str(exp_type) +\
