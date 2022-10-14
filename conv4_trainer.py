@@ -9,7 +9,7 @@ import os
 import wandb
 
 from external_utils import format_time
-from data_preprocessing import preprocess_dataset_get_data_loader
+from utils.data_preprocessing import preprocess_dataset_get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
 from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net

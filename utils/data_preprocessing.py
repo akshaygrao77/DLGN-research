@@ -3,6 +3,7 @@ import torchvision
 
 import math
 import numpy as np
+from tqdm import tqdm
 
 from keras.datasets import mnist
 from algos.dlgn_conv_preprocess import add_channel_to_image
@@ -21,6 +22,97 @@ def get_data_loader(x_data, labels, bs, orig_labels=None):
     dataloader = torch.utils.data.DataLoader(
         merged_data, shuffle=False, batch_size=bs)
     return dataloader
+
+
+def segregate_input_over_labels(model, data_loader, num_classes):
+    print("Segregating predicted labels")
+    # We don't need gradients on to do reporting
+    model.train(False)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    input_data_list_per_class = [None] * num_classes
+    for i in range(num_classes):
+        input_data_list_per_class[i] = []
+
+    data_loader = tqdm(data_loader, desc='Processing loader')
+    for i, inp_data in enumerate(data_loader):
+        input_data, _ = inp_data
+
+        input_data = input_data.to(device)
+
+        outputs = model(input_data)
+
+        outputs = outputs.softmax(dim=1).max(1).indices
+
+        for indx in range(len(outputs)):
+            each_out = outputs[indx]
+            input_data_list_per_class[each_out].append(input_data[indx])
+
+    return input_data_list_per_class
+
+
+def true_segregation(data_loader, num_classes):
+    input_data_list_per_class = [0] * num_classes
+    for i in range(num_classes):
+        input_data_list_per_class[i] = []
+
+    data_loader = tqdm(data_loader, desc='Processing original loader')
+    for i, inp_data in enumerate(data_loader):
+        input_image, labels = inp_data
+        for indx in range(len(labels)):
+            each_label = labels[indx]
+            input_data_list_per_class[each_label].append(input_image[indx])
+    return input_data_list_per_class
+
+
+def print_segregation_info(input_data_list_per_class):
+    sum = 0
+    for indx in range(len(input_data_list_per_class)):
+        each_inp = input_data_list_per_class[indx]
+        length = len(each_inp)
+        sum += length
+        print("Indx {} len:{}".format(indx, length))
+    print("Sum", sum)
+
+
+def segregate_classes(model,trainloader,testloader,num_classes,is_template_image_on_train, is_class_segregation_on_ground_truth):
+    input_data_list_per_class = None
+
+    if(is_template_image_on_train):
+        train_repdicted_input_data_list_per_class = segregate_input_over_labels(
+            model, trainloader, num_classes)
+
+        print("train Model segregation of classes:")
+        print_segregation_info(train_repdicted_input_data_list_per_class)
+
+        train_true_input_data_list_per_class = true_segregation(
+            trainloader, num_classes)
+
+        print("trainset Ground truth segregation of classes:")
+        print_segregation_info(train_true_input_data_list_per_class)
+        if(is_class_segregation_on_ground_truth):
+            input_data_list_per_class = train_true_input_data_list_per_class
+        else:
+            input_data_list_per_class = train_repdicted_input_data_list_per_class
+    else:
+        test_predicted_input_data_list_per_class = segregate_input_over_labels(
+            model, testloader, num_classes)
+
+        print("Model segregation of classes:")
+        print_segregation_info(test_predicted_input_data_list_per_class)
+
+        test_true_input_data_list_per_class = true_segregation(
+            testloader, num_classes)
+
+        print("Ground truth segregation of classes:")
+        print_segregation_info(test_true_input_data_list_per_class)
+
+        if(is_class_segregation_on_ground_truth):
+            input_data_list_per_class = test_true_input_data_list_per_class
+        else:
+            input_data_list_per_class = test_predicted_input_data_list_per_class
+
+    return input_data_list_per_class
 
 
 def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):

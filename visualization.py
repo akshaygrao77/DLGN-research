@@ -7,19 +7,19 @@ import numpy as np
 from tqdm import tqdm, trange
 from torch.autograd import Variable
 import subprocess
-import copy
 import math
-
-from structure.dlgn_conv_config_structure import DatasetConfig
-from configs.dlgn_conv_config import HardRelu
-from data_preprocessing import preprocess_dataset_get_data_loader
-
 import torch.backends.cudnn as cudnn
 
 import wandb
 import random
 
 import time
+
+from structure.dlgn_conv_config_structure import DatasetConfig
+from configs.dlgn_conv_config import HardRelu
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
+
+
 from external_utils import format_time
 
 from vgg_net_16 import DLGN_VGG_Network, DLGN_VGG_LinearNetwork, DLGN_VGG_WeightNetwork
@@ -30,113 +30,13 @@ from cross_verification_conv4_sim_vgg_without_bn import Net_sim_VGG_without_BN
 from vgg_dlgn import vgg19, vgg19_with_inbuilt_norm
 from cross_verification_inbuilt_norm import Net_with_inbuilt_norm, Net_with_inbuilt_norm_with_bn
 from external_utils import DataNormalization_Layer
-
-
-def format_np_output(np_arr):
-    """
-        This is a (kind of) bandaid fix to streamline saving procedure.
-        It converts all the outputs to the same format which is 3xWxH
-        with using sucecssive if clauses.
-    Args:
-        im_as_arr (Numpy array): Matrix of shape 1xWxH or WxH or 3xWxH
-    """
-    # Phase/Case 1: The np arr only has 2 dimensions
-    # Result: Add a dimension at the beginning
-    if len(np_arr.shape) == 2:
-        np_arr = np.expand_dims(np_arr, axis=0)
-    # Phase/Case 2: Np arr has only 1 channel (assuming first dim is channel)
-    # Result: Repeat first channel and convert 1xWxH to 3xWxH
-    if np_arr.shape[0] == 1:
-        np_arr = np.repeat(np_arr, 3, axis=0)
-    # Phase/Case 3: Np arr is of shape 3xWxH
-    # Result: Convert it to WxHx3 in order to make it saveable by PIL
-    if np_arr.shape[0] == 3:
-        np_arr = np_arr.transpose(1, 2, 0)
-    # Phase/Case 4: NP arr is normalized between 0-1
-    # Result: Multiply with 255 and change type to make it saveable by PIL
-    if np.max(np_arr) <= 1:
-        np_arr = (np_arr*255).astype(np.uint8)
-    return np_arr
-
-
-def save_image(im, path):
-    """
-        Saves a numpy matrix or PIL image as an image
-    Args:
-        im_as_arr (Numpy array): Matrix of shape DxWxH
-        path (str): Path to the image
-    """
-    if isinstance(im, (np.ndarray, np.generic)):
-        im = format_np_output(im)
-        im = Image.fromarray(im)
-    im.save(path)
-
-
-def true_segregation(data_loader, num_classes):
-    input_data_list_per_class = [0] * num_classes
-    for i in range(num_classes):
-        input_data_list_per_class[i] = []
-
-    data_loader = tqdm(data_loader, desc='Processing original loader')
-    for i, inp_data in enumerate(data_loader):
-        input_image, labels = inp_data
-        for indx in range(len(labels)):
-            each_label = labels[indx]
-            input_data_list_per_class[each_label].append(input_image[indx])
-    return input_data_list_per_class
+from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, format_np_output
 
 
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2**32
     np.random.seed(worker_id + worker_seed)
     random.seed(worker_id - worker_seed)
-
-
-def segregate_input_over_labels(model, data_loader, num_classes):
-    print("Segregating predicted labels")
-    # We don't need gradients on to do reporting
-    model.train(False)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    input_data_list_per_class = [None] * num_classes
-    for i in range(num_classes):
-        input_data_list_per_class[i] = []
-
-    data_loader = tqdm(data_loader, desc='Processing loader')
-    for i, inp_data in enumerate(data_loader):
-        input_data, _ = inp_data
-
-        input_data = input_data.to(device)
-
-        outputs = model(input_data)
-
-        outputs = outputs.softmax(dim=1).max(1).indices
-
-        for indx in range(len(outputs)):
-            each_out = outputs[indx]
-            input_data_list_per_class[each_out].append(input_data[indx])
-
-    return input_data_list_per_class
-
-
-def add_lower_dimension_vectors_within_itself(input_tensor):
-    init_dim = input_tensor[0]
-    for i in range(1, input_tensor.size()[0]):
-        t = input_tensor[i]
-        init_dim = init_dim + t
-
-    return init_dim
-
-
-def multiply_lower_dimension_vectors_within_itself(input_tensor, collect_threshold):
-    init_dim = input_tensor[0]
-    for i in range(1, input_tensor.size()[0]):
-        t = input_tensor[i]
-        # init_dim = init_dim * t
-        init_dim = init_dim + t
-
-    init_dim = HardRelu()(init_dim - 0.50 * input_tensor.size()[0])
-    return init_dim
 
 
 def show_gpu(msg):
@@ -198,35 +98,6 @@ def preprocess_image(im_as_arr, normalize=True, resize_im=False):
     # Convert to Pytorch variable
     im_as_var = Variable(im_as_ten)
     return im_as_var
-
-
-def recreate_image(im_as_var, unnormalize=True):
-    """
-        Recreates images from a torch variable, sort of reverse preprocessing
-    Args:
-        im_as_var (torch variable): Image to recreate
-    returns:
-        recreated_im (numpy arr): Recreated image in array
-    """
-    reverse_mean = [0.4914, 0.4822, 0.4465]
-    reverse_std = [1/0.2023, 1/0.1994, 1/0.2010]
-
-    recreated_im = copy.copy(im_as_var.cpu().clone().detach().numpy()[0])
-    arr_max = np.amax(recreated_im)
-    arr_min = np.amin(recreated_im)
-    recreated_im = (recreated_im-arr_min)/(arr_max-arr_min)
-
-    if(unnormalize):
-        for c in range(3):
-            recreated_im[c] /= reverse_std[c]
-            recreated_im[c] -= reverse_mean[c]
-    # recreated_im[recreated_im > 1] = 1
-    # recreated_im[recreated_im < 0] = 0
-    recreated_im = np.round(recreated_im * 255)
-
-    recreated_im = np.uint8(recreated_im)
-    # recreated_im = recreated_im..transpose(1, 2, 0)
-    return recreated_im
 
 
 class PerClassDataset(torch.utils.data.Dataset):
@@ -1432,16 +1303,6 @@ class TemplateImageGenerator():
                       self.image_save_prefix_folder)
 
 
-def print_segregation_info(input_data_list_per_class):
-    sum = 0
-    for indx in range(len(input_data_list_per_class)):
-        each_inp = input_data_list_per_class[indx]
-        length = len(each_inp)
-        sum += length
-        print("Indx {} len:{}".format(indx, length))
-    print("Sum", sum)
-
-
 def get_model_from_loader(model_arch_type, dataset):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("Loading model")
@@ -1600,45 +1461,13 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
         model_arch_type, dataset))
     if(custom_model is None):
         model = get_model_from_loader(model_arch_type, dataset)
+        print("Model loaded is:", model)
     else:
         model = custom_model
         print("Custom model provided in arguments will be used")
 
-    input_data_list_per_class = None
-
-    if(is_template_image_on_train):
-        train_repdicted_input_data_list_per_class = segregate_input_over_labels(
-            model, trainloader, num_classes)
-
-        print("train Model segregation of classes:")
-        print_segregation_info(train_repdicted_input_data_list_per_class)
-
-        train_true_input_data_list_per_class = true_segregation(
-            trainloader, num_classes)
-
-        print("trainset Ground truth segregation of classes:")
-        print_segregation_info(train_true_input_data_list_per_class)
-        if(is_class_segregation_on_ground_truth):
-            input_data_list_per_class = train_true_input_data_list_per_class
-        else:
-            input_data_list_per_class = train_repdicted_input_data_list_per_class
-    else:
-        test_predicted_input_data_list_per_class = segregate_input_over_labels(
-            model, testloader, num_classes)
-
-        print("Model segregation of classes:")
-        print_segregation_info(test_predicted_input_data_list_per_class)
-
-        test_true_input_data_list_per_class = true_segregation(
-            testloader, num_classes)
-
-        print("Ground truth segregation of classes:")
-        print_segregation_info(test_true_input_data_list_per_class)
-
-        if(is_class_segregation_on_ground_truth):
-            input_data_list_per_class = test_true_input_data_list_per_class
-        else:
-            input_data_list_per_class = test_predicted_input_data_list_per_class
+    input_data_list_per_class = segregate_classes(
+        model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth)
 
     if(exp_type == "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"):
         output_template_list_per_class = [None] * num_classes
@@ -1694,7 +1523,7 @@ if __name__ == '__main__':
     # Try it with a smaller image
     print("Start")
     # mnist , cifar10
-    dataset = 'cifar10'
+    dataset = 'mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -1703,8 +1532,8 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_inbuilt_norm_with_flip_crop
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
-    # plain_pure_conv4_dnn
-    model_arch_type = 'cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop'
+    # plain_pure_conv4_dnn , conv4_dlgn
+    model_arch_type = 'conv4_dlgn'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
@@ -1714,7 +1543,7 @@ if __name__ == '__main__':
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED
     template_loss_type = "TEMP_LOSS"
-    number_of_batch_to_collect = None
+    number_of_batch_to_collect = 1
     # wand_project_name = "cifar10_all_images_based_template_visualizations"
     # wand_project_name = "template_images_visualization-test"
     wand_project_name = None

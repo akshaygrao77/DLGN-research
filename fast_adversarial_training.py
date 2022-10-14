@@ -9,7 +9,7 @@ import os
 import wandb
 
 from external_utils import format_time
-from data_preprocessing import preprocess_dataset_get_data_loader
+from utils.data_preprocessing import preprocess_dataset_get_data_loader
 from adversarial_attacks_tester import evaluate_model
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
@@ -120,7 +120,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'plain_pure_conv4_dnn'
     # scheme_type = ''
     # batch_size = 128
     wand_project_name = "fast_adv_training_and_visualisation"
@@ -193,8 +193,8 @@ if __name__ == '__main__':
         fast_adv_attack_type_list = ['FGSM', 'PGD']
         number_of_adversarial_optimization_steps_list = [40, 80]
 
-        for number_of_adversarial_optimization_steps in number_of_adversarial_optimization_steps_list:
-            for fast_adv_attack_type in fast_adv_attack_type_list:
+        for fast_adv_attack_type in fast_adv_attack_type_list:
+            for number_of_adversarial_optimization_steps in number_of_adversarial_optimization_steps_list:
                 for eps in eps_list:
                     root_save_prefix = "root/ADVER_RECONS_SAVE/"
                     model_save_prefix = "root/model/save/" + \
