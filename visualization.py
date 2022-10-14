@@ -18,6 +18,7 @@ import time
 from structure.dlgn_conv_config_structure import DatasetConfig
 from configs.dlgn_conv_config import HardRelu
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
+from structure.generic_structure import PerClassDataset
 
 
 from external_utils import format_time
@@ -98,20 +99,6 @@ def preprocess_image(im_as_arr, normalize=True, resize_im=False):
     # Convert to Pytorch variable
     im_as_var = Variable(im_as_ten)
     return im_as_var
-
-
-class PerClassDataset(torch.utils.data.Dataset):
-    def __init__(self, list_of_images, label):
-        self.list_of_images = list_of_images
-        self.label = label
-
-    def __len__(self):
-        return len(self.list_of_images)
-
-    def __getitem__(self, idx):
-        image = self.list_of_images[idx]
-
-        return image, self.label
 
 
 class SaveOutput:
