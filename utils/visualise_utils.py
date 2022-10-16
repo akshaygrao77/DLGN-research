@@ -129,7 +129,7 @@ def multiply_lower_dimension_vectors_within_itself(input_tensor, collect_thresho
 def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viridis'):
     list_of_final_heatmap_data = []
     row, col = determine_row_col_from_features(heatmap_data.shape[0])
-    
+
     ix = 1
     assert row * \
         col == heatmap_data.shape[0], 'All channels of heatmap data is not fit by row,col'
@@ -141,8 +141,10 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
     cbar_ax = fig.add_axes([.91, .3, .03, .4])
     for r in range(row):
         for c in range(col):
-            
-            plt_ax = ax_list[r][c]
+            if(col != 1):
+                plt_ax = ax_list[r][c]
+            else:
+                plt_ax = ax_list
             plt_ax.set_xticks([])
             plt_ax.set_yticks([])
             plt_ax.set_title(ix)
@@ -175,7 +177,7 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
 def construct_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viridis'):
     list_of_final_heatmap_data = []
     row, col = determine_row_col_from_features(heatmap_data.shape[0])
-    
+
     ix = 1
     assert row * \
         col == heatmap_data.shape[0], 'All channels of heatmap data is not fit by row,col'
@@ -183,32 +185,21 @@ def construct_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viri
     a = row * heatmap_data[0].shape[0]
     b = col*heatmap_data[0].shape[1]
     fig, ax_list = plt.subplots(
-        row, (2*col), sharex=True, sharey=True, figsize=(b/2, a/2))
+        row, col, sharex=True, sharey=True, figsize=(b/2, a/2))
     for r in range(row):
         for c in range(col):
-            
-            ind_c = 2*c
-            plt_ax = ax_list[r][ind_c]
-            cbar_ax = ax_list[r][ind_c+1]
-            plt_ax.set_xticks([])
-            plt_ax.set_yticks([])
+            ind_c = c
+            if(col != 1):
+                plt_ax = ax_list[r][ind_c]
+            else:
+                plt_ax = ax_list
+
             plt_ax.set_title(ix)
             current_heatmap_data = heatmap_data[ix-1, :, :]
 
-            # # Shift the range between [0,1]
-            # arr_max = np.amax(current_heatmap_data)
-            # arr_min = np.amin(current_heatmap_data)
-            # current_heatmap_data = (
-            #     current_heatmap_data - arr_min)/(arr_max - arr_min)
-
-            # current_heatmap_data *= 255
-            # current_heatmap_data = np.clip(
-            #     current_heatmap_data, 0, 255).astype('uint8')
-
-            # sns.set(rc={'figure.figsize': current_heatmap_data.shape})
             sns.heatmap(current_heatmap_data, ax=plt_ax,
                         cbar=True,
-                        cbar_ax=cbar_ax, cmap=cmap)
+                        cmap=cmap)
             # plt.imshow(current_heatmap_data, cmap='viridis')
             ix += 1
             list_of_final_heatmap_data.append(current_heatmap_data)
@@ -236,7 +227,7 @@ def determine_row_col_from_features(num_features):
 def construct_images_from_feature_maps(feature_maps, title, is_normalize_data=False, save_path=None, cmap='viridis'):
     list_of_final_plotted_activation_maps = []
     row, col = determine_row_col_from_features(feature_maps.shape[0])
-    
+
     ix = 1
     assert row * \
         col == feature_maps.shape[0], 'All channels of feature_maps is not fit by row,col'
