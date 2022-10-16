@@ -2,6 +2,9 @@ import torch
 from PIL import Image
 import numpy as np
 import copy
+import matplotlib.pyplot as plt
+import seaborn as sns
+import math
 
 from configs.dlgn_conv_config import HardRelu
 
@@ -102,6 +105,7 @@ def recreate_image(im_as_var, unnormalize=True):
     # recreated_im = recreated_im..transpose(1, 2, 0)
     return recreated_im
 
+
 def add_lower_dimension_vectors_within_itself(input_tensor):
     init_dim = input_tensor[0]
     for i in range(1, input_tensor.size()[0]):
@@ -120,3 +124,152 @@ def multiply_lower_dimension_vectors_within_itself(input_tensor, collect_thresho
 
     init_dim = HardRelu()(init_dim - 0.50 * input_tensor.size()[0])
     return init_dim
+
+
+def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viridis'):
+    list_of_final_heatmap_data = []
+    row, col = determine_row_col_from_features(heatmap_data.shape[0])
+    
+    ix = 1
+    assert row * \
+        col == heatmap_data.shape[0], 'All channels of heatmap data is not fit by row,col'
+    plt.suptitle(title, fontsize=14)
+    a = row * heatmap_data[0].shape[0]
+    b = col*heatmap_data[0].shape[1]
+    fig, ax_list = plt.subplots(
+        row, col, sharex=True, sharey=True, figsize=(b/2, a/2))
+    cbar_ax = fig.add_axes([.91, .3, .03, .4])
+    for r in range(row):
+        for c in range(col):
+            
+            plt_ax = ax_list[r][c]
+            plt_ax.set_xticks([])
+            plt_ax.set_yticks([])
+            plt_ax.set_title(ix)
+            current_heatmap_data = heatmap_data[ix-1, :, :]
+
+            # Shift the range between [0,1]
+            arr_max = np.amax(current_heatmap_data)
+            arr_min = np.amin(current_heatmap_data)
+            current_heatmap_data = (
+                current_heatmap_data - arr_min)/(arr_max - arr_min)
+
+            current_heatmap_data *= 255
+            current_heatmap_data = np.clip(
+                current_heatmap_data, 0, 255).astype('uint8')
+
+            # sns.set(rc={'figure.figsize': current_heatmap_data.shape})
+            sns.heatmap(current_heatmap_data, ax=plt_ax,
+                        cbar=c == 0,
+                        cbar_ax=None if c else cbar_ax, cmap=cmap)
+            # plt.imshow(current_heatmap_data, cmap='viridis')
+            ix += 1
+            list_of_final_heatmap_data.append(current_heatmap_data)
+
+    if(save_path is not None):
+        plt.savefig(save_path)
+
+    return list_of_final_heatmap_data
+
+
+def construct_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viridis'):
+    list_of_final_heatmap_data = []
+    row, col = determine_row_col_from_features(heatmap_data.shape[0])
+    
+    ix = 1
+    assert row * \
+        col == heatmap_data.shape[0], 'All channels of heatmap data is not fit by row,col'
+    plt.suptitle(title, fontsize=14)
+    a = row * heatmap_data[0].shape[0]
+    b = col*heatmap_data[0].shape[1]
+    fig, ax_list = plt.subplots(
+        row, (2*col), sharex=True, sharey=True, figsize=(b/2, a/2))
+    for r in range(row):
+        for c in range(col):
+            
+            ind_c = 2*c
+            plt_ax = ax_list[r][ind_c]
+            cbar_ax = ax_list[r][ind_c+1]
+            plt_ax.set_xticks([])
+            plt_ax.set_yticks([])
+            plt_ax.set_title(ix)
+            current_heatmap_data = heatmap_data[ix-1, :, :]
+
+            # # Shift the range between [0,1]
+            # arr_max = np.amax(current_heatmap_data)
+            # arr_min = np.amin(current_heatmap_data)
+            # current_heatmap_data = (
+            #     current_heatmap_data - arr_min)/(arr_max - arr_min)
+
+            # current_heatmap_data *= 255
+            # current_heatmap_data = np.clip(
+            #     current_heatmap_data, 0, 255).astype('uint8')
+
+            # sns.set(rc={'figure.figsize': current_heatmap_data.shape})
+            sns.heatmap(current_heatmap_data, ax=plt_ax,
+                        cbar=True,
+                        cbar_ax=cbar_ax, cmap=cmap)
+            # plt.imshow(current_heatmap_data, cmap='viridis')
+            ix += 1
+            list_of_final_heatmap_data.append(current_heatmap_data)
+
+    if(save_path is not None):
+        plt.savefig(save_path)
+
+    return list_of_final_heatmap_data
+
+
+def determine_row_col_from_features(num_features):
+    current_row = int(math.sqrt(num_features))
+    if(num_features % current_row == 0):
+        return current_row, num_features//current_row
+
+    interval = 1
+    while(interval < num_features):
+        backward = current_row - interval
+        if(num_features % backward == 0):
+            return backward, num_features//backward
+        interval += 1
+    return 0, 0
+
+
+def construct_images_from_feature_maps(feature_maps, title, is_normalize_data=False, save_path=None, cmap='viridis'):
+    list_of_final_plotted_activation_maps = []
+    row, col = determine_row_col_from_features(feature_maps.shape[0])
+    
+    ix = 1
+    assert row * \
+        col == feature_maps.shape[0], 'All channels of feature_maps is not fit by row,col'
+    plt.suptitle(title, fontsize=14)
+    a = row * feature_maps[0].shape[0]
+    b = col*feature_maps[0].shape[1]
+    for r in range(row):
+        for c in range(col):
+            # specify subplot and turn of axis
+            ax = plt.subplot(row, col, ix)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(ix)
+            current_feature_map = feature_maps[ix-1, :, :]
+
+            # Shift the range between [0,1]
+            arr_max = np.amax(current_feature_map)
+            arr_min = np.amin(current_feature_map)
+            current_feature_map = (
+                current_feature_map-arr_min)/(arr_max-arr_min)
+
+            if(is_normalize_data):
+                current_feature_map -= current_feature_map.mean()
+                current_feature_map /= current_feature_map.std()
+
+            current_feature_map *= 255
+            current_feature_map = np.clip(
+                current_feature_map, 0, 255).astype('uint8')
+            ax.imshow(current_feature_map, cmap=cmap)
+            ix += 1
+            list_of_final_plotted_activation_maps.append(current_feature_map)
+
+    if(save_path is not None):
+        plt.savefig(save_path)
+
+    return list_of_final_plotted_activation_maps

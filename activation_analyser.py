@@ -21,9 +21,9 @@ def seed_worker(worker_id):
     random.seed(worker_id - worker_seed)
 
 
-def get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
+def get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_act_collection_on_train,
                      is_class_segregation_on_ground_truth,
-                     activation_calculation_batch_size, torch_seed,
+                     activation_calculation_batch_size, torch_seed, analysed_model_path,
                      number_of_batch_to_collect=None, collect_threshold=None):
 
     wandb_config = dict()
@@ -32,9 +32,10 @@ def get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type
     wandb_config["classes"] = classes
     wandb_config["model_arch_type"] = model_arch_type
     wandb_config["dataset"] = dataset
-    wandb_config["is_template_image_on_train"] = is_template_image_on_train
+    wandb_config["is_act_collection_on_train"] = is_act_collection_on_train
     wandb_config["is_class_segregation_on_ground_truth"] = is_class_segregation_on_ground_truth
     wandb_config["torch_seed"] = torch_seed
+    wandb_config["analysed_model_path"] = analysed_model_path
     wandb_config["exp_type"] = exp_type
     wandb_config["activation_calculation_batch_size"] = activation_calculation_batch_size
     if(not(number_of_batch_to_collect is None)):
@@ -70,10 +71,15 @@ class ActivationAnalyser():
         self.overall_thresholded_active_inactive_indicator_map_list = None
 
         # Statistics based states
-        self.mean_activations_map_list = None
-        self.std_activations_map_list = None
-        self.min_activations_map_list = None
-        self.max_activations_map_list = None
+        self.mean_per_pixel_of_activations_map_list = None
+        self.std_per_pixel_of_activations_map_list = None
+        self.min_per_pixel_of_activations_map_list = None
+        self.max_per_pixel_of_activations_map_list = None
+
+        self.avg_mean_per_activations_map_list = None
+        self.avg_std_per_activations_map_list = None
+        self.avg_min_per_activations_map_list = None
+        self.avg_max_per_activations_map_list = None
 
         # Percent of active based states
         self.total_pixels = 0
@@ -149,10 +155,23 @@ class ActivationAnalyser():
             None] * number_of_conv_layers
 
         # Statistics based states
-        self.mean_activations_map_list = [None] * number_of_conv_layers
-        self.std_activations_map_list = [None] * number_of_conv_layers
-        self.min_activations_map_list = [None] * number_of_conv_layers
-        self.max_activations_map_list = [None] * number_of_conv_layers
+        self.mean_per_pixel_of_activations_map_list = [
+            None] * number_of_conv_layers
+        self.std_per_pixel_of_activations_map_list = [
+            None] * number_of_conv_layers
+        self.min_per_pixel_of_activations_map_list = [
+            None] * number_of_conv_layers
+        self.max_per_pixel_of_activations_map_list = [
+            None] * number_of_conv_layers
+
+        self.avg_mean_per_activations_map_list = [
+            None] * number_of_conv_layers
+        self.avg_std_per_activations_map_list = [
+            None] * number_of_conv_layers
+        self.avg_min_per_activations_map_list = [
+            None] * number_of_conv_layers
+        self.avg_max_per_activations_map_list = [
+            None] * number_of_conv_layers
 
         self.total_tcollect_img_count = 0
 
@@ -191,21 +210,44 @@ class ActivationAnalyser():
                 self.inactive_thresholded_indicator_activation_map_list[
                     indx] = current_inactive_thresholded_indicator_activation_map
 
-                self.mean_activations_map_list[indx] = self.mean_activations_map_list[indx] / num_batches
+                self.mean_per_pixel_of_activations_map_list[
+                    indx] = self.mean_per_pixel_of_activations_map_list[indx] / num_batches
 
                 pre_variance = (
-                    self.std_activations_map_list[indx] / num_batches - self.mean_activations_map_list[indx] ** 2)
+                    self.std_per_pixel_of_activations_map_list[indx] / num_batches - self.mean_per_pixel_of_activations_map_list[indx] ** 2)
                 pre_variance[pre_variance < 0] = 0.
 
-                self.std_activations_map_list[indx] = pre_variance ** 0.5
+                self.std_per_pixel_of_activations_map_list[indx] = pre_variance ** 0.5
 
-                if(torch.isnan(self.std_activations_map_list[indx]).any().item()):
+                if(torch.isnan(self.std_per_pixel_of_activations_map_list[indx]).any().item()):
                     print("STD Deviation has NAN entries at the end*****************")
                     print("num_batches", num_batches)
-                    print("self.mean_activations_map_list[indx]",
-                          self.mean_activations_map_list[indx])
+                    print("self.mean_per_pixel_of_activations_map_list[indx]",
+                          self.mean_per_pixel_of_activations_map_list[indx])
                     print(
-                        "self.std_activations_map_list[indx]", self.std_activations_map_list[indx])
+                        "self.std_per_pixel_of_activations_map_list[indx]", self.std_per_pixel_of_activations_map_list[indx])
+
+                self.avg_mean_per_activations_map_list[
+                    indx] = self.avg_mean_per_activations_map_list[indx] / num_batches
+                self.avg_min_per_activations_map_list[
+                    indx] = self.avg_min_per_activations_map_list[indx] / num_batches
+                self.avg_max_per_activations_map_list[
+                    indx] = self.avg_max_per_activations_map_list[indx] / num_batches
+
+                pre_variance_per_map = (
+                    self.avg_std_per_activations_map_list[indx] / num_batches - self.avg_mean_per_activations_map_list[indx] ** 2)
+                pre_variance_per_map[pre_variance_per_map < 0] = 0.
+
+                self.avg_std_per_activations_map_list[indx] = pre_variance_per_map ** 0.5
+
+                if(torch.isnan(self.avg_std_per_activations_map_list[indx]).any().item()):
+                    print(
+                        "avg_std_per_activations_map_list has NAN entries at the end*****************")
+                    print("num_batches", num_batches)
+                    print("self.avg_mean_per_activations_map_list[indx]",
+                          self.avg_mean_per_activations_map_list[indx])
+                    print(
+                        "self.avg_std_per_activations_map_list[indx]", self.avg_std_per_activations_map_list[indx])
 
                 self.total_pixels += torch.numel(
                     current_overall_thresholded_active_inactive_indicator_map)
@@ -224,23 +266,35 @@ class ActivationAnalyser():
                       current_overall_thresholded_active_inactive_indicator_map.size())
                 print("current_overall_unthresholded_active_inactive_indicator_map size:",
                       current_overall_unthresholded_active_inactive_indicator_map.size())
-                print("mean_activations_map_list size:",
-                      self.mean_activations_map_list[indx].size())
-                print("min_activations_map_list size:",
-                      self.min_activations_map_list[indx].size())
-                print("std_activations_map_list size:",
-                      self.std_activations_map_list[indx].size())
+                print("mean_per_pixel_of_activations_map_list size:",
+                      self.mean_per_pixel_of_activations_map_list[indx].size())
+                print("min_per_pixel_of_activations_map_list size:",
+                      self.min_per_pixel_of_activations_map_list[indx].size())
+                print("std_per_pixel_of_activations_map_list size:",
+                      self.std_per_pixel_of_activations_map_list[indx].size())
+                print("avg_mean_per_activations_map_list size:",
+                      self.avg_mean_per_activations_map_list[indx].size())
+                print("avg_std_per_activations_map_list size:",
+                      self.avg_std_per_activations_map_list[indx].size())
+                print("avg_min_per_activations_map_list size:",
+                      self.avg_min_per_activations_map_list[indx].size())
 
                 print("current_overall_thresholded_active_inactive_indicator_map :",
                       current_overall_thresholded_active_inactive_indicator_map)
                 print("current_overall_unthresholded_active_inactive_indicator_map :",
                       current_overall_unthresholded_active_inactive_indicator_map)
-                print("mean_activations_map_list:",
-                      self.mean_activations_map_list[indx])
-                print("min_activations_map_list:",
-                      self.min_activations_map_list[indx])
-                print("std_activations_map_list:",
-                      self.std_activations_map_list[indx])
+                print("mean_per_pixel_of_activations_map_list:",
+                      self.mean_per_pixel_of_activations_map_list[indx])
+                print("min_per_pixel_of_activations_map_list:",
+                      self.min_per_pixel_of_activations_map_list[indx])
+                print("std_per_pixel_of_activations_map_list:",
+                      self.std_per_pixel_of_activations_map_list[indx])
+                print("avg_mean_per_activations_map_list:",
+                      self.avg_mean_per_activations_map_list[indx])
+                print("avg_std_per_activations_map_list:",
+                      self.avg_std_per_activations_map_list[indx])
+                print("avg_min_per_activations_map_list:",
+                      self.avg_min_per_activations_map_list[indx])
 
                 current_unthresholded_active_pixel = torch.count_nonzero(
                     current_overall_unthresholded_active_inactive_indicator_map)
@@ -266,43 +320,91 @@ class ActivationAnalyser():
             for indx in range(len(conv_outs)):
                 each_conv_output = conv_outs[indx]
 
-                for each_image_conv_output in each_conv_output:
-                    current_max_activations_map = self.max_activations_map_list[indx]
-                    if(current_max_activations_map is None):
-                        self.max_activations_map_list[indx] = each_image_conv_output
-                    else:
-                        self.max_activations_map_list[indx] = torch.maximum(
-                            current_max_activations_map, each_image_conv_output)
+                current_max_activations_map = self.max_per_pixel_of_activations_map_list[
+                    indx]
+                max_activation_maps,_ = torch.max(each_conv_output, dim=0)
+                if(current_max_activations_map is None):
+                    self.max_per_pixel_of_activations_map_list[indx] = max_activation_maps
+                else:
+                    self.max_per_pixel_of_activations_map_list[indx] = torch.maximum(
+                        current_max_activations_map, max_activation_maps)
 
-                    current_min_activations_map = self.min_activations_map_list[indx]
-                    if(current_min_activations_map is None):
-                        self.min_activations_map_list[indx] = each_image_conv_output
-                    else:
-                        self.min_activations_map_list[indx] = torch.minimum(
-                            current_min_activations_map, each_image_conv_output)
+                current_min_activations_map = self.min_per_pixel_of_activations_map_list[
+                    indx]
+                min_activation_maps,_ = torch.min(each_conv_output, dim=0)
+                if(current_min_activations_map is None):
+                    self.min_per_pixel_of_activations_map_list[indx] = min_activation_maps
+                else:
+                    self.min_per_pixel_of_activations_map_list[indx] = torch.minimum(
+                        current_min_activations_map, min_activation_maps)
 
                 # Until all batches are processed, mean tensor actually holds mean per batch(holding sum might result in overflow)
-                current_mean_activations_map = self.mean_activations_map_list[indx]
+                current_mean_activations_map = self.mean_per_pixel_of_activations_map_list[
+                    indx]
                 mean_activation_maps = torch.mean(each_conv_output, 0)
                 if(current_mean_activations_map is None):
-                    self.mean_activations_map_list[indx] = mean_activation_maps
+                    self.mean_per_pixel_of_activations_map_list[indx] = mean_activation_maps
                 else:
-                    self.mean_activations_map_list[indx] = torch.add(
+                    self.mean_per_pixel_of_activations_map_list[indx] = torch.add(
                         current_mean_activations_map, mean_activation_maps)
 
                 # Until all batches are processed, std tensor actually holds the meansq per batch(holding sum might surely result in overflow)
-                current_meansq_activations_map = self.std_activations_map_list[indx]
+                current_meansq_activations_map = self.std_per_pixel_of_activations_map_list[
+                    indx]
                 meansq_activation_maps = torch.mean(each_conv_output ** 2, 0)
                 if(current_meansq_activations_map is None):
-                    self.std_activations_map_list[indx] = meansq_activation_maps
+                    self.std_per_pixel_of_activations_map_list[indx] = meansq_activation_maps
                 else:
-                    self.std_activations_map_list[indx] = torch.add(
+                    self.std_per_pixel_of_activations_map_list[indx] = torch.add(
                         current_meansq_activations_map, meansq_activation_maps)
-                    if(torch.isnan(self.std_activations_map_list[indx]).any().item()):
+                    if(torch.isnan(self.std_per_pixel_of_activations_map_list[indx]).any().item()):
                         print("STD Deviation has NAN entries")
                         print("current_meansq_activations_map",
                               current_meansq_activations_map)
                         print("meansq_activation_maps", meansq_activation_maps)
+
+                current_mean_per_activation_map = self.avg_mean_per_activations_map_list[
+                    indx]
+                # [B,C,W,H] take mean in C axis
+                mean_per_activation_map = torch.mean(
+                    each_conv_output, dim=[0, 2, 3])
+                if(current_mean_per_activation_map is None):
+                    self.avg_mean_per_activations_map_list[indx] = mean_per_activation_map
+                else:
+                    self.avg_mean_per_activations_map_list[indx] = torch.add(
+                        current_mean_per_activation_map, mean_per_activation_map)
+
+                currentsq_mean_per_activation_map = self.avg_std_per_activations_map_list[
+                    indx]
+                # [B,C,W,H] take mean in C axis
+                meansq_per_activation_map = torch.mean(
+                    each_conv_output**2, dim=[0, 2, 3])
+                if(currentsq_mean_per_activation_map is None):
+                    self.avg_std_per_activations_map_list[indx] = meansq_per_activation_map
+                else:
+                    self.avg_std_per_activations_map_list[indx] = torch.add(
+                        currentsq_mean_per_activation_map, meansq_per_activation_map)
+
+                current_max_per_activations_map = self.avg_max_per_activations_map_list[
+                    indx]
+                mean_max_per_activation_maps = torch.mean(
+                    torch.max(torch.max(each_conv_output, dim=3)[0], dim=2)[0], 0)
+                if(current_max_per_activations_map is None):
+                    self.avg_max_per_activations_map_list[indx] = mean_max_per_activation_maps
+                else:
+                    self.avg_max_per_activations_map_list[indx] = torch.add(
+                        current_max_per_activations_map, mean_max_per_activation_maps)
+
+                current_min_per_activations_map = self.avg_min_per_activations_map_list[
+                    indx]
+                mean_min_per_activation_maps = torch.mean(
+                    torch.min(torch.min(each_conv_output, dim=3)[0], dim=2)[0], 0)
+                if(current_min_per_activations_map is None):
+                    self.avg_min_per_activations_map_list[indx] = mean_min_per_activation_maps
+                else:
+                    self.avg_min_per_activations_map_list[indx] = torch.add(
+                        current_min_per_activations_map, mean_min_per_activation_maps)
+
                 # [B,C,W,H]
                 current_active_indicator_map = HardRelu()(each_conv_output)
                 # [C,W,H]
@@ -363,9 +465,9 @@ class ActivationAnalyser():
         self.update_overall_recorded_states(collect_threshold, num_batches)
 
     def generate_activation_stats_per_class(self, exp_type, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
-                                            is_template_image_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
+                                            is_act_collection_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                             wand_project_name, wandb_group_name, torch_seed, collect_threshold,
-                                            root_save_prefix="root", final_postfix_for_save=""):
+                                            root_save_prefix="root/ACT_PATTERN_PER_CLASS", final_postfix_for_save="", analysed_model_path=""):
         is_log_wandb = not(wand_project_name is None)
 
         # torch.manual_seed(torch_seed)
@@ -380,22 +482,25 @@ class ActivationAnalyser():
                                                             shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
         tmp_image_over_what_str = 'test'
-        if(is_template_image_on_train):
+        if(is_act_collection_on_train):
             tmp_image_over_what_str = 'train'
 
         seg_over_what_str = 'MP'
         if(is_class_segregation_on_ground_truth):
             seg_over_what_str = 'GT'
 
-        self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+        self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
             seg_over_what_str)+"/TMP_COLL_BS_"+str(activation_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/" + str(final_postfix_for_save) + "/"
+
+        if not os.path.exists(self.image_save_prefix_folder):
+            os.makedirs(self.image_save_prefix_folder)
 
         if(is_log_wandb):
             wandb_run_name = self.image_save_prefix_folder.replace(
                 "/", "").replace(root_save_prefix, class_label)
-            wandb_config = get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
+            wandb_config = get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_act_collection_on_train,
                                             is_class_segregation_on_ground_truth,
-                                            activation_calculation_batch_size, torch_seed,
+                                            activation_calculation_batch_size, torch_seed, analysed_model_path,
                                             number_of_batch_to_collect=number_of_batch_to_collect, collect_threshold=collect_threshold)
 
             wandb.init(
@@ -407,6 +512,11 @@ class ActivationAnalyser():
 
         self.record_activation_states(per_class_data_loader, class_label,
                                       number_of_batch_to_collect, collect_threshold, is_save_original_image=False)
+
+        save_folder = self.image_save_prefix_folder + \
+            "class_"+str(class_label)+"/"
+        if not os.path.exists(save_folder):
+            os.makedirs(save_folder)
 
         log_dict = {
             "total_pixels": self.total_pixels, "thres_active_pxl_count": self.thresholded_active_pixel_count, "thres_active_pxl_percent": self.thresholded_active_pixels_percentage,
@@ -520,7 +630,7 @@ if __name__ == '__main__':
     # plain_pure_conv4_dnn , conv4_dlgn
     model_arch_type = 'conv4_dlgn'
     # If False, then on test
-    is_template_image_on_train = True
+    is_act_collection_on_train = True
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     activation_calculation_batch_size = 64
@@ -538,7 +648,7 @@ if __name__ == '__main__':
     if(not(wand_project_name is None)):
         wandb.login()
 
-    list_of_act_analyser = run_activation_analysis_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth,
+    list_of_act_analyser = run_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
                                                              activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                                              valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold)
 
