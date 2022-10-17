@@ -1356,7 +1356,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
     print("Preprocessing and dataloader process completed of type:{} for dataset:{}".format(
         model_arch_type, dataset))
     if(custom_model is None):
-        model = get_model_from_loader(model_arch_type, dataset)
+        model,_ = get_model_from_loader(model_arch_type, dataset)
         print("Model loaded is:", model)
     else:
         model = custom_model

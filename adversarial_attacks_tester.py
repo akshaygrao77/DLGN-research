@@ -13,7 +13,9 @@ from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
-from visualization import recreate_image, save_image, true_segregation, PerClassDataset, TemplateImageGenerator, seed_worker, quick_visualization_on_config
+from visualization import recreate_image, save_image,  PerClassDataset, TemplateImageGenerator, seed_worker, quick_visualization_on_config
+from utils.data_preprocessing import true_segregation
+from structure.generic_structure import CustomSimpleDataset
 
 from utils.visualise_utils import calculate_common_among_two_activation_patterns
 
@@ -23,21 +25,6 @@ from cleverhans.torch.attacks.projected_gradient_descent import (
 )
 
 from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net
-
-
-class CustomSimpleDataset(torch.utils.data.Dataset):
-    def __init__(self, list_of_x, list_of_y):
-        self.list_of_x = list_of_x
-        self.list_of_y = list_of_y
-
-    def __len__(self):
-        return len(self.list_of_x)
-
-    def __getitem__(self, idx):
-        x = self.list_of_x[idx]
-        y = self.list_of_y[idx]
-
-        return x, y
 
 
 def apply_adversarial_attack_on_input(input_data, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted):
@@ -432,7 +419,8 @@ def extract_common_activation_patterns_between_reconst_and_original(true_input_d
 
 if __name__ == '__main__':
     dataset = 'mnist'
-    model_arch_type = 'conv4_dlgn'
+    # conv4_dlgn , plain_pure_conv4_dnn
+    model_arch_type = 'plain_pure_conv4_dnn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -467,9 +455,9 @@ if __name__ == '__main__':
     if(scheme_type == 'iterative_augmented_model_attack'):
         dataset = 'mnist'
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
-        # wand_project_name = "test_common_active_on_reconst_augmentation"
+        # wand_project_name = "adv_attack_for_active_pixels_on_reconst_augmentation"
         # wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation"
-        wand_project_name = 'adv_attack_for_active_pixels_on_reconst_augmentation'
+        wand_project_name = 'adv_attack_on_reconst_augmentation'
         # wand_project_name = 'common_active_pixels_on_reconst_augmentation'
         # wand_project_name = None
 
@@ -477,11 +465,11 @@ if __name__ == '__main__':
         adv_attack_type = "PGD"
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST
-        exp_type = "ACTIVATION_COMPARE"
-        is_adv_attack_on_train = True
+        exp_type = "ADV_ATTACK"
+        is_adv_attack_on_train = False
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_test/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/"
 
         number_of_augment_iterations = 5
 
