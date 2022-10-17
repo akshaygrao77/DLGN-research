@@ -5,6 +5,7 @@ import copy
 import matplotlib.pyplot as plt
 import seaborn as sns
 import math
+import tqdm
 
 from configs.dlgn_conv_config import HardRelu
 
@@ -127,6 +128,8 @@ def multiply_lower_dimension_vectors_within_itself(input_tensor, collect_thresho
 
 
 def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viridis'):
+    print("Constructing normalized heatmap for:{} and will be saved at:{}".format(
+        title, save_path if not None else 'Not saved'))
     list_of_final_heatmap_data = []
     row, col = determine_row_col_from_features(heatmap_data.shape[0])
 
@@ -139,7 +142,7 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
     fig, ax_list = plt.subplots(
         row, col, sharex=True, sharey=True, figsize=(b/2, a/2))
     cbar_ax = fig.add_axes([.91, .3, .03, .4])
-    for r in range(row):
+    for r in tqdm.tqdm(range(row), desc=" Constructing normalized heatmap for {} with num_row:{}".format(title, row)):
         for c in range(col):
             if(col != 1):
                 plt_ax = ax_list[r][c]
@@ -175,6 +178,8 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
 
 
 def construct_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viridis'):
+    print("Constructing heatmap for:{} and will be saved at:{}".format(
+        title, save_path if not None else 'Not saved'))
     list_of_final_heatmap_data = []
     row, col = determine_row_col_from_features(heatmap_data.shape[0])
 
@@ -186,7 +191,7 @@ def construct_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viri
     b = col*heatmap_data[0].shape[1]
     fig, ax_list = plt.subplots(
         row, col, sharex=True, sharey=True, figsize=(b/2, a/2))
-    for r in range(row):
+    for r in tqdm.tqdm(range(row), desc=" Constructing heatmap for {} with num_row:{}".format(title, row)):
         for c in range(col):
             ind_c = c
             if(col != 1):
@@ -224,7 +229,9 @@ def determine_row_col_from_features(num_features):
     return 0, 0
 
 
-def construct_images_from_feature_maps(feature_maps, title, is_normalize_data=False, save_path=None, cmap='viridis'):
+def construct_images_from_feature_maps(feature_maps, title, save_path=None, is_normalize_data=False, cmap='viridis'):
+    print("Constructing Images for:{} and will be saved at:{}".format(
+        title, save_path if not None else 'Not saved'))
     list_of_final_plotted_activation_maps = []
     row, col = determine_row_col_from_features(feature_maps.shape[0])
 
@@ -234,7 +241,7 @@ def construct_images_from_feature_maps(feature_maps, title, is_normalize_data=Fa
     plt.suptitle(title, fontsize=14)
     a = row * feature_maps[0].shape[0]
     b = col*feature_maps[0].shape[1]
-    for r in range(row):
+    for r in tqdm.tqdm(range(row), desc=" Constructing images for {} with num_row:{}".format(title, row)):
         for c in range(col):
             # specify subplot and turn of axis
             ax = plt.subplot(row, col, ix)
