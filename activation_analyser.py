@@ -6,7 +6,7 @@ import random
 import numpy as np
 
 
-from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself
+from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, determine_row_col_from_features
 from utils.data_preprocessing import preprocess_dataset_get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 from configs.dlgn_conv_config import HardRelu
@@ -61,21 +61,25 @@ class ActivationAnalyser():
 
     def reset_analyser_state(self):
         # Count based states
+        # Size: [Num layers,Num filter in current layer, W , H]
         self.active_counts_activation_map_list = None
         self.inactive_counts_activation_map_list = None
         self.active_inactive_diff_activation_map_list = None
 
         # Indicator based states
+        # Size: [Num layers,Num filter in current layer, W , H]
         self.active_thresholded_indicator_activation_map_list = None
         self.inactive_thresholded_indicator_activation_map_list = None
         self.overall_thresholded_active_inactive_indicator_map_list = None
 
         # Statistics based states
+        # Size: [Num layers,Num filter in current layer, W , H]
         self.mean_per_pixel_of_activations_map_list = None
         self.std_per_pixel_of_activations_map_list = None
         self.min_per_pixel_of_activations_map_list = None
         self.max_per_pixel_of_activations_map_list = None
 
+        # Size: [Num layers,Num filter in current layer]
         self.avg_mean_per_activations_map_list = None
         self.avg_std_per_activations_map_list = None
         self.avg_min_per_activations_map_list = None
@@ -93,6 +97,146 @@ class ActivationAnalyser():
         self.overall_std_active_percentage = 0.
         self.overall_min_active_percentage = None
         self.overall_max_active_percentage = None
+
+    def save_recorded_activation_states(self, base_save_folder, is_log_wandb):
+        cpudevice = torch.device("cpu")
+        # For each conv layer
+        for indx in range(len(self.active_counts_activation_map_list)):
+            dict_full_path_to_saves = dict()
+            raw_wandb_log_dict = dict()
+
+            current_active_counts_activation_map = self.active_counts_activation_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+            current_active_inactive_diff_activation_map = self.active_inactive_diff_activation_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+            current_active_thresholded_indicator_activation_map = self.active_thresholded_indicator_activation_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+
+            current_mean_per_pixel_of_activations_map = self.mean_per_pixel_of_activations_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+            current_std_per_pixel_of_activations_map = self.std_per_pixel_of_activations_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+            current_min_per_pixel_of_activations_map = self.min_per_pixel_of_activations_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+            current_max_per_pixel_of_activations_map = self.max_per_pixel_of_activations_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+
+            current_avg_mean_per_activations_map = self.avg_mean_per_activations_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+            current_avg_std_per_activations_map = self.avg_std_per_activations_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+            current_avg_min_per_activations_map = self.avg_min_per_activations_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+            current_avg_max_per_activations_map = self.avg_max_per_activations_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+
+            final_save_dir = base_save_folder+"/layer_{}/".format(indx)
+            if not os.path.exists(final_save_dir):
+                os.makedirs(final_save_dir)
+
+            raw_wandb_log_dict["r_active_count_ov_act_map"] = current_active_counts_activation_map
+            raw_wandb_log_dict["r_act_inact_diff_count_ov_act_map"] = current_active_inactive_diff_activation_map
+            raw_wandb_log_dict["r_thres_active_indictor_ov_act_map"] = current_active_thresholded_indicator_activation_map
+            raw_wandb_log_dict["r_mean_per_pxl_ov_act_map"] = current_mean_per_pixel_of_activations_map
+            raw_wandb_log_dict["r_std_dev_per_pxl_ov_act_map"] = current_std_per_pixel_of_activations_map
+            raw_wandb_log_dict["r_min_per_pxl_ov_act_map"] = current_min_per_pixel_of_activations_map
+            raw_wandb_log_dict["r_max_per_pxl_ov_act_map"] = current_max_per_pixel_of_activations_map
+            raw_wandb_log_dict["r_avg_mean_per_act_map"] = current_avg_mean_per_activations_map
+            raw_wandb_log_dict["r_avg_std_per_act_map"] = current_avg_std_per_activations_map
+            raw_wandb_log_dict["r_avg_min_per_act_map"] = current_avg_min_per_activations_map
+            raw_wandb_log_dict["r_avg_max_per_act_map"] = current_avg_max_per_activations_map
+
+            if(is_log_wandb == True):
+                wandb.log(raw_wandb_log_dict)
+
+            current_full_save_path = final_save_dir+"active_counts_over_activation_map.jpg"
+            dict_full_path_to_saves["active_count_ov_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(current_active_counts_activation_map, title='Active counts over activation map',
+                                         save_path=current_full_save_path)
+
+            current_full_save_path = final_save_dir + \
+                "active_inact_diff_counts_over_activation_map.jpg"
+            dict_full_path_to_saves["act_inact_diff_count_ov_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(current_active_inactive_diff_activation_map, title='Active - inactive difference counts over activation map',
+                                         save_path=current_full_save_path)
+
+            current_full_save_path = final_save_dir + \
+                "thres_active_indicators_over_activation_map.jpg"
+            dict_full_path_to_saves["thres_active_indictor_ov_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(current_active_thresholded_indicator_activation_map,
+                                         title='Thresholded active pixel indicatoes over activation map', save_path=current_full_save_path)
+
+            current_full_save_path = final_save_dir + \
+                "mean_per_pixel_over_activation_map.jpg"
+            dict_full_path_to_saves["mean_per_pxl_ov_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(
+                current_mean_per_pixel_of_activations_map, title="Mean per pixel over activation map", save_path=current_full_save_path)
+
+            current_full_save_path = final_save_dir + \
+                "std_dev_per_pixel_over_activation_map.jpg"
+            dict_full_path_to_saves["std_dev_per_pxl_ov_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(
+                current_std_per_pixel_of_activations_map, title="Standard deviation per pixel over activation map", save_path=current_full_save_path)
+
+            current_full_save_path = final_save_dir + \
+                "min_per_pixel_over_activation_map.jpg"
+            dict_full_path_to_saves["min_per_pxl_ov_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(
+                current_min_per_pixel_of_activations_map, title="Min per pixel over activation map", save_path=current_full_save_path)
+
+            current_full_save_path = final_save_dir + \
+                "max_per_pixel_over_activation_map.jpg"
+            dict_full_path_to_saves["max_per_pxl_ov_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(
+                current_max_per_pixel_of_activations_map, title="Max per pixel over activation map", save_path=current_full_save_path)
+
+            # Obtain the resize shape for num_filters dimension
+            r, c = determine_row_col_from_features(
+                current_avg_mean_per_activations_map.shape[0])
+            current_avg_mean_per_activations_map = np.reshape(
+                current_avg_mean_per_activations_map, (1, r, c))
+            current_avg_std_per_activations_map = np.reshape(
+                current_avg_std_per_activations_map, (1, r, c))
+            current_avg_min_per_activations_map = np.reshape(
+                current_avg_min_per_activations_map, (1, r, c))
+            current_avg_max_per_activations_map = np.reshape(
+                current_avg_max_per_activations_map, (1, r, c))
+
+            current_full_save_path = final_save_dir + \
+                "avg_mean_per_act_map.jpg"
+            dict_full_path_to_saves["avg_mean_per_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(current_avg_mean_per_activations_map,
+                                         title='Average of mean per activation map', save_path=current_full_save_path)
+
+            current_full_save_path = final_save_dir + \
+                "avg_std_per_act_map.jpg"
+            dict_full_path_to_saves["avg_std_per_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(current_avg_std_per_activations_map,
+                                         title='Average of std deviation per activation map', save_path=current_full_save_path)
+
+            current_full_save_path = final_save_dir + \
+                "avg_min_per_act_map.jpg"
+            dict_full_path_to_saves["avg_min_per_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(current_avg_min_per_activations_map,
+                                         title='Average of min per activation map', save_path=current_full_save_path)
+
+            current_full_save_path = final_save_dir + \
+                "avg_max_per_act_map.jpg"
+            dict_full_path_to_saves["avg_max_per_act_map"] = current_full_save_path
+            construct_heatmaps_from_data(current_avg_max_per_activations_map,
+                                         title='Average of max per activation map', save_path=current_full_save_path)
+
+            print("dict_full_path_to_saves in iteration {}=>{}".format(
+                indx, dict_full_path_to_saves))
+            if(is_log_wandb == True):
+                image_log_dict = dict()
+                for each_key in dict_full_path_to_saves:
+                    full_path = dict_full_path_to_saves[each_key]
+                    image_log_dict[each_key] = wandb.Image(full_path)
+
+                wandb.log(image_log_dict)
+
+        return
 
     def record_min_max_average_std_active_pixels_per_batch(self, conv_outs):
         batch_size = conv_outs[0].size()[0]
@@ -260,41 +404,43 @@ class ActivationAnalyser():
 
                 print(
                     "============================== INDX:{} =============================".format(indx))
-                print("total_tcollect_img_count:",
-                      self.total_tcollect_img_count)
-                print("current_overall_thresholded_active_inactive_indicator_map size:",
-                      current_overall_thresholded_active_inactive_indicator_map.size())
-                print("current_overall_unthresholded_active_inactive_indicator_map size:",
-                      current_overall_unthresholded_active_inactive_indicator_map.size())
-                print("mean_per_pixel_of_activations_map_list size:",
-                      self.mean_per_pixel_of_activations_map_list[indx].size())
-                print("min_per_pixel_of_activations_map_list size:",
-                      self.min_per_pixel_of_activations_map_list[indx].size())
-                print("std_per_pixel_of_activations_map_list size:",
-                      self.std_per_pixel_of_activations_map_list[indx].size())
-                print("avg_mean_per_activations_map_list size:",
-                      self.avg_mean_per_activations_map_list[indx].size())
-                print("avg_std_per_activations_map_list size:",
-                      self.avg_std_per_activations_map_list[indx].size())
-                print("avg_min_per_activations_map_list size:",
-                      self.avg_min_per_activations_map_list[indx].size())
+                # print("total_tcollect_img_count:",
+                #       self.total_tcollect_img_count)
+                # print("current_overall_thresholded_active_inactive_indicator_map size:",
+                #       current_overall_thresholded_active_inactive_indicator_map.size())
+                # print("current_overall_unthresholded_active_inactive_indicator_map size:",
+                #       current_overall_unthresholded_active_inactive_indicator_map.size())
+                # print("mean_per_pixel_of_activations_map_list size:",
+                #       self.mean_per_pixel_of_activations_map_list[indx].size())
+                # print("min_per_pixel_of_activations_map_list size:",
+                #       self.min_per_pixel_of_activations_map_list[indx].size())
+                # print("std_per_pixel_of_activations_map_list size:",
+                #       self.std_per_pixel_of_activations_map_list[indx].size())
+                # print("avg_mean_per_activations_map_list size:",
+                #       self.avg_mean_per_activations_map_list[indx].size())
+                # print("avg_std_per_activations_map_list size:",
+                #       self.avg_std_per_activations_map_list[indx].size())
+                # print("avg_min_per_activations_map_list size:",
+                #       self.avg_min_per_activations_map_list[indx].size())
 
-                print("current_overall_thresholded_active_inactive_indicator_map :",
-                      current_overall_thresholded_active_inactive_indicator_map)
-                print("current_overall_unthresholded_active_inactive_indicator_map :",
-                      current_overall_unthresholded_active_inactive_indicator_map)
-                print("mean_per_pixel_of_activations_map_list:",
-                      self.mean_per_pixel_of_activations_map_list[indx])
-                print("min_per_pixel_of_activations_map_list:",
-                      self.min_per_pixel_of_activations_map_list[indx])
-                print("std_per_pixel_of_activations_map_list:",
-                      self.std_per_pixel_of_activations_map_list[indx])
-                print("avg_mean_per_activations_map_list:",
-                      self.avg_mean_per_activations_map_list[indx])
-                print("avg_std_per_activations_map_list:",
-                      self.avg_std_per_activations_map_list[indx])
-                print("avg_min_per_activations_map_list:",
-                      self.avg_min_per_activations_map_list[indx])
+                # print("current_overall_thresholded_active_inactive_indicator_map :",
+                #       current_overall_thresholded_active_inactive_indicator_map)
+                # print("current_overall_unthresholded_active_inactive_indicator_map :",
+                #       current_overall_unthresholded_active_inactive_indicator_map)
+                # print("mean_per_pixel_of_activations_map_list:",
+                #       self.mean_per_pixel_of_activations_map_list[indx])
+                # print("min_per_pixel_of_activations_map_list:",
+                #       self.min_per_pixel_of_activations_map_list[indx])
+                # print("std_per_pixel_of_activations_map_list:",
+                #       self.std_per_pixel_of_activations_map_list[indx])
+                # print("avg_mean_per_activations_map_list:",
+                #       self.avg_mean_per_activations_map_list[indx])
+                # print("avg_std_per_activations_map_list:",
+                #       self.avg_std_per_activations_map_list[indx])
+                # print("avg_min_per_activations_map_list:",
+                #       self.avg_min_per_activations_map_list[indx])
+                # print("avg_max_per_activations_map_list:",
+                #       self.avg_max_per_activations_map_list[indx])
 
                 current_unthresholded_active_pixel = torch.count_nonzero(
                     current_overall_unthresholded_active_inactive_indicator_map)
@@ -322,7 +468,7 @@ class ActivationAnalyser():
 
                 current_max_activations_map = self.max_per_pixel_of_activations_map_list[
                     indx]
-                max_activation_maps,_ = torch.max(each_conv_output, dim=0)
+                max_activation_maps, _ = torch.max(each_conv_output, dim=0)
                 if(current_max_activations_map is None):
                     self.max_per_pixel_of_activations_map_list[indx] = max_activation_maps
                 else:
@@ -331,7 +477,7 @@ class ActivationAnalyser():
 
                 current_min_activations_map = self.min_per_pixel_of_activations_map_list[
                     indx]
-                min_activation_maps,_ = torch.min(each_conv_output, dim=0)
+                min_activation_maps, _ = torch.min(each_conv_output, dim=0)
                 if(current_min_activations_map is None):
                     self.min_per_pixel_of_activations_map_list[indx] = min_activation_maps
                 else:
@@ -529,13 +675,17 @@ class ActivationAnalyser():
 
         if(is_log_wandb):
             wandb.log(log_dict)
+
+        self.save_recorded_activation_states(save_folder, is_log_wandb)
+
+        if(is_log_wandb):
             wandb.finish()
 
 
 def run_activation_analysis_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth,
                                       activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                       valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold,
-                                      root_save_prefix='root', final_postfix_for_save="aug_indx_1",
+                                      root_save_prefix='root/ACT_PATTERN_ANALYSIS', final_postfix_for_save="",
                                       custom_model=None, custom_data_loader=None, class_indx_to_visualize=None):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -579,8 +729,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
         print("Custom model provided in arguments will be used")
 
     if(class_indx_to_visualize is None):
-        # class_indx_to_visualize = [i for i in range(len(classes))]
-        class_indx_to_visualize = [i for i in range(1)]
+        class_indx_to_visualize = [i for i in range(len(classes))]
 
     if(is_class_segregation_on_ground_truth == True):
         input_data_list_per_class = segregate_classes(
@@ -601,7 +750,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
 
         act_analyser = ActivationAnalyser(
             model)
-        if(exp_type == "GENERATE_RECORD_STATS"):
+        if(exp_type == "GENERATE_RECORD_STATS_PER_CLASS"):
             act_analyser.generate_activation_stats_per_class(exp_type, per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
                                                              is_template_image_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                                              wand_project_name, wandb_group_name, torch_seed, collect_threshold,
@@ -636,13 +785,14 @@ if __name__ == '__main__':
     activation_calculation_batch_size = 64
     number_of_batch_to_collect = None
     # wand_project_name = 'test_activation_analyser'
-    wand_project_name = None
+    wand_project_name = 'activation_analysis_class'
+    # wand_project_name = None
     wandb_group_name = "activation_analysis_mnist_conv4_dlgn"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
-    # GENERATE_RECORD_STATS
-    exp_type = "GENERATE_RECORD_STATS"
+    # GENERATE_RECORD_STATS_PER_CLASS
+    exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     collect_threshold = 0.95
 
     if(not(wand_project_name is None)):
