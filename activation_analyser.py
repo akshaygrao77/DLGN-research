@@ -228,13 +228,16 @@ class ActivationAnalyser():
 
             print("dict_full_path_to_saves in iteration {}=>{}".format(
                 indx, dict_full_path_to_saves))
-            if(is_log_wandb == True):
-                image_log_dict = dict()
-                for each_key in dict_full_path_to_saves:
-                    full_path = dict_full_path_to_saves[each_key]
-                    image_log_dict[each_key] = wandb.Image(full_path)
 
-                wandb.log(image_log_dict)
+            # The image sizes are quite big and wandb might go out of space if this is enabled. So just local copy is enough
+            # if(is_log_wandb == True):
+            #     image_log_dict = dict()
+            #     for each_key in dict_full_path_to_saves:
+            #         print("Saving image with key:{} to wandb".format(each_key))
+            #         full_path = dict_full_path_to_saves[each_key]
+            #         image_log_dict[each_key] = wandb.Image(full_path)
+
+            #     wandb.log(image_log_dict)
 
         return
 
