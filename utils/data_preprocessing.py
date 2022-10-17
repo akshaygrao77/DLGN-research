@@ -9,6 +9,7 @@ from keras.datasets import mnist
 from algos.dlgn_conv_preprocess import add_channel_to_image
 from sklearn.model_selection import train_test_split
 import torchvision.transforms as transforms
+from structure.generic_structure import CustomSimpleDataset
 
 
 def get_data_loader(x_data, labels, bs, orig_labels=None):
@@ -22,6 +23,22 @@ def get_data_loader(x_data, labels, bs, orig_labels=None):
     dataloader = torch.utils.data.DataLoader(
         merged_data, shuffle=False, batch_size=bs)
     return dataloader
+
+
+def generate_dataset_from_loader(data_loader):
+    data_loader = tqdm(data_loader, desc='Generating dataset from loader')
+    list_of_x = []
+    list_of_y = []
+    for _, inp_data in enumerate(data_loader):
+        x, y = inp_data
+        for each_x in x:
+            list_of_x.append(each_x)
+        for each_y in y:
+            list_of_y.append(each_y)
+
+    dataset = CustomSimpleDataset(
+        list_of_x, list_of_y)
+    return dataset
 
 
 def segregate_input_over_labels(model, data_loader, num_classes):
@@ -75,7 +92,7 @@ def print_segregation_info(input_data_list_per_class):
     print("Sum", sum)
 
 
-def segregate_classes(model,trainloader,testloader,num_classes,is_template_image_on_train, is_class_segregation_on_ground_truth):
+def segregate_classes(model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth):
     input_data_list_per_class = None
 
     if(is_template_image_on_train):

@@ -7,7 +7,7 @@ import numpy as np
 
 
 from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, determine_row_col_from_features
-from utils.data_preprocessing import preprocess_dataset_get_data_loader
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 from configs.dlgn_conv_config import HardRelu
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
@@ -616,7 +616,7 @@ class ActivationAnalyser():
     def generate_activation_stats_per_class(self, exp_type, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
                                             is_act_collection_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                             wand_project_name, wandb_group_name, torch_seed, collect_threshold,
-                                            root_save_prefix="root/ACT_PATTERN_PER_CLASS", final_postfix_for_save="", analysed_model_path=""):
+                                            root_save_prefix="root/ACT_PATTERN_PER_CLASS", final_postfix_for_save="", analysed_model_path="", is_save_graph_visualizations=True):
         is_log_wandb = not(wand_project_name is None)
 
         # torch.manual_seed(torch_seed)
@@ -678,8 +678,8 @@ class ActivationAnalyser():
 
         if(is_log_wandb):
             wandb.log(log_dict)
-
-        self.save_recorded_activation_states(save_folder, is_log_wandb)
+        if(is_save_graph_visualizations == True):
+            self.save_recorded_activation_states(save_folder, is_log_wandb)
 
         if(is_log_wandb):
             wandb.finish()
@@ -689,7 +689,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
                                       activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                       valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold,
                                       root_save_prefix='root/ACT_PATTERN_ANALYSIS', final_postfix_for_save="",
-                                      custom_model=None, custom_data_loader=None, class_indx_to_visualize=None):
+                                      custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, analysed_model_path=""):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -725,7 +725,8 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
         model_arch_type, dataset))
 
     if(custom_model is None):
-        model = get_model_from_loader(model_arch_type, dataset)
+        model, analysed_model_path = get_model_from_loader(
+            model_arch_type, dataset)
         print("Model loaded is:", model)
     else:
         model = custom_model
@@ -734,30 +735,46 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
     if(class_indx_to_visualize is None):
         class_indx_to_visualize = [i for i in range(len(classes))]
 
-    if(is_class_segregation_on_ground_truth == True):
-        input_data_list_per_class = segregate_classes(
-            model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth)
-
-    if(is_class_segregation_on_ground_truth == False):
-        input_data_list_per_class = segregate_classes(
-            model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth)
-
     list_of_act_analyser = []
-    for c_indx in class_indx_to_visualize:
-        class_label = classes[c_indx]
-        print("************************************************************ Class:", class_label)
-        per_class_dataset = PerClassDataset(
-            input_data_list_per_class[c_indx], c_indx)
-        # per_class_loader = torch.utils.data.DataLoader(per_class_dataset, batch_size=32,
-        #                                                shuffle=False)
+    if(exp_type == "GENERATE_RECORD_STATS_PER_CLASS"):
+        if(is_class_segregation_on_ground_truth == True):
+            input_data_list_per_class = segregate_classes(
+                model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth)
 
-        act_analyser = ActivationAnalyser(
-            model)
-        if(exp_type == "GENERATE_RECORD_STATS_PER_CLASS"):
+        if(is_class_segregation_on_ground_truth == False):
+            input_data_list_per_class = segregate_classes(
+                model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth)
+
+        for c_indx in class_indx_to_visualize:
+            class_label = classes[c_indx]
+            print(
+                "************************************************************ Class:", class_label)
+            per_class_dataset = PerClassDataset(
+                input_data_list_per_class[c_indx], c_indx)
+            # per_class_loader = torch.utils.data.DataLoader(per_class_dataset, batch_size=32,
+            #                                                shuffle=False)
+
+            act_analyser = ActivationAnalyser(
+                model)
             act_analyser.generate_activation_stats_per_class(exp_type, per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
                                                              is_template_image_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                                              wand_project_name, wandb_group_name, torch_seed, collect_threshold,
-                                                             root_save_prefix, final_postfix_for_save)
+                                                             root_save_prefix, final_postfix_for_save, analysed_model_path)
+            list_of_act_analyser.append(act_analyser)
+    elif(exp_type == "GENERATE_RECORD_STATS_OVERALL"):
+        class_label = 'ALL_CLASSES'
+        c_indx = -1
+        analyse_loader = trainloader
+        if(is_template_image_on_train == False):
+            analyse_loader = testloader
+        analyse_dataset = generate_dataset_from_loader(analyse_loader)
+
+        act_analyser = ActivationAnalyser(
+            model)
+        act_analyser.generate_activation_stats_per_class(exp_type, analyse_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
+                                                         is_template_image_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
+                                                         wand_project_name, wandb_group_name, torch_seed, collect_threshold,
+                                                         root_save_prefix, final_postfix_for_save, analysed_model_path)
         list_of_act_analyser.append(act_analyser)
 
     return list_of_act_analyser
@@ -788,14 +805,14 @@ if __name__ == '__main__':
     activation_calculation_batch_size = 64
     number_of_batch_to_collect = None
     # wand_project_name = 'test_activation_analyser'
-    wand_project_name = 'activation_analysis_class'
-    # wand_project_name = None
+    # wand_project_name = 'activation_analysis_class'
+    wand_project_name = None
     wandb_group_name = "activation_analysis_mnist_conv4_dlgn"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
-    # GENERATE_RECORD_STATS_PER_CLASS
-    exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
+    # GENERATE_RECORD_STATS_PER_CLASS ,  GENERATE_RECORD_STATS_OVERALL
+    exp_type = "GENERATE_RECORD_STATS_OVERALL"
     collect_threshold = 0.95
 
     if(not(wand_project_name is None)):
