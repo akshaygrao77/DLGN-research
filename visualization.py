@@ -1287,6 +1287,8 @@ class TemplateImageGenerator():
                 wandb.finish()
                 print("Reconstructed images written at:",
                       self.image_save_prefix_folder)
+        
+        return self.initial_image.cpu().clone().detach().numpy()
 
 
 def get_initial_image(dataset, template_initial_image_type):

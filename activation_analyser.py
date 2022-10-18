@@ -729,7 +729,10 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
                                       root_save_prefix='root/ACT_PATTERN_ANALYSIS', final_postfix_for_save="",
                                       custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, analysed_model_path="",
                                       is_save_graph_visualizations=True, is_save_activation_records=True):
-
+    if(root_save_prefix is None):
+        root_save_prefix = 'root/ACT_PATTERN_ANALYSIS'
+    if(final_postfix_for_save is None):
+        final_postfix_for_save = ""
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
@@ -801,7 +804,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
 
 
 def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder,
-                                                root_save_prefix='root/ACT_PATTERN_ANALYSIS', final_postfix_for_save="",
+                                                root_save_prefix=None, final_postfix_for_save=None,
                                                 class_indx_to_visualize=None, is_save_graph_visualizations=True):
     is_log_wandb = not(wand_project_name is None)
 
@@ -885,19 +888,64 @@ if __name__ == '__main__':
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = False
     # GENERATE , LOAD
-    scheme_type = "LOAD"
+    scheme_type = "GENERATE"
+    # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
+    sub_scheme_type = 'OVER_ORIGINAL'
     collect_threshold = 0.95
 
     class_ind_visualize = [9]
-    load_analyser_base_folder = "root/ACT_PATTERN_ANALYSIS/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
 
     if(not(wand_project_name is None)):
         wandb.login()
+
     if(scheme_type == "GENERATE"):
-        list_of_act_analyser = run_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
-                                                                 activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name_for_gen, is_split_validation,
-                                                                 valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold, is_save_graph_visualizations=is_save_graph_visualizations)
+        list_of_model_paths = []
+        models_base_path = None
+
+        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/"
+
+        if(models_base_path != None):
+            list_of_save_prefixes = []
+            list_of_save_postfixes = []
+
+            num_iterations = 3
+            for i in range(1, num_iterations+1):
+                each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
+                list_of_model_paths.append(models_base_path+each_model_prefix)
+                list_of_save_prefixes.append(
+                    str(models_base_path)+"/ACT_ANALYSIS/"+str(sub_scheme_type))
+                list_of_save_postfixes.append("/aug_indx_{}".format(i))
+
+        else:
+            list_of_model_paths = [None]
+            list_of_save_prefixes = [
+                "root/ACT_PATTERN_ANALYSIS/"+str(sub_scheme_type)]
+            list_of_save_postfixes = [None]
+
+        for ind in range(len(list_of_model_paths)):
+            each_model_path = list_of_model_paths[ind]
+            each_save_prefix = list_of_save_prefixes[ind]
+            each_save_postfix = list_of_save_postfixes[ind]
+
+            if(each_model_path is None):
+                custom_model = None
+            else:
+                custom_model = torch.load(each_model_path)
+                print(" #*#*#*#*#*#*#*# Generating activation analysis for model path:{} with save prefix :{} and postfix:{}".format(
+                    each_model_path, each_save_prefix, each_save_postfix))
+
+            if(sub_scheme_type == 'OVER_ORIGINAL'):
+                list_of_act_analyser = run_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
+                                                                         activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name_for_gen, is_split_validation,
+                                                                         valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold,
+                                                                         custom_model=custom_model, root_save_prefix=each_save_prefix, final_postfix_for_save=each_save_postfix,
+                                                                         is_save_graph_visualizations=is_save_graph_visualizations)
+            elif(sub_scheme_type == 'OVER_RECONSTRUCTED'):
+                pass
+
     elif(scheme_type == "LOAD"):
+        load_analyser_base_folder = "root/ACT_PATTERN_ANALYSIS/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
+
         list_of_act_analyser = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder,
                                                                            class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True)
 

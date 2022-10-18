@@ -190,7 +190,7 @@ def construct_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viri
     a = row * heatmap_data[0].shape[0]
     b = col*heatmap_data[0].shape[1]
     fig, ax_list = plt.subplots(
-        row, col, sharex=True, sharey=True, figsize=(b/2, a/2))
+        row, col, sharex=True, sharey=True, figsize=(b/4, a/4))
     for r in tqdm.tqdm(range(row), desc=" Constructing heatmap for {} with num_row:{}".format(title, row)):
         for c in range(col):
             ind_c = c
