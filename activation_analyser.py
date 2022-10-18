@@ -631,7 +631,7 @@ class ActivationAnalyser():
                                             is_act_collection_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                             wand_project_name, wandb_group_name, torch_seed, collect_threshold,
                                             root_save_prefix="root/ACT_PATTERN_PER_CLASS", final_postfix_for_save="", analysed_model_path="",
-                                            is_save_graph_visualizations=True, is_save_activation_records=True):
+                                            is_save_graph_visualizations=True, is_save_activation_records=True,save_only_thres=False):
         self.root_save_prefix = root_save_prefix
         self.final_postfix_for_save = final_postfix_for_save
         self.class_label = class_label
@@ -688,12 +688,12 @@ class ActivationAnalyser():
             self.model = temp_model
 
         self.save_and_log_states(
-            wand_project_name, is_save_graph_visualizations=is_save_graph_visualizations)
+            wand_project_name, is_save_graph_visualizations=is_save_graph_visualizations,save_only_thres=save_only_thres)
 
         if(is_log_wandb):
             wandb.finish()
 
-    def save_and_log_states(self, wand_project_name, root_save_prefix=None, final_postfix_for_save=None, is_save_graph_visualizations=True):
+    def save_and_log_states(self, wand_project_name, root_save_prefix=None, final_postfix_for_save=None, is_save_graph_visualizations=True,save_only_thres=False):
         is_log_wandb = not(wand_project_name is None)
         log_dict = self.get_wandb_log_dict()
         print("log_dict", log_dict)
@@ -722,7 +722,7 @@ class ActivationAnalyser():
                     self.final_postfix_for_save, final_postfix_for_save)
             if not os.path.exists(save_folder):
                 os.makedirs(save_folder)
-            self.save_recorded_activation_states(save_folder)
+            self.save_recorded_activation_states(save_folder,save_only_thres)
 
 
 def run_activation_analysis_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth,
@@ -807,7 +807,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
 
 def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder,
                                                 root_save_prefix=None, final_postfix_for_save=None,
-                                                class_indx_to_visualize=None, is_save_graph_visualizations=True):
+                                                class_indx_to_visualize=None, is_save_graph_visualizations=True,save_only_thres=False):
     is_log_wandb = not(wand_project_name is None)
 
     print("Running for "+str(dataset))
@@ -833,7 +833,7 @@ def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_
             with open(load_folder+'/analyser_state.pkl', 'rb') as in_file:
                 act_analyser = pickle.load(in_file)
                 act_analyser.save_and_log_states(
-                    wand_project_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations)
+                    wand_project_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations,save_only_thres)
                 if(is_log_wandb):
                     wandb.finish()
                 list_of_act_analyser.append(act_analyser)
@@ -845,7 +845,7 @@ def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_
         with open(load_folder+'/analyser_state.pkl', 'rb') as in_file:
             act_analyser = pickle.load(in_file)
             act_analyser.save_and_log_states(
-                wand_project_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations)
+                wand_project_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations,save_only_thres)
             if(is_log_wandb):
                 wandb.finish()
 
