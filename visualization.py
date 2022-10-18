@@ -14,7 +14,7 @@ import random
 
 import time
 
-from structure.dlgn_conv_config_structure import DatasetConfig
+from configs.generic_configs import get_preprocessing_and_other_configs
 from configs.dlgn_conv_config import HardRelu
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
 from structure.generic_structure import PerClassDataset
@@ -1325,33 +1325,15 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                 custom_model=None, custom_data_loader=None, class_indx_to_visualize=None):
     output_template_list_per_class = None
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    if(dataset == "cifar10"):
-        print("Running for CIFAR 10")
-        classes = ('plane', 'car', 'bird', 'cat',
-                   'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-        num_classes = len(classes)
+    print("Running for "+str(dataset))
+    classes, num_classes, ret_config = get_preprocessing_and_other_configs(
+        dataset, valid_split_size)
 
-        if(custom_data_loader is None):
-            cifar10_config = DatasetConfig(
-                'cifar10', is_normalize_data=False, valid_split_size=valid_split_size, batch_size=128)
-
-            trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
-        else:
-            trainloader, testloader = custom_data_loader
-
-    elif(dataset == "mnist"):
-        print("Running for MNIST")
-        classes = [str(i) for i in range(0, 10)]
-        num_classes = len(classes)
-        if(custom_data_loader is None):
-            mnist_config = DatasetConfig(
-                'mnist', is_normalize_data=True, valid_split_size=valid_split_size, batch_size=128)
-
-            trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
-        else:
-            trainloader, testloader = custom_data_loader
+    if(custom_data_loader is None):
+        trainloader, _, testloader = preprocess_dataset_get_data_loader(
+            ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
+    else:
+        trainloader, testloader = custom_data_loader
 
     print("Preprocessing and dataloader process completed of type:{} for dataset:{}".format(
         model_arch_type, dataset))
