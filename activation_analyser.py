@@ -4,15 +4,16 @@ from tqdm import tqdm, trange
 import wandb
 import random
 import numpy as np
+import pickle
 
 
 from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, determine_row_col_from_features
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
-from structure.dlgn_conv_config_structure import DatasetConfig
 from configs.dlgn_conv_config import HardRelu
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
 from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
+from configs.generic_configs import get_preprocessing_and_other_configs
 
 
 def seed_worker(worker_id):
@@ -60,6 +61,7 @@ class ActivationAnalyser():
         self.reset_analyser_state()
 
     def reset_analyser_state(self):
+        self.total_tcollect_img_count = 0
         # Count based states
         # Size: [Num layers,Num filter in current layer, W , H]
         self.active_counts_activation_map_list = None
@@ -98,12 +100,12 @@ class ActivationAnalyser():
         self.overall_min_active_percentage = None
         self.overall_max_active_percentage = None
 
-    def save_recorded_activation_states(self, base_save_folder, is_log_wandb):
+    def save_recorded_activation_states(self, base_save_folder):
         cpudevice = torch.device("cpu")
         # For each conv layer
         for indx in range(len(self.active_counts_activation_map_list)):
+            print("Saving visualization for layer:", indx)
             dict_full_path_to_saves = dict()
-            raw_wandb_log_dict = dict()
 
             current_active_counts_activation_map = self.active_counts_activation_map_list[
                 indx].to(cpudevice, non_blocking=True).numpy()
@@ -133,21 +135,6 @@ class ActivationAnalyser():
             final_save_dir = base_save_folder+"/layer_{}/".format(indx)
             if not os.path.exists(final_save_dir):
                 os.makedirs(final_save_dir)
-
-            raw_wandb_log_dict["r_active_count_ov_act_map"] = current_active_counts_activation_map
-            raw_wandb_log_dict["r_act_inact_diff_count_ov_act_map"] = current_active_inactive_diff_activation_map
-            raw_wandb_log_dict["r_thres_active_indictor_ov_act_map"] = current_active_thresholded_indicator_activation_map
-            raw_wandb_log_dict["r_mean_per_pxl_ov_act_map"] = current_mean_per_pixel_of_activations_map
-            raw_wandb_log_dict["r_std_dev_per_pxl_ov_act_map"] = current_std_per_pixel_of_activations_map
-            raw_wandb_log_dict["r_min_per_pxl_ov_act_map"] = current_min_per_pixel_of_activations_map
-            raw_wandb_log_dict["r_max_per_pxl_ov_act_map"] = current_max_per_pixel_of_activations_map
-            raw_wandb_log_dict["r_avg_mean_per_act_map"] = current_avg_mean_per_activations_map
-            raw_wandb_log_dict["r_avg_std_per_act_map"] = current_avg_std_per_activations_map
-            raw_wandb_log_dict["r_avg_min_per_act_map"] = current_avg_min_per_activations_map
-            raw_wandb_log_dict["r_avg_max_per_act_map"] = current_avg_max_per_activations_map
-
-            if(is_log_wandb == True):
-                wandb.log(raw_wandb_log_dict)
 
             current_full_save_path = final_save_dir+"active_counts_over_activation_map.jpg"
             dict_full_path_to_saves["active_count_ov_act_map"] = current_full_save_path
@@ -613,10 +600,39 @@ class ActivationAnalyser():
 
         self.update_overall_recorded_states(collect_threshold, num_batches)
 
+    def get_raw_record_state_dict(self):
+        raw_wandb_log_dict = dict()
+        raw_wandb_log_dict["r_active_count_ov_act_map"] = self.active_counts_activation_map_list
+        raw_wandb_log_dict["r_act_inact_diff_count_ov_act_map"] = self.active_inactive_diff_activation_map_list
+        raw_wandb_log_dict["r_thres_active_indictor_ov_act_map"] = self.active_thresholded_indicator_activation_map_list
+        raw_wandb_log_dict["r_mean_per_pxl_ov_act_map"] = self.mean_per_pixel_of_activations_map_list
+        raw_wandb_log_dict["r_std_dev_per_pxl_ov_act_map"] = self.std_per_pixel_of_activations_map_list
+        raw_wandb_log_dict["r_min_per_pxl_ov_act_map"] = self.min_per_pixel_of_activations_map_list
+        raw_wandb_log_dict["r_max_per_pxl_ov_act_map"] = self.max_per_pixel_of_activations_map_list
+        raw_wandb_log_dict["r_avg_mean_per_act_map"] = self.avg_mean_per_activations_map_list
+        raw_wandb_log_dict["r_avg_std_per_act_map"] = self.avg_std_per_activations_map_list
+        raw_wandb_log_dict["r_avg_min_per_act_map"] = self.avg_min_per_activations_map_list
+        raw_wandb_log_dict["r_avg_max_per_act_map"] = self.avg_max_per_activations_map_list
+
+        return raw_wandb_log_dict
+
+    def get_wandb_log_dict(self):
+        log_dict = {
+            "total_pixels": self.total_pixels, "thres_active_pxl_count": self.thresholded_active_pixel_count, "thres_active_pxl_percent": self.thresholded_active_pixels_percentage,
+            "unthres_active_pxl_count": self.unthresholded_active_pixel_count, "unthres_active_pxl_percent": self.unthresholded_active_pixels_percentage,
+            "ovrall_avg_active_percent": self.overall_average_active_percentage, "ovrall_std_active_percent":  self.overall_std_active_percentage,
+            "ovrall_min_active_percent": self.overall_min_active_percentage, "ovrall_max_active_percent": self.overall_max_active_percentage
+        }
+        return log_dict
+
     def generate_activation_stats_per_class(self, exp_type, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
                                             is_act_collection_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                             wand_project_name, wandb_group_name, torch_seed, collect_threshold,
-                                            root_save_prefix="root/ACT_PATTERN_PER_CLASS", final_postfix_for_save="", analysed_model_path="", is_save_graph_visualizations=True):
+                                            root_save_prefix="root/ACT_PATTERN_PER_CLASS", final_postfix_for_save="", analysed_model_path="",
+                                            is_save_graph_visualizations=True, is_save_activation_records=True):
+        self.root_save_prefix = root_save_prefix
+        self.final_postfix_for_save = final_postfix_for_save
+        self.class_label = class_label
         is_log_wandb = not(wand_project_name is None)
 
         # torch.manual_seed(torch_seed)
@@ -644,82 +660,86 @@ class ActivationAnalyser():
         if not os.path.exists(self.image_save_prefix_folder):
             os.makedirs(self.image_save_prefix_folder)
 
-        if(is_log_wandb):
-            wandb_run_name = self.image_save_prefix_folder.replace(
-                "/", "").replace(root_save_prefix, class_label)
-            wandb_config = get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_act_collection_on_train,
-                                            is_class_segregation_on_ground_truth,
-                                            activation_calculation_batch_size, torch_seed, analysed_model_path,
-                                            number_of_batch_to_collect=number_of_batch_to_collect, collect_threshold=collect_threshold)
-
-            wandb.init(
-                project=f"{wand_project_name}",
-                name=f"{wandb_run_name}",
-                group=f"{wandb_group_name}",
-                config=wandb_config,
-            )
+        wandb_run_name = self.image_save_prefix_folder.replace(
+            "/", "").replace(root_save_prefix, class_label)
+        self.wandb_run_name = wandb_run_name
+        wandb_config = get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_act_collection_on_train,
+                                        is_class_segregation_on_ground_truth,
+                                        activation_calculation_batch_size, torch_seed, analysed_model_path,
+                                        number_of_batch_to_collect=number_of_batch_to_collect, collect_threshold=collect_threshold)
+        self.wandb_config = wandb_config
+        self.wandb_group_name = wandb_group_name
 
         self.record_activation_states(per_class_data_loader, class_label,
                                       number_of_batch_to_collect, collect_threshold, is_save_original_image=False)
 
         save_folder = self.image_save_prefix_folder + \
             "class_"+str(class_label)+"/"
-        if not os.path.exists(save_folder):
-            os.makedirs(save_folder)
 
-        log_dict = {
-            "total_pixels": self.total_pixels, "thres_active_pxl_count": self.thresholded_active_pixel_count, "thres_active_pxl_percent": self.thresholded_active_pixels_percentage,
-            "unthres_active_pxl_count": self.unthresholded_active_pixel_count, "unthres_active_pxl_percent": self.unthresholded_active_pixels_percentage,
-            "ovrall_avg_active_percent": self.overall_average_active_percentage, "ovrall_std_active_percent":  self.overall_std_active_percentage,
-            "ovrall_min_active_percent": self.overall_min_active_percentage, "ovrall_max_active_percent": self.overall_max_active_percentage
-        }
+        if(is_save_activation_records == True):
+            temp_model = self.model
+            self.model = None
+            if not os.path.exists(save_folder):
+                os.makedirs(save_folder)
+            with open(save_folder+'/analyser_state.pkl', 'wb') as out_file:
+                pickle.dump(self, out_file)
+            self.model = temp_model
 
-        print("log_dict", log_dict)
-
-        if(is_log_wandb):
-            wandb.log(log_dict)
-        if(is_save_graph_visualizations == True):
-            self.save_recorded_activation_states(save_folder, is_log_wandb)
+        self.save_and_log_states(
+            wand_project_name, is_save_graph_visualizations=is_save_graph_visualizations)
 
         if(is_log_wandb):
             wandb.finish()
+
+    def save_and_log_states(self, wand_project_name, root_save_prefix=None, final_postfix_for_save=None, is_save_graph_visualizations=True):
+        is_log_wandb = not(wand_project_name is None)
+        log_dict = self.get_wandb_log_dict()
+        print("log_dict", log_dict)
+
+        if(is_log_wandb):
+            wandb_run_name = self.wandb_run_name
+            if(root_save_prefix is not None and final_postfix_for_save is not None):
+                wandb_run_name = self.wandb_run_name.replace(self.root_save_prefix, root_save_prefix).replace(
+                    self.final_postfix_for_save, final_postfix_for_save)
+            raw_wandb_log_dict = self.get_raw_record_state_dict()
+            wandb.init(
+                project=f"{wand_project_name}",
+                name=f"{wandb_run_name}",
+                group=f"{self.wandb_group_name}",
+                config=self.wandb_config,
+            )
+            # Merge the two dictionary to log at one shot
+            raw_wandb_log_dict.update(log_dict)
+            wandb.log(raw_wandb_log_dict)
+
+        if(is_save_graph_visualizations == True):
+            save_folder = self.image_save_prefix_folder + \
+                "class_"+str(self.class_label)+"/"
+            if(root_save_prefix is not None and final_postfix_for_save is not None):
+                save_folder = save_folder.replace(self.root_save_prefix, root_save_prefix).replace(
+                    self.final_postfix_for_save, final_postfix_for_save)
+            if not os.path.exists(save_folder):
+                os.makedirs(save_folder)
+            self.save_recorded_activation_states(save_folder)
 
 
 def run_activation_analysis_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth,
                                       activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                       valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold,
                                       root_save_prefix='root/ACT_PATTERN_ANALYSIS', final_postfix_for_save="",
-                                      custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, analysed_model_path=""):
+                                      custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, analysed_model_path="",
+                                      is_save_graph_visualizations=True, is_save_activation_records=True):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print("Running for "+str(dataset))
+    classes, num_classes, ret_config = get_preprocessing_and_other_configs(
+        dataset, valid_split_size)
 
-    if(dataset == "cifar10"):
-        print("Running for CIFAR 10")
-        classes = ('plane', 'car', 'bird', 'cat',
-                   'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-        num_classes = len(classes)
-
-        if(custom_data_loader is None):
-            cifar10_config = DatasetConfig(
-                'cifar10', is_normalize_data=False, valid_split_size=valid_split_size, batch_size=128)
-
-            trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
-        else:
-            trainloader, testloader = custom_data_loader
-
-    elif(dataset == "mnist"):
-        print("Running for MNIST")
-        classes = [str(i) for i in range(0, 10)]
-        num_classes = len(classes)
-        if(custom_data_loader is None):
-            mnist_config = DatasetConfig(
-                'mnist', is_normalize_data=True, valid_split_size=valid_split_size, batch_size=128)
-
-            trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
-        else:
-            trainloader, testloader = custom_data_loader
+    if(custom_data_loader is None):
+        trainloader, _, testloader = preprocess_dataset_get_data_loader(
+            ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
+    else:
+        trainloader, testloader = custom_data_loader
 
     print("Preprocessing and dataloader process completed of type:{} for dataset:{}".format(
         model_arch_type, dataset))
@@ -759,7 +779,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
             act_analyser.generate_activation_stats_per_class(exp_type, per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
                                                              is_template_image_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                                              wand_project_name, wandb_group_name, torch_seed, collect_threshold,
-                                                             root_save_prefix, final_postfix_for_save, analysed_model_path)
+                                                             root_save_prefix, final_postfix_for_save, analysed_model_path, is_save_graph_visualizations, is_save_activation_records)
             list_of_act_analyser.append(act_analyser)
     elif(exp_type == "GENERATE_RECORD_STATS_OVERALL"):
         class_label = 'ALL_CLASSES'
@@ -774,7 +794,56 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
         act_analyser.generate_activation_stats_per_class(exp_type, analyse_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
                                                          is_template_image_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                                          wand_project_name, wandb_group_name, torch_seed, collect_threshold,
-                                                         root_save_prefix, final_postfix_for_save, analysed_model_path)
+                                                         root_save_prefix, final_postfix_for_save, analysed_model_path, is_save_graph_visualizations, is_save_activation_records)
+        list_of_act_analyser.append(act_analyser)
+
+    return list_of_act_analyser
+
+
+def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder,
+                                                root_save_prefix='root/ACT_PATTERN_ANALYSIS', final_postfix_for_save="",
+                                                class_indx_to_visualize=None, is_save_graph_visualizations=True):
+    is_log_wandb = not(wand_project_name is None)
+
+    print("Running for "+str(dataset))
+    classes, _, _ = get_preprocessing_and_other_configs(
+        dataset, valid_split_size)
+
+    print("load_and_save_activation_analysis_on_config of type:{} for dataset:{}".format(
+        model_arch_type, dataset))
+
+    if(class_indx_to_visualize is None):
+        class_indx_to_visualize = [i for i in range(len(classes))]
+
+    list_of_act_analyser = []
+    if(exp_type == "GENERATE_RECORD_STATS_PER_CLASS"):
+
+        for c_indx in class_indx_to_visualize:
+            class_label = classes[c_indx]
+            print(
+                "************************************************************ Class:", class_label)
+
+            load_folder = load_analyser_base_folder + \
+                "/class_"+str(class_label)
+            with open(load_folder+'/analyser_state.pkl', 'rb') as in_file:
+                act_analyser = pickle.load(in_file)
+                act_analyser.save_and_log_states(
+                    wand_project_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations)
+                if(is_log_wandb):
+                    wandb.finish()
+                list_of_act_analyser.append(act_analyser)
+
+    elif(exp_type == "GENERATE_RECORD_STATS_OVERALL"):
+        class_label = 'ALL_CLASSES'
+        c_indx = -1
+        load_folder = load_analyser_base_folder + "/class_"+str(class_label)
+        with open(load_folder+'/analyser_state.pkl', 'rb') as in_file:
+            act_analyser = pickle.load(in_file)
+            act_analyser.save_and_log_states(
+                wand_project_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations)
+            if(is_log_wandb):
+                wandb.finish()
+
         list_of_act_analyser.append(act_analyser)
 
     return list_of_act_analyser
@@ -805,21 +874,31 @@ if __name__ == '__main__':
     activation_calculation_batch_size = 64
     number_of_batch_to_collect = None
     # wand_project_name = 'test_activation_analyser'
-    # wand_project_name = 'activation_analysis_class'
-    wand_project_name = None
+    wand_project_name = 'activation_analysis_class'
+    # wand_project_name = None
+    wand_project_name_for_gen = None
     wandb_group_name = "activation_analysis_mnist_conv4_dlgn"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
     # GENERATE_RECORD_STATS_PER_CLASS ,  GENERATE_RECORD_STATS_OVERALL
-    exp_type = "GENERATE_RECORD_STATS_OVERALL"
+    exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
+    is_save_graph_visualizations = False
+    # GENERATE , LOAD
+    scheme_type = "LOAD"
     collect_threshold = 0.95
+
+    class_ind_visualize = [9]
+    load_analyser_base_folder = "root/ACT_PATTERN_ANALYSIS/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
 
     if(not(wand_project_name is None)):
         wandb.login()
-
-    list_of_act_analyser = run_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
-                                                             activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name, is_split_validation,
-                                                             valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold)
+    if(scheme_type == "GENERATE"):
+        list_of_act_analyser = run_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
+                                                                 activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name_for_gen, is_split_validation,
+                                                                 valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold, is_save_graph_visualizations=is_save_graph_visualizations)
+    elif(scheme_type == "LOAD"):
+        list_of_act_analyser = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder,
+                                                                           class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True)
 
     print("Finished execution!!!")
