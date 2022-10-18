@@ -880,7 +880,7 @@ if __name__ == '__main__':
     wand_project_name = 'activation_analysis_class'
     # wand_project_name = None
     wand_project_name_for_gen = None
-    wandb_group_name = "activation_analysis_mnist_conv4_dlgn"
+    wandb_group_name = "activation_analysis_augmented_mnist_conv4_dlgn"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
@@ -888,12 +888,10 @@ if __name__ == '__main__':
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = False
     # GENERATE , LOAD
-    scheme_type = "GENERATE"
+    scheme_type = "LOAD"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     collect_threshold = 0.95
-
-    class_ind_visualize = [9]
 
     if(not(wand_project_name is None)):
         wandb.login()
@@ -926,9 +924,11 @@ if __name__ == '__main__':
             each_model_path = list_of_model_paths[ind]
             each_save_prefix = list_of_save_prefixes[ind]
             each_save_postfix = list_of_save_postfixes[ind]
+            analysed_model_path = each_model_path
 
             if(each_model_path is None):
                 custom_model = None
+                analysed_model_path = ''
             else:
                 custom_model = torch.load(each_model_path)
                 print(" #*#*#*#*#*#*#*# Generating activation analysis for model path:{} with save prefix :{} and postfix:{}".format(
@@ -939,14 +939,32 @@ if __name__ == '__main__':
                                                                          activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name_for_gen, is_split_validation,
                                                                          valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold,
                                                                          custom_model=custom_model, root_save_prefix=each_save_prefix, final_postfix_for_save=each_save_postfix,
-                                                                         is_save_graph_visualizations=is_save_graph_visualizations)
+                                                                         is_save_graph_visualizations=is_save_graph_visualizations, analysed_model_path=analysed_model_path)
             elif(sub_scheme_type == 'OVER_RECONSTRUCTED'):
                 pass
 
     elif(scheme_type == "LOAD"):
-        load_analyser_base_folder = "root/ACT_PATTERN_ANALYSIS/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
+        class_ind_visualize = [0, 2, 4, 6, 8]
+        # class_ind_visualize = None
+        # class_ind_visualize = [1, 3, 5, 7, 9]
+        list_of_load_paths = []
+        loader_base_path = None
 
-        list_of_act_analyser = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder,
-                                                                           class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True)
+        loader_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_OVERALL/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
+
+        if(loader_base_path != None):
+            num_iterations = 3
+            # for i in range(1, num_iterations+1):
+            for i in range(3, 4):
+                each_model_prefix = "aug_indx_{}".format(i)
+                list_of_load_paths.append(loader_base_path+each_model_prefix)
+
+        else:
+            list_of_load_paths = ["root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"]
+
+        for ind in range(len(list_of_load_paths)):
+            current_analyser_loader_path = list_of_load_paths[ind]
+            list_of_act_analyser = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, current_analyser_loader_path,
+                                                                               class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True)
 
     print("Finished execution!!!")
