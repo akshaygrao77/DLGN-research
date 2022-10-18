@@ -100,52 +100,19 @@ class ActivationAnalyser():
         self.overall_min_active_percentage = None
         self.overall_max_active_percentage = None
 
-    def save_recorded_activation_states(self, base_save_folder):
+    def save_recorded_activation_states(self, base_save_folder, save_only_thres=False):
         cpudevice = torch.device("cpu")
         # For each conv layer
         for indx in range(len(self.active_counts_activation_map_list)):
             print("Saving visualization for layer:", indx)
             dict_full_path_to_saves = dict()
 
-            current_active_counts_activation_map = self.active_counts_activation_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-            current_active_inactive_diff_activation_map = self.active_inactive_diff_activation_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-            current_active_thresholded_indicator_activation_map = self.active_thresholded_indicator_activation_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-
-            current_mean_per_pixel_of_activations_map = self.mean_per_pixel_of_activations_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-            current_std_per_pixel_of_activations_map = self.std_per_pixel_of_activations_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-            current_min_per_pixel_of_activations_map = self.min_per_pixel_of_activations_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-            current_max_per_pixel_of_activations_map = self.max_per_pixel_of_activations_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-
-            current_avg_mean_per_activations_map = self.avg_mean_per_activations_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-            current_avg_std_per_activations_map = self.avg_std_per_activations_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-            current_avg_min_per_activations_map = self.avg_min_per_activations_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-            current_avg_max_per_activations_map = self.avg_max_per_activations_map_list[
-                indx].to(cpudevice, non_blocking=True).numpy()
-
             final_save_dir = base_save_folder+"/layer_{}/".format(indx)
             if not os.path.exists(final_save_dir):
                 os.makedirs(final_save_dir)
 
-            current_full_save_path = final_save_dir+"active_counts_over_activation_map.jpg"
-            dict_full_path_to_saves["active_count_ov_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(current_active_counts_activation_map, title='Active counts over activation map',
-                                         save_path=current_full_save_path)
-
-            current_full_save_path = final_save_dir + \
-                "active_inact_diff_counts_over_activation_map.jpg"
-            dict_full_path_to_saves["act_inact_diff_count_ov_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(current_active_inactive_diff_activation_map, title='Active - inactive difference counts over activation map',
-                                         save_path=current_full_save_path)
+            current_active_thresholded_indicator_activation_map = self.active_thresholded_indicator_activation_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
 
             current_full_save_path = final_save_dir + \
                 "thres_active_indicators_over_activation_map.jpg"
@@ -153,65 +120,100 @@ class ActivationAnalyser():
             construct_heatmaps_from_data(current_active_thresholded_indicator_activation_map,
                                          title='Thresholded active pixel indicatoes over activation map', save_path=current_full_save_path)
 
-            current_full_save_path = final_save_dir + \
-                "mean_per_pixel_over_activation_map.jpg"
-            dict_full_path_to_saves["mean_per_pxl_ov_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(
-                current_mean_per_pixel_of_activations_map, title="Mean per pixel over activation map", save_path=current_full_save_path)
+            if(save_only_thres == False):
+                current_active_counts_activation_map = self.active_counts_activation_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_active_inactive_diff_activation_map = self.active_inactive_diff_activation_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
 
-            current_full_save_path = final_save_dir + \
-                "std_dev_per_pixel_over_activation_map.jpg"
-            dict_full_path_to_saves["std_dev_per_pxl_ov_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(
-                current_std_per_pixel_of_activations_map, title="Standard deviation per pixel over activation map", save_path=current_full_save_path)
+                current_mean_per_pixel_of_activations_map = self.mean_per_pixel_of_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_std_per_pixel_of_activations_map = self.std_per_pixel_of_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_min_per_pixel_of_activations_map = self.min_per_pixel_of_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_max_per_pixel_of_activations_map = self.max_per_pixel_of_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
 
-            current_full_save_path = final_save_dir + \
-                "min_per_pixel_over_activation_map.jpg"
-            dict_full_path_to_saves["min_per_pxl_ov_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(
-                current_min_per_pixel_of_activations_map, title="Min per pixel over activation map", save_path=current_full_save_path)
+                current_avg_mean_per_activations_map = self.avg_mean_per_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_avg_std_per_activations_map = self.avg_std_per_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_avg_min_per_activations_map = self.avg_min_per_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_avg_max_per_activations_map = self.avg_max_per_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
 
-            current_full_save_path = final_save_dir + \
-                "max_per_pixel_over_activation_map.jpg"
-            dict_full_path_to_saves["max_per_pxl_ov_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(
-                current_max_per_pixel_of_activations_map, title="Max per pixel over activation map", save_path=current_full_save_path)
+                current_full_save_path = final_save_dir+"active_counts_over_activation_map.jpg"
+                dict_full_path_to_saves["active_count_ov_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(current_active_counts_activation_map, title='Active counts over activation map',
+                                             save_path=current_full_save_path)
 
-            # Obtain the resize shape for num_filters dimension
-            r, c = determine_row_col_from_features(
-                current_avg_mean_per_activations_map.shape[0])
-            current_avg_mean_per_activations_map = np.reshape(
-                current_avg_mean_per_activations_map, (1, r, c))
-            current_avg_std_per_activations_map = np.reshape(
-                current_avg_std_per_activations_map, (1, r, c))
-            current_avg_min_per_activations_map = np.reshape(
-                current_avg_min_per_activations_map, (1, r, c))
-            current_avg_max_per_activations_map = np.reshape(
-                current_avg_max_per_activations_map, (1, r, c))
+                current_full_save_path = final_save_dir + \
+                    "active_inact_diff_counts_over_activation_map.jpg"
+                dict_full_path_to_saves["act_inact_diff_count_ov_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(current_active_inactive_diff_activation_map, title='Active - inactive difference counts over activation map',
+                                             save_path=current_full_save_path)
 
-            current_full_save_path = final_save_dir + \
-                "avg_mean_per_act_map.jpg"
-            dict_full_path_to_saves["avg_mean_per_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(current_avg_mean_per_activations_map,
-                                         title='Average of mean per activation map', save_path=current_full_save_path)
+                current_full_save_path = final_save_dir + \
+                    "mean_per_pixel_over_activation_map.jpg"
+                dict_full_path_to_saves["mean_per_pxl_ov_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(
+                    current_mean_per_pixel_of_activations_map, title="Mean per pixel over activation map", save_path=current_full_save_path)
 
-            current_full_save_path = final_save_dir + \
-                "avg_std_per_act_map.jpg"
-            dict_full_path_to_saves["avg_std_per_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(current_avg_std_per_activations_map,
-                                         title='Average of std deviation per activation map', save_path=current_full_save_path)
+                current_full_save_path = final_save_dir + \
+                    "std_dev_per_pixel_over_activation_map.jpg"
+                dict_full_path_to_saves["std_dev_per_pxl_ov_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(
+                    current_std_per_pixel_of_activations_map, title="Standard deviation per pixel over activation map", save_path=current_full_save_path)
 
-            current_full_save_path = final_save_dir + \
-                "avg_min_per_act_map.jpg"
-            dict_full_path_to_saves["avg_min_per_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(current_avg_min_per_activations_map,
-                                         title='Average of min per activation map', save_path=current_full_save_path)
+                current_full_save_path = final_save_dir + \
+                    "min_per_pixel_over_activation_map.jpg"
+                dict_full_path_to_saves["min_per_pxl_ov_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(
+                    current_min_per_pixel_of_activations_map, title="Min per pixel over activation map", save_path=current_full_save_path)
 
-            current_full_save_path = final_save_dir + \
-                "avg_max_per_act_map.jpg"
-            dict_full_path_to_saves["avg_max_per_act_map"] = current_full_save_path
-            construct_heatmaps_from_data(current_avg_max_per_activations_map,
-                                         title='Average of max per activation map', save_path=current_full_save_path)
+                current_full_save_path = final_save_dir + \
+                    "max_per_pixel_over_activation_map.jpg"
+                dict_full_path_to_saves["max_per_pxl_ov_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(
+                    current_max_per_pixel_of_activations_map, title="Max per pixel over activation map", save_path=current_full_save_path)
+
+                # Obtain the resize shape for num_filters dimension
+                r, c = determine_row_col_from_features(
+                    current_avg_mean_per_activations_map.shape[0])
+                current_avg_mean_per_activations_map = np.reshape(
+                    current_avg_mean_per_activations_map, (1, r, c))
+                current_avg_std_per_activations_map = np.reshape(
+                    current_avg_std_per_activations_map, (1, r, c))
+                current_avg_min_per_activations_map = np.reshape(
+                    current_avg_min_per_activations_map, (1, r, c))
+                current_avg_max_per_activations_map = np.reshape(
+                    current_avg_max_per_activations_map, (1, r, c))
+
+                current_full_save_path = final_save_dir + \
+                    "avg_mean_per_act_map.jpg"
+                dict_full_path_to_saves["avg_mean_per_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(current_avg_mean_per_activations_map,
+                                             title='Average of mean per activation map', save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "avg_std_per_act_map.jpg"
+                dict_full_path_to_saves["avg_std_per_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(current_avg_std_per_activations_map,
+                                             title='Average of std deviation per activation map', save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "avg_min_per_act_map.jpg"
+                dict_full_path_to_saves["avg_min_per_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(current_avg_min_per_activations_map,
+                                             title='Average of min per activation map', save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "avg_max_per_act_map.jpg"
+                dict_full_path_to_saves["avg_max_per_act_map"] = current_full_save_path
+                construct_heatmaps_from_data(current_avg_max_per_activations_map,
+                                             title='Average of max per activation map', save_path=current_full_save_path)
 
             print("dict_full_path_to_saves in iteration {}=>{}".format(
                 indx, dict_full_path_to_saves))
@@ -880,7 +882,7 @@ if __name__ == '__main__':
     wand_project_name = 'activation_analysis_class'
     # wand_project_name = None
     wand_project_name_for_gen = None
-    wandb_group_name = "activation_analysis_augmented_mnist_conv4_dlgn"
+    wandb_group_name = "activation_analysis_augmented_mnist_conv4_dlgn_c75"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
@@ -900,7 +902,7 @@ if __name__ == '__main__':
         list_of_model_paths = []
         models_base_path = None
 
-        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/"
+        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/"
 
         if(models_base_path != None):
             list_of_save_prefixes = []
@@ -909,6 +911,7 @@ if __name__ == '__main__':
             num_iterations = 3
             for i in range(1, num_iterations+1):
                 each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
+                # each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
                 list_of_model_paths.append(models_base_path+each_model_prefix)
                 list_of_save_prefixes.append(
                     str(models_base_path)+"/ACT_ANALYSIS/"+str(sub_scheme_type))
@@ -950,7 +953,7 @@ if __name__ == '__main__':
         list_of_load_paths = []
         loader_base_path = None
 
-        loader_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_OVERALL/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
+        loader_base_path = "DLGN-research/root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
 
         if(loader_base_path != None):
             num_iterations = 3
