@@ -14,6 +14,7 @@ from utils.data_preprocessing import preprocess_dataset_get_data_loader, segrega
 from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
 from configs.generic_configs import get_preprocessing_and_other_configs
+from adversarial_attacks_tester import generate_adv_examples
 
 
 def seed_worker(worker_id):
@@ -631,7 +632,7 @@ class ActivationAnalyser():
                                             is_act_collection_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                             wand_project_name, wandb_group_name, torch_seed, collect_threshold,
                                             root_save_prefix="root/ACT_PATTERN_PER_CLASS", final_postfix_for_save="", analysed_model_path="",
-                                            is_save_graph_visualizations=True, is_save_activation_records=True, save_only_thres=False):
+                                            is_save_graph_visualizations=True, is_save_activation_records=True, save_only_thres=False, wandb_config_additional_dict=None):
         self.root_save_prefix = root_save_prefix
         self.final_postfix_for_save = final_postfix_for_save
         self.class_label = class_label
@@ -669,6 +670,9 @@ class ActivationAnalyser():
                                         is_class_segregation_on_ground_truth,
                                         activation_calculation_batch_size, torch_seed, analysed_model_path,
                                         number_of_batch_to_collect=number_of_batch_to_collect, collect_threshold=collect_threshold)
+        if(wandb_config_additional_dict is not None):
+            wandb_config = wandb_config.update(wandb_config_additional_dict)
+
         self.wandb_config = wandb_config
         self.wandb_group_name = wandb_group_name
 
@@ -730,7 +734,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
                                       valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold,
                                       root_save_prefix='root/ACT_PATTERN_ANALYSIS', final_postfix_for_save="",
                                       custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, analysed_model_path="",
-                                      is_save_graph_visualizations=True, is_save_activation_records=True):
+                                      is_save_graph_visualizations=True, is_save_activation_records=True, wandb_config_additional_dict=None):
     if(root_save_prefix is None):
         root_save_prefix = 'root/ACT_PATTERN_ANALYSIS'
     if(final_postfix_for_save is None):
@@ -784,7 +788,8 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
             act_analyser.generate_activation_stats_per_class(exp_type, per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
                                                              is_template_image_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                                              wand_project_name, wandb_group_name, torch_seed, collect_threshold,
-                                                             root_save_prefix, final_postfix_for_save, analysed_model_path, is_save_graph_visualizations, is_save_activation_records)
+                                                             root_save_prefix, final_postfix_for_save, analysed_model_path, is_save_graph_visualizations, is_save_activation_records,
+                                                             wandb_config_additional_dict=wandb_config_additional_dict)
             list_of_act_analyser.append(act_analyser)
     elif(exp_type == "GENERATE_RECORD_STATS_OVERALL"):
         class_label = 'ALL_CLASSES'
@@ -799,7 +804,8 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
         act_analyser.generate_activation_stats_per_class(exp_type, analyse_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset,
                                                          is_template_image_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                                          wand_project_name, wandb_group_name, torch_seed, collect_threshold,
-                                                         root_save_prefix, final_postfix_for_save, analysed_model_path, is_save_graph_visualizations, is_save_activation_records)
+                                                         root_save_prefix, final_postfix_for_save, analysed_model_path, is_save_graph_visualizations, is_save_activation_records,
+                                                         wandb_config_additional_dict=wandb_config_additional_dict)
         list_of_act_analyser.append(act_analyser)
 
     return list_of_act_analyser
@@ -890,9 +896,9 @@ if __name__ == '__main__':
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = False
     # GENERATE , LOAD
-    scheme_type = "LOAD"
+    scheme_type = "GENERATE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
-    sub_scheme_type = 'OVER_ORIGINAL'
+    sub_scheme_type = 'OVER_ADVERSARIAL'
     collect_threshold = 0.95
 
     if(not(wand_project_name is None)):
@@ -946,22 +952,63 @@ if __name__ == '__main__':
                                                                          is_save_graph_visualizations=is_save_graph_visualizations, analysed_model_path=analysed_model_path)
             elif(sub_scheme_type == 'OVER_RECONSTRUCTED'):
                 pass
+            elif(sub_scheme_type == 'OVER_ADVERSARIAL'):
+                eps = 0.02
+                adv_attack_type = 'PGD'
+                number_of_adversarial_optimization_steps = 161
+                eps_step_size = 0.01
+                adv_target = None
+
+                wandb_config_additional_dict = {"eps": eps, "adv_atack_type": adv_attack_type, "num_of_adversarial_optim_stps":
+                                                number_of_adversarial_optimization_steps, "eps_stp_size": eps_step_size, "adv_target": adv_target}
+
+                each_save_postfix = "EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
+                    eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size) + each_save_postfix
+
+                classes, num_classes, ret_config = get_preprocessing_and_other_configs(
+                    dataset, valid_split_size)
+                trainloader, _, testloader = preprocess_dataset_get_data_loader(
+                    ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
+                if(is_act_collection_on_train):
+                    to_be_analysed_dataloader = trainloader
+                else:
+                    to_be_analysed_dataloader = testloader
+
+                adv_dataset = generate_adv_examples(
+                    to_be_analysed_dataloader, custom_model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect)
+
+                to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
+                    adv_dataset, shuffle=False, batch_size=128)
+                if(is_act_collection_on_train):
+                    custom_loader = to_be_analysed_adversarial_dataloader, None
+                else:
+                    custom_loader = None, to_be_analysed_adversarial_dataloader
+
+                list_of_act_analyser = run_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
+                                                                         activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name_for_gen,
+                                                                         is_split_validation, valid_split_size, torch_seed, wandb_group_name, exp_type, collect_threshold,
+                                                                         custom_data_loader=custom_loader, custom_model=custom_model, root_save_prefix=each_save_prefix,
+                                                                         final_postfix_for_save=each_save_postfix, is_save_graph_visualizations=is_save_graph_visualizations,
+                                                                         analysed_model_path=analysed_model_path, wandb_config_additional_dict=wandb_config_additional_dict)
 
     elif(scheme_type == "LOAD"):
-        # class_ind_visualize = [0, 2, 4, 6, 8]
-        # class_ind_visualize = None
-        class_ind_visualize = [1, 3, 5, 7, 9]
+        # class_ind_visualize = [9]
+        # class_ind_visualize = [2, 4, 6, 8]
+        class_ind_visualize = None
+        # class_ind_visualize = [3, 5,7,9]
+        # class_ind_visualize = [7, 9]
+
         list_of_load_paths = []
         loader_base_path = None
 
         save_only_thres = False
 
-        loader_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
+        loader_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.75/"
 
         if(loader_base_path != None):
             num_iterations = 5
             # for i in range(1, num_iterations+1):
-            for i in range(4, 5):
+            for i in range(5, 6):
                 each_model_prefix = "aug_indx_{}".format(i)
                 list_of_load_paths.append(loader_base_path+each_model_prefix)
 

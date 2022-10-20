@@ -201,6 +201,8 @@ def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_ad
     list_of_adv_images = None
     list_of_labels = None
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     data_loader = tqdm.tqdm(
         data_loader, desc='Generating adversarial examples for current class')
     for i, per_class_per_batch_data in enumerate(data_loader):
@@ -420,7 +422,7 @@ def extract_common_activation_patterns_between_reconst_and_original(true_input_d
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn
-    model_arch_type = 'plain_pure_conv4_dnn'
+    model_arch_type = 'conv4_dlgn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -469,7 +471,7 @@ if __name__ == '__main__':
         is_adv_attack_on_train = False
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_test/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/"
+        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_test/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/"
 
         number_of_augment_iterations = 5
 
