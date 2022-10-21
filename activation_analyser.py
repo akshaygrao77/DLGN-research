@@ -1,6 +1,6 @@
 import torch
 import os
-from tqdm import tqdm, trange
+from tqdm import tqdm
 import wandb
 import random
 import numpy as np
@@ -52,7 +52,8 @@ class ActivationAnalyser():
 
     def __init__(self, model):
         self.model = model
-        self.model.eval()
+        if(model is not None):
+            self.model.eval()
 
         self.device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
@@ -100,6 +101,119 @@ class ActivationAnalyser():
         self.overall_std_active_percentage = 0.
         self.overall_min_active_percentage = None
         self.overall_max_active_percentage = None
+
+    def diff_merge_with_another_activation(self, other_activation_state, root_save_prefix, final_postfix_for_save, wandb_group_name, wand_project_name=None, is_save_graph_visualizations=True, save_only_thres=False):
+        merged_act_analyser = ActivationAnalyser(None)
+        num_layers = len(self.mean_per_pixel_of_activations_map_list)
+        merged_act_analyser.initialise_record_states(num_layers)
+
+        for current_mean_per_pixel_activation_map in self.mean_per_pixel_of_activations_map_list:
+            zero_initialised_current_activation_map = torch.zeros(
+                size=current_mean_per_pixel_activation_map.size(), device=self.device)
+
+            merged_act_analyser.active_counts_activation_map_list.append(
+                zero_initialised_current_activation_map)
+            merged_act_analyser.inactive_counts_activation_map_list.append(
+                zero_initialised_current_activation_map.clone())
+
+        merged_act_analyser.wandb_config = dict()
+
+        merged_act_analyser.wandb_group_name = wandb_group_name
+        if(wandb_group_name is None):
+            merged_act_analyser.wandb_group_name = self.wandb_group_name + \
+                "_*_" + other_activation_state.wandb_group_name
+
+        merged_act_analyser.image_save_prefix_folder = self.image_save_prefix_folder.replace(self.final_postfix_for_save, "") + "/"+str(root_save_prefix) + "/" +\
+            other_activation_state.image_save_prefix_folder + \
+            "/"+str(final_postfix_for_save)
+
+        wandb_run_name = merged_act_analyser.image_save_prefix_folder.replace(
+            "/", "").replace(self.root_save_prefix, self.class_label).replace(other_activation_state.root_save_prefix, other_activation_state.class_label)
+
+        merged_act_analyser.wandb_run_name = wandb_run_name
+
+        merged_act_analyser.wandb_config["merge_type"] = merge_type
+        for each_key in self.wandb_config:
+            merged_act_analyser.wandb_config[each_key +
+                                             "_1"] = self.wandb_config[each_key]
+
+        for each_key in other_activation_state.wandb_config:
+            merged_act_analyser.wandb_config[each_key +
+                                             "_2"] = other_activation_state.wandb_config[each_key]
+
+        with torch.no_grad():
+            for indx in range(len(self.active_counts_activation_map_list)):
+                merged_act_analyser.active_counts_activation_map_list[indx] = self.active_counts_activation_map_list[
+                    indx] - other_activation_state.active_counts_activation_map_list[indx]
+                merged_act_analyser.inactive_counts_activation_map_list[indx] = self.inactive_counts_activation_map_list[
+                    indx] - other_activation_state.inactive_counts_activation_map_list[indx]
+                merged_act_analyser.active_inactive_diff_activation_map_list[indx] = self.active_inactive_diff_activation_map_list[
+                    indx] - other_activation_state.active_inactive_diff_activation_map_list[indx]
+
+                merged_act_analyser.active_thresholded_indicator_activation_map_list[indx] = self.active_thresholded_indicator_activation_map_list[
+                    indx] * other_activation_state.active_thresholded_indicator_activation_map_list[indx]
+                merged_act_analyser.inactive_thresholded_indicator_activation_map_list[indx] = self.inactive_thresholded_indicator_activation_map_list[
+                    indx] * other_activation_state.inactive_thresholded_indicator_activation_map_list[indx]
+                merged_act_analyser.overall_thresholded_active_inactive_indicator_map_list[indx] = merged_act_analyser.active_thresholded_indicator_activation_map_list[
+                    indx] - merged_act_analyser.inactive_thresholded_indicator_activation_map_list[indx]
+
+                merged_act_analyser.mean_per_pixel_of_activations_map_list[indx] = self.mean_per_pixel_of_activations_map_list[
+                    indx] - other_activation_state.mean_per_pixel_of_activations_map_list[indx]
+                merged_act_analyser.std_per_pixel_of_activations_map_list[indx] = self.std_per_pixel_of_activations_map_list[
+                    indx] - other_activation_state.std_per_pixel_of_activations_map_list[indx]
+                merged_act_analyser.min_per_pixel_of_activations_map_list[indx] = self.min_per_pixel_of_activations_map_list[
+                    indx] - other_activation_state.min_per_pixel_of_activations_map_list[indx]
+                merged_act_analyser.max_per_pixel_of_activations_map_list[indx] = self.max_per_pixel_of_activations_map_list[
+                    indx] - other_activation_state.max_per_pixel_of_activations_map_list[indx]
+
+                merged_act_analyser.avg_mean_per_activations_map_list[indx] = self.avg_mean_per_activations_map_list[
+                    indx] - other_activation_state.avg_mean_per_activations_map_list[indx]
+                merged_act_analyser.avg_std_per_activations_map_list[indx] = self.avg_std_per_activations_map_list[
+                    indx] - other_activation_state.avg_std_per_activations_map_list[indx]
+                merged_act_analyser.avg_min_per_activations_map_list[indx] = self.avg_min_per_activations_map_list[
+                    indx] - other_activation_state.avg_min_per_activations_map_list[indx]
+                merged_act_analyser.avg_max_per_activations_map_list[indx] = self.avg_max_per_activations_map_list[
+                    indx] - other_activation_state.avg_max_per_activations_map_list[indx]
+
+            merged_act_analyser.total_pixels = self.total_pixels - \
+                other_activation_state.total_pixels
+            merged_act_analyser.thresholded_active_pixel_count = self.thresholded_active_pixel_count - \
+                other_activation_state.thresholded_active_pixel_count
+            merged_act_analyser.thresholded_active_pixels_percentage = self.thresholded_active_pixels_percentage - \
+                other_activation_state.thresholded_active_pixels_percentage
+            merged_act_analyser.unthresholded_active_pixel_count = self.unthresholded_active_pixel_count - \
+                other_activation_state.unthresholded_active_pixel_count
+            merged_act_analyser.unthresholded_active_pixels_percentage = self.unthresholded_active_pixels_percentage - \
+                other_activation_state.unthresholded_active_pixels_percentage
+            merged_act_analyser.overall_average_active_percentage = self.overall_average_active_percentage - \
+                other_activation_state.overall_average_active_percentage
+            merged_act_analyser.overall_std_active_percentage = self.overall_std_active_percentage - \
+                other_activation_state.overall_std_active_percentage
+            merged_act_analyser.overall_min_active_percentage = self.overall_min_active_percentage - \
+                other_activation_state.overall_min_active_percentage
+            merged_act_analyser.overall_max_active_percentage = self.overall_max_active_percentage - \
+                other_activation_state.overall_max_active_percentage
+
+        merged_act_analyser.root_save_prefix = root_save_prefix
+        merged_act_analyser.final_postfix_for_save = final_postfix_for_save
+        merged_act_analyser.class_label = self.class_label
+
+        save_folder = merged_act_analyser.image_save_prefix_folder + \
+            "class_"+str(merged_act_analyser.class_label)+"/"
+
+        temp_model = merged_act_analyser.model
+        merged_act_analyser.model = None
+        if not os.path.exists(save_folder):
+            os.makedirs(save_folder)
+        print("Save directory:", save_folder)
+        with open(save_folder+'/analyser_state.pkl', 'wb') as out_file:
+            pickle.dump(self, out_file)
+        merged_act_analyser.model = temp_model
+
+        merged_act_analyser.save_and_log_states(
+            wand_project_name, is_save_graph_visualizations=is_save_graph_visualizations, save_only_thres=save_only_thres)
+
+        return merged_act_analyser
 
     def save_recorded_activation_states(self, base_save_folder, save_only_thres=False):
         cpudevice = torch.device("cpu")
@@ -270,13 +384,16 @@ class ActivationAnalyser():
             self.overall_average_active_percentage += current_average_active_percentage
             self.overall_std_active_percentage += current_averagesq_active_percentage
 
-    def initialise_record_states(self):
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+    def initialise_record_states(self, number_of_conv_layers=None):
+        conv_outs = None
+        if(self.model is not None):
+            if(isinstance(self.model, torch.nn.DataParallel)):
+                conv_outs = self.model.module.linear_conv_outputs
+            else:
+                conv_outs = self.model.linear_conv_outputs
 
-        number_of_conv_layers = len(conv_outs)
+        if(number_of_conv_layers is None):
+            number_of_conv_layers = len(conv_outs)
         # Count based states
         self.active_counts_activation_map_list = []
         self.inactive_counts_activation_map_list = []
@@ -312,14 +429,15 @@ class ActivationAnalyser():
 
         self.total_tcollect_img_count = 0
 
-        for each_conv_output in conv_outs:
-            zero_initialised_current_activation_map = torch.zeros(size=each_conv_output.size()[
-                1:], device=self.device)
+        if(conv_outs is not None):
+            for each_conv_output in conv_outs:
+                zero_initialised_current_activation_map = torch.zeros(size=each_conv_output.size()[
+                    1:], device=self.device)
 
-            self.active_counts_activation_map_list.append(
-                zero_initialised_current_activation_map)
-            self.inactive_counts_activation_map_list.append(
-                zero_initialised_current_activation_map.clone())
+                self.active_counts_activation_map_list.append(
+                    zero_initialised_current_activation_map)
+                self.inactive_counts_activation_map_list.append(
+                    zero_initialised_current_activation_map.clone())
 
     def update_overall_recorded_states(self, collect_threshold, num_batches):
 
@@ -671,7 +789,7 @@ class ActivationAnalyser():
                                         activation_calculation_batch_size, torch_seed, analysed_model_path,
                                         number_of_batch_to_collect=number_of_batch_to_collect, collect_threshold=collect_threshold)
         if(wandb_config_additional_dict is not None):
-            wandb_config = wandb_config.update(wandb_config_additional_dict)
+            wandb_config.update(wandb_config_additional_dict)
 
         self.wandb_config = wandb_config
         self.wandb_group_name = wandb_group_name
@@ -697,12 +815,14 @@ class ActivationAnalyser():
         if(is_log_wandb):
             wandb.finish()
 
-    def save_and_log_states(self, wand_project_name, root_save_prefix=None, final_postfix_for_save=None, is_save_graph_visualizations=True, save_only_thres=False):
+    def save_and_log_states(self, wand_project_name, wandb_group_name=None, root_save_prefix=None, final_postfix_for_save=None, is_save_graph_visualizations=True, save_only_thres=False):
         is_log_wandb = not(wand_project_name is None)
         log_dict = self.get_wandb_log_dict()
         print("log_dict", log_dict)
 
         if(is_log_wandb):
+            if(wandb_group_name is not None):
+                self.wandb_group_name = wandb_group_name
             wandb_run_name = self.wandb_run_name
             if(root_save_prefix is not None and final_postfix_for_save is not None):
                 wandb_run_name = self.wandb_run_name.replace(self.root_save_prefix, root_save_prefix).replace(
@@ -727,6 +847,21 @@ class ActivationAnalyser():
             if not os.path.exists(save_folder):
                 os.makedirs(save_folder)
             self.save_recorded_activation_states(save_folder, save_only_thres)
+
+
+def diff_merge_two_activation_analysis(merge_type, list_of_act_analyser1, list_of_act_analyser2, wandb_group_name=None, wand_project_name=None,
+                                       root_save_prefix='/MERGE', final_postfix_for_save="",
+                                       is_save_graph_visualizations=True):
+    root_save_prefix += merge_type
+    list_of_merged_act_analysis = []
+    for ind in range(len(list_of_act_analyser1)):
+        each_act_analyser1 = list_of_act_analyser1[ind]
+        each_act_analyser2 = list_of_act_analyser2[ind]
+        merged_act1_act2 = each_act_analyser1.diff_merge_with_another_activation(
+            each_act_analyser2, root_save_prefix, final_postfix_for_save, wandb_group_name, wand_project_name, is_save_graph_visualizations)
+        list_of_merged_act_analysis.append(merged_act1_act2)
+
+    return list_of_merged_act_analysis
 
 
 def run_activation_analysis_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth,
@@ -811,7 +946,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
     return list_of_act_analyser
 
 
-def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder,
+def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder, wandb_group_name=None,
                                                 root_save_prefix=None, final_postfix_for_save=None,
                                                 class_indx_to_visualize=None, is_save_graph_visualizations=True, save_only_thres=False):
     is_log_wandb = not(wand_project_name is None)
@@ -839,7 +974,7 @@ def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_
             with open(load_folder+'/analyser_state.pkl', 'rb') as in_file:
                 act_analyser = pickle.load(in_file)
                 act_analyser.save_and_log_states(
-                    wand_project_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations, save_only_thres)
+                    wand_project_name, wandb_group_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations, save_only_thres)
                 if(is_log_wandb):
                     wandb.finish()
                 list_of_act_analyser.append(act_analyser)
@@ -851,7 +986,7 @@ def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_
         with open(load_folder+'/analyser_state.pkl', 'rb') as in_file:
             act_analyser = pickle.load(in_file)
             act_analyser.save_and_log_states(
-                wand_project_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations, save_only_thres)
+                wand_project_name, wandb_group_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations, save_only_thres)
             if(is_log_wandb):
                 wandb.finish()
 
@@ -888,15 +1023,16 @@ if __name__ == '__main__':
     wand_project_name = 'activation_analysis_class'
     # wand_project_name = None
     wand_project_name_for_gen = None
-    wandb_group_name = "activation_analysis_augmented_mnist_conv4_dlgn_c75"
+    wand_project_name_for_merge = None
+    wandb_group_name = "activation_analysis_augmented_mnist_conv4_dlgn_c95"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
     # GENERATE_RECORD_STATS_PER_CLASS ,  GENERATE_RECORD_STATS_OVERALL
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = False
-    # GENERATE , LOAD
-    scheme_type = "GENERATE"
+    # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE
+    scheme_type = "LOAD_AND_GENERATE_MERGE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ADVERSARIAL'
     collect_threshold = 0.95
@@ -908,7 +1044,7 @@ if __name__ == '__main__':
         list_of_model_paths = []
         models_base_path = None
 
-        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/"
+        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
         if(models_base_path != None):
             list_of_save_prefixes = []
@@ -979,6 +1115,7 @@ if __name__ == '__main__':
 
                 to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                     adv_dataset, shuffle=False, batch_size=128)
+
                 if(is_act_collection_on_train):
                     custom_loader = to_be_analysed_adversarial_dataloader, None
                 else:
@@ -991,10 +1128,10 @@ if __name__ == '__main__':
                                                                          final_postfix_for_save=each_save_postfix, is_save_graph_visualizations=is_save_graph_visualizations,
                                                                          analysed_model_path=analysed_model_path, wandb_config_additional_dict=wandb_config_additional_dict)
 
-    elif(scheme_type == "LOAD"):
-        # class_ind_visualize = [9]
+    elif(scheme_type == "LOAD_AND_SAVE"):
+        class_ind_visualize = [9]
         # class_ind_visualize = [2, 4, 6, 8]
-        class_ind_visualize = None
+        # class_ind_visualize = None
         # class_ind_visualize = [3, 5,7,9]
         # class_ind_visualize = [7, 9]
 
@@ -1003,7 +1140,7 @@ if __name__ == '__main__':
 
         save_only_thres = False
 
-        loader_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.75/"
+        loader_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ADVERSARIAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/EPS_0.02/ADV_TYPE_PGD/NUM_ADV_STEPS_161/eps_step_size_0.01/"
 
         if(loader_base_path != None):
             num_iterations = 5
@@ -1017,7 +1154,52 @@ if __name__ == '__main__':
 
         for ind in range(len(list_of_load_paths)):
             current_analyser_loader_path = list_of_load_paths[ind]
-            list_of_act_analyser = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, current_analyser_loader_path,
+            list_of_act_analyser = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, current_analyser_loader_path, wandb_group_name=wandb_group_name,
                                                                                class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True, save_only_thres=save_only_thres)
+
+    elif(scheme_type == "LOAD_AND_GENERATE_MERGE"):
+        merge_type = "DIFF"
+        # class_ind_visualize = [9]
+        # class_ind_visualize = [2, 4, 6, 8]
+        class_ind_visualize = None
+        # class_ind_visualize = [3, 5,7,9]
+        # class_ind_visualize = [7, 9]
+
+        list_of_load_paths1 = []
+        list_of_load_paths2 = []
+        loader_base_path1 = None
+        loader_base_path2 = None
+
+        save_only_thres = False
+
+        loader_base_path1 = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ADVERSARIAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/EPS_0.02/ADV_TYPE_PGD/NUM_ADV_STEPS_161/eps_step_size_0.01/"
+        loader_base_path2 = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
+
+        if(loader_base_path1 is not None and loader_base_path2 is not None):
+            num_iterations = 5
+            for i in range(1, num_iterations+1):
+                # for i in range(5, 6):
+                each_model_prefix = "aug_indx_{}".format(i)
+                list_of_load_paths1.append(loader_base_path1+each_model_prefix)
+                list_of_load_paths2.append(loader_base_path2+each_model_prefix)
+
+        else:
+            list_of_load_paths1 = ["root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"]
+            list_of_load_paths2 = ["root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"]
+
+        if(merge_type == "DIFF"):
+            for ind in range(len(list_of_load_paths1)):
+                current_analyser_loader_path1 = list_of_load_paths1[ind]
+                current_analyser_loader_path2 = list_of_load_paths2[ind]
+                print("current_analyser_loader_path1",
+                      current_analyser_loader_path1)
+                print("current_analyser_loader_path2",
+                      current_analyser_loader_path2)
+                list_of_act_analyser1 = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name=None, load_analyser_base_folder=current_analyser_loader_path1,
+                                                                                    class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=False)
+                list_of_act_analyser2 = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name=None, load_analyser_base_folder=current_analyser_loader_path2,
+                                                                                    class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=False)
+                list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
+                                                                              list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
 
     print("Finished execution!!!")
