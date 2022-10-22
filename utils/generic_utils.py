@@ -1,9 +1,12 @@
 import math
+
+import numpy as np
 from structure.dlgn_conv_config_structure import Configs, HPParams
 from structure.dlgn_conv_structure import All_Conv_info, Conv_info
 import json
 import hashlib
 import os
+import tqdm
 
 
 def create_nested_dir_if_not_exists(directory):
@@ -53,6 +56,33 @@ def convert_generic_object_to_Conv_info_object(gen_conv_obj):
     kernel_size = convert_from_list_to_tuple_or_int(gen_conv_obj.kernel_size)
 
     return Conv_info(gen_conv_obj.layer_type, gen_conv_obj.layer_sub_type, gen_conv_obj.in_ch, gen_conv_obj.number_of_filters, padding, stride, kernel_size, gen_conv_obj.num_nodes_in_fc, gen_conv_obj.weight_init_type)
+
+
+def save_dataset_into_path_from_loader(dataloader, np_save_filename):
+    ys = None
+    xs = None
+
+    data_loader = tqdm.tqdm(
+        dataloader, desc='Saving dataset')
+    for i, per_class_per_batch_data in enumerate(data_loader):
+        images, labels = per_class_per_batch_data
+        images = images.numpy()
+        labels = labels.numpy()
+        if(xs is None):
+            xs = images
+        else:
+            xs = np.concatenate((xs, images), axis=0)
+
+        if(ys is None):
+            ys = labels
+        else:
+            ys = np.concatenate((ys, labels), axis=0)
+
+    sfolder = np_save_filename[0:np_save_filename.rfind("/")+1]
+    if not os.path.exists(sfolder):
+        os.makedirs(sfolder)
+    with open(np_save_filename, 'wb') as file:
+        np.savez(file, x=xs, y=ys)
 
 
 def calculate_output_size_for_conv_per_dimension(input_dim, padding_dim, kernel_dim, stride_dim):

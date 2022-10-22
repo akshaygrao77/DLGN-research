@@ -15,6 +15,8 @@ from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
 from configs.generic_configs import get_preprocessing_and_other_configs
 from adversarial_attacks_tester import generate_adv_examples
+from utils.generic_utils import save_dataset_into_path_from_loader
+from structure.generic_structure import CustomSimpleDataset
 
 
 def seed_worker(worker_id):
@@ -1014,7 +1016,7 @@ if __name__ == '__main__':
     # plain_pure_conv4_dnn , conv4_dlgn
     model_arch_type = 'conv4_dlgn'
     # If False, then on test
-    is_act_collection_on_train = True
+    is_act_collection_on_train = False
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     activation_calculation_batch_size = 64
@@ -1032,7 +1034,7 @@ if __name__ == '__main__':
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE
-    scheme_type = "LOAD_AND_SAVE"
+    scheme_type = "GENERATE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ADVERSARIAL'
     collect_threshold = 0.95
@@ -1089,11 +1091,17 @@ if __name__ == '__main__':
             elif(sub_scheme_type == 'OVER_RECONSTRUCTED'):
                 pass
             elif(sub_scheme_type == 'OVER_ADVERSARIAL'):
+                is_save_adv = True
                 eps = 0.02
                 adv_attack_type = 'PGD'
                 number_of_adversarial_optimization_steps = 161
                 eps_step_size = 0.01
                 adv_target = None
+
+                final_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                    adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, each_save_postfix)
+                save_path = models_base_path + final_postfix_for_save+"/adv_dataset.npy"
+                print("Adversarial examples will be saved at: ", save_path)
 
                 wandb_config_additional_dict = {"eps": eps, "adv_atack_type": adv_attack_type, "num_of_adversarial_optim_stps":
                                                 number_of_adversarial_optimization_steps, "eps_stp_size": eps_step_size, "adv_target": adv_target}
@@ -1110,8 +1118,18 @@ if __name__ == '__main__':
                 else:
                     to_be_analysed_dataloader = testloader
 
-                adv_dataset = generate_adv_examples(
-                    to_be_analysed_dataloader, custom_model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect)
+                is_current_adv_aug_available = os.path.exists(save_path)
+                if(is_current_adv_aug_available):
+                    with open(save_path, 'rb') as file:
+                        npzfile = np.load(save_path)
+                        list_of_adv_images = npzfile['x']
+                        list_of_labels = npzfile['y']
+                        adv_dataset = CustomSimpleDataset(
+                            list_of_adv_images, list_of_labels)
+                        print("Loading adversarial examples from path:", save_path)
+                else:
+                    adv_dataset = generate_adv_examples(
+                        to_be_analysed_dataloader, custom_model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=save_path)
 
                 to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                     adv_dataset, shuffle=False, batch_size=128)

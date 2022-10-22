@@ -196,7 +196,8 @@ def evaluate_model_via_reconstructed(net, dataloader, classes, eps, adv_attack_t
     return acc
 
 
-def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None):
+def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=False, save_path=None):
+    cpudevice = torch.device("cpu")
     is_targetted = adv_target is not None
     list_of_adv_images = None
     list_of_labels = None
@@ -230,6 +231,15 @@ def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_ad
 
     per_class_adv_dataset = CustomSimpleDataset(
         list_of_adv_images, list_of_labels)
+
+    if(is_save_adv == True):
+        sfolder = save_path[0:save_path.rfind("/")+1]
+        if not os.path.exists(sfolder):
+            os.makedirs(sfolder)
+        with open(save_path, 'wb') as file:
+            np.savez(file, x=list_of_adv_images.to(cpudevice, non_blocking=True).detach().numpy(
+            ), y=list_of_labels.to(cpudevice, non_blocking=True).detach().numpy())
+
     return per_class_adv_dataset
 
 
