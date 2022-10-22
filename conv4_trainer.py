@@ -12,7 +12,7 @@ from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
-from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net
+from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net, Conv4_DLGN_Net_N16_Small
 from visualization import run_visualization_on_config
 
 
@@ -137,8 +137,8 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     dataset = 'mnist'
-    # conv4_dlgn , plain_pure_conv4_dnn
-    model_arch_type = 'plain_pure_conv4_dnn'
+    # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small
+    model_arch_type = 'conv4_dlgn_n16_small'
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
     batch_size = 32
@@ -177,6 +177,10 @@ if __name__ == '__main__':
         net = Conv4_DLGN_Net(inp_channel)
         best_model_save_path = 'root/model/save/' + \
             str(dataset)+'/conv4_dlgn_dir.pt'
+    elif(model_arch_type == 'conv4_dlgn_n16_small'):
+        net = Conv4_DLGN_Net_N16_Small(inp_channel)
+        best_model_save_path = 'root/model/save/' + \
+            str(dataset)+'/conv4_dlgn_n16_small_dir.pt'
 
     net.to(device)
 
@@ -208,7 +212,7 @@ if __name__ == '__main__':
         number_of_image_optimization_steps = 161
         # GENERATE_ALL_FINAL_TEMPLATE_IMAGES
         exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
-        collect_threshold = 0.75
+        collect_threshold = 0.95
         entropy_calculation_batch_size = 64
         number_of_batches_to_calculate_entropy_on = None
 
