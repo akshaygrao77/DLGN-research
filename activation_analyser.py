@@ -207,7 +207,7 @@ class ActivationAnalyser():
             os.makedirs(save_folder)
         print("Save directory:", save_folder)
         with open(save_folder+'/analyser_state.pkl', 'wb') as out_file:
-            pickle.dump(self, out_file)
+            pickle.dump(merged_act_analyser, out_file)
         merged_act_analyser.model = temp_model
 
         merged_act_analyser.save_and_log_states(
@@ -1024,7 +1024,7 @@ if __name__ == '__main__':
     # wand_project_name = None
     wand_project_name_for_gen = None
     wand_project_name_for_merge = None
-    wandb_group_name = "activation_analysis_augmented_mnist_conv4_dlgn_c95"
+    wandb_group_name = "activation_analysis_augmented_mnist_conv4_dlgn_adv_m95_c95"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
@@ -1032,7 +1032,7 @@ if __name__ == '__main__':
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE
-    scheme_type = "LOAD_AND_GENERATE_MERGE"
+    scheme_type = "LOAD_AND_SAVE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ADVERSARIAL'
     collect_threshold = 0.95
@@ -1050,7 +1050,7 @@ if __name__ == '__main__':
             list_of_save_prefixes = []
             list_of_save_postfixes = []
 
-            num_iterations = 5
+            num_iterations = 3
             # for i in range(4, 6):
             for i in range(1, num_iterations+1):
                 each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
@@ -1140,12 +1140,12 @@ if __name__ == '__main__':
 
         save_only_thres = False
 
-        loader_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ADVERSARIAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/EPS_0.02/ADV_TYPE_PGD/NUM_ADV_STEPS_161/eps_step_size_0.01/"
+        loader_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/ACT_ANALYSIS/OVER_ADVERSARIAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/EPS_0.02/ADV_TYPE_PGD/NUM_ADV_STEPS_161/eps_step_size_0.01/"
 
         if(loader_base_path != None):
             num_iterations = 5
             # for i in range(1, num_iterations+1):
-            for i in range(5, 6):
+            for i in range(1, 2):
                 each_model_prefix = "aug_indx_{}".format(i)
                 list_of_load_paths.append(loader_base_path+each_model_prefix)
 
