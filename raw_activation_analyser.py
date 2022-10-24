@@ -7,7 +7,7 @@ import numpy as np
 import pickle
 
 
-from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, determine_row_col_from_features
+from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_heatmap_from_data
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from structure.generic_structure import CustomSimpleDataset
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
@@ -67,7 +67,7 @@ class RawActivationAnalyser():
         # Size: [Num of points(batch dim, Num filters aggregated over layer, W , H]
         self.post_activation_values_all_batches = None
 
-    def diff_merge_with_another_activation(self, other_activation_state, root_save_prefix, final_postfix_for_save, wandb_group_name, wand_project_name=None, is_save_graph_visualizations=True, save_only_thres=False):
+    def diff_merge_with_another_activation(self, other_activation_state, root_save_prefix, final_postfix_for_save, wandb_group_name, wand_project_name=None, is_save_graph_visualizations=True):
         merged_act_analyser = RawActivationAnalyser(None)
         merged_act_analyser.initialise_raw_record_states()
 
@@ -107,14 +107,14 @@ class RawActivationAnalyser():
         save_folder = merged_act_analyser.image_save_prefix_folder + \
             "class_"+str(merged_act_analyser.class_label)+"/"
 
-        temp_model = merged_act_analyser.model
-        merged_act_analyser.model = None
-        if not os.path.exists(save_folder):
-            os.makedirs(save_folder)
-        print("Save directory:", save_folder)
-        with open(save_folder+'/analyser_state.pkl', 'wb') as out_file:
-            pickle.dump(merged_act_analyser, out_file)
-        merged_act_analyser.model = temp_model
+        # temp_model = merged_act_analyser.model
+        # merged_act_analyser.model = None
+        # if not os.path.exists(save_folder):
+        #     os.makedirs(save_folder)
+        # print("Save directory:", save_folder)
+        # with open(save_folder+'/raw_analyser_state.pkl', 'wb') as out_file:
+        #     pickle.dump(merged_act_analyser, out_file)
+        # merged_act_analyser.model = temp_model
 
         merged_act_analyser.save_and_log_states(
             wand_project_name, is_save_graph_visualizations=is_save_graph_visualizations)
@@ -132,10 +132,10 @@ class RawActivationAnalyser():
         current_post_activation_values = self.post_activation_values_all_batches
 
         current_full_save_path = final_save_dir + \
-            "raw_postactivation_heatmap.jpg"
+            "raw_postactivation_heatmap.mp4"
         dict_full_path_to_saves["raw_post_activation"] = current_full_save_path
-        construct_heatmaps_from_data(current_post_activation_values[0],
-                                     title='Post activation raw heatmap', save_path=current_full_save_path)
+        generate_video_of_heatmap_from_data(
+            current_post_activation_values[0:4], "Raw post activation video", save_path=current_full_save_path)
 
         return
 
@@ -218,6 +218,8 @@ class RawActivationAnalyser():
                 break
         print("self.post_activation_values_all_batches",
               self.post_activation_values_all_batches.shape)
+        # print("self.post_activation_values_all_batches",
+        #       self.post_activation_values_all_batches)
 
     def get_wandb_log_dict(self):
         log_dict = {
@@ -325,7 +327,7 @@ class RawActivationAnalyser():
             if not os.path.exists(save_folder):
                 os.makedirs(save_folder)
             self.save_raw_recorded_activation_states(
-                save_folder, save_only_thres)
+                save_folder)
 
 
 def diff_merge_two_activation_analysis(merge_type, list_of_act_analyser1, list_of_act_analyser2, wandb_group_name=None, wand_project_name=None,
@@ -425,7 +427,7 @@ def run_raw_activation_analysis_on_config(dataset, model_arch_type, is_template_
     return list_of_act_analyser
 
 
-def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder, wandb_group_name=None,
+def load_and_save_activation_analysis_on_config(dataset, valid_split_size, model_arch_type, exp_type, wand_project_name, load_analyser_base_folder, wandb_group_name=None,
                                                 root_save_prefix=None, final_postfix_for_save=None,
                                                 class_indx_to_visualize=None, is_save_graph_visualizations=True):
     is_log_wandb = not(wand_project_name is None)
@@ -474,6 +476,108 @@ def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_
     return list_of_act_analyser
 
 
+def run_generate_scheme(models_base_path):
+    list_of_list_of_act_analyser = []
+    list_of_model_paths = []
+    if(models_base_path != None):
+        list_of_save_prefixes = []
+        list_of_save_postfixes = []
+
+        num_iterations = 4
+        # for i in range(1, 3):
+        for i in range(1, num_iterations+1):
+            each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
+            # each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
+            list_of_model_paths.append(models_base_path+each_model_prefix)
+            list_of_save_prefixes.append(
+                str(models_base_path)+"/RAW_ACT_ANALYSIS/"+str(sub_scheme_type))
+            list_of_save_postfixes.append("/aug_indx_{}".format(i))
+
+    else:
+        list_of_model_paths = [None]
+        list_of_save_prefixes = [
+            "root/RAW_ACT_PATTERN_ANALYSIS/"+str(sub_scheme_type)]
+        list_of_save_postfixes = [None]
+
+    for ind in range(len(list_of_model_paths)):
+        each_model_path = list_of_model_paths[ind]
+        each_save_prefix = list_of_save_prefixes[ind]
+        each_save_postfix = list_of_save_postfixes[ind]
+        analysed_model_path = each_model_path
+
+        if(each_model_path is None):
+            custom_model = None
+            analysed_model_path = ''
+        else:
+            custom_model = torch.load(each_model_path)
+            print(" #*#*#*#*#*#*#*# Generating activation analysis for model path:{} with save prefix :{} and postfix:{}".format(
+                each_model_path, each_save_prefix, each_save_postfix))
+
+        if(sub_scheme_type == 'OVER_ORIGINAL'):
+            list_of_act_analyser = run_raw_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
+                                                                         activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name_for_gen, is_split_validation,
+                                                                         valid_split_size, torch_seed, wandb_group_name, exp_type, is_save_activation_records=is_save_activation_records,
+                                                                         class_indx_to_visualize=class_ind_visualize,
+                                                                         custom_model=custom_model, root_save_prefix=each_save_prefix, final_postfix_for_save=each_save_postfix,
+                                                                         is_save_graph_visualizations=is_save_graph_visualizations, analysed_model_path=analysed_model_path)
+        elif(sub_scheme_type == 'OVER_RECONSTRUCTED'):
+            pass
+        elif(sub_scheme_type == 'OVER_ADVERSARIAL'):
+
+            final_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, each_save_postfix)
+            adv_save_path = models_base_path + final_postfix_for_save+"/adv_dataset.npy"
+
+            wandb_config_additional_dict = {"eps": eps, "adv_atack_type": adv_attack_type, "num_of_adversarial_optim_stps":
+                                            number_of_adversarial_optimization_steps, "eps_stp_size": eps_step_size, "adv_target": adv_target}
+
+            each_save_postfix = "EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
+                eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size) + each_save_postfix
+
+            classes, num_classes, ret_config = get_preprocessing_and_other_configs(
+                dataset, valid_split_size)
+            trainloader, _, testloader = preprocess_dataset_get_data_loader(
+                ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
+            if(is_act_collection_on_train):
+                to_be_analysed_dataloader = trainloader
+            else:
+                to_be_analysed_dataloader = testloader
+
+            is_current_adv_aug_available = os.path.exists(adv_save_path)
+            if(is_current_adv_aug_available):
+                with open(adv_save_path, 'rb') as file:
+                    npzfile = np.load(adv_save_path)
+                    list_of_adv_images = npzfile['x']
+                    list_of_labels = npzfile['y']
+                    adv_dataset = CustomSimpleDataset(
+                        list_of_adv_images, list_of_labels)
+                    print("Loading adversarial examples from path:",
+                          adv_save_path)
+            else:
+                adv_dataset = generate_adv_examples(
+                    to_be_analysed_dataloader, custom_model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=adv_save_path)
+
+            to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
+                adv_dataset, shuffle=False, batch_size=128)
+
+            if(is_act_collection_on_train):
+                custom_loader = to_be_analysed_adversarial_dataloader, None
+            else:
+                custom_loader = None, to_be_analysed_adversarial_dataloader
+
+            list_of_act_analyser = run_raw_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
+                                                                         activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name_for_gen,
+                                                                         is_split_validation, valid_split_size, torch_seed, wandb_group_name, exp_type, is_save_activation_records=is_save_activation_records,
+                                                                         custom_data_loader=custom_loader, custom_model=custom_model, root_save_prefix=each_save_prefix,
+                                                                         final_postfix_for_save=each_save_postfix, is_save_graph_visualizations=is_save_graph_visualizations,
+                                                                         class_indx_to_visualize=class_ind_visualize,
+                                                                         analysed_model_path=analysed_model_path, wandb_config_additional_dict=wandb_config_additional_dict)
+
+        list_of_list_of_act_analyser.append(list_of_act_analyser)
+
+    return list_of_list_of_act_analyser
+
+
 if __name__ == '__main__':
     # THIS OPERATION IS MEMORY HUNGRY! #
     # Because of the selected image is very large
@@ -491,136 +595,51 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     activation_calculation_batch_size = 64
     number_of_batch_to_collect = None
-    wand_project_name = 'test_raw_activation_analyser'
-    # wand_project_name = 'raw_activation_analysis_class'
+    # wand_project_name = 'raw_activation_analyser'
+    wand_project_name = 'raw_activation_analysis_class'
     # wand_project_name = None
     wand_project_name_for_gen = None
-    wand_project_name_for_merge = None
+    wand_project_name_for_merge = "raw_activation_analysis_augmented_mnist_conv4_dlgn_n16_small"
     wandb_group_name = "raw_activation_analysis_augmented_mnist_conv4_dlgn"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
     # GENERATE_RECORD_STATS_PER_CLASS ,  GENERATE_RECORD_STATS_OVERALL
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
-    is_save_graph_visualizations = False
-    # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE
-    scheme_type = "GENERATE"
+    is_save_graph_visualizations = True
+    is_save_activation_records = False
+    # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE
+    scheme_type = "GENERATE_MERGE_AND_SAVE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
+    # OVER_ORIGINAL_VS_ADVERSARIAL
+    merge_scheme_type = "OVER_ORIGINAL_VS_ADVERSARIAL"
 
     if(not(wand_project_name is None)):
         wandb.login()
 
     if(scheme_type == "GENERATE"):
-        list_of_model_paths = []
+
         models_base_path = None
+        is_save_graph_visualizations = False
 
-        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        is_save_adv = True
+        eps = 0.02
+        adv_attack_type = 'PGD'
+        number_of_adversarial_optimization_steps = 161
+        eps_step_size = 0.01
+        adv_target = None
 
-        if(models_base_path != None):
-            list_of_save_prefixes = []
-            list_of_save_postfixes = []
+        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/"
 
-            num_iterations = 3
-            # for i in range(4, 6):
-            for i in range(1, num_iterations+1):
-                each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
-                # each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
-                list_of_model_paths.append(models_base_path+each_model_prefix)
-                list_of_save_prefixes.append(
-                    str(models_base_path)+"/RAW_ACT_ANALYSIS/"+str(sub_scheme_type))
-                list_of_save_postfixes.append("/aug_indx_{}".format(i))
-
-        else:
-            list_of_model_paths = [None]
-            list_of_save_prefixes = [
-                "root/RAW_ACT_PATTERN_ANALYSIS/"+str(sub_scheme_type)]
-            list_of_save_postfixes = [None]
-
-        for ind in range(len(list_of_model_paths)):
-            each_model_path = list_of_model_paths[ind]
-            each_save_prefix = list_of_save_prefixes[ind]
-            each_save_postfix = list_of_save_postfixes[ind]
-            analysed_model_path = each_model_path
-
-            if(each_model_path is None):
-                custom_model = None
-                analysed_model_path = ''
-            else:
-                custom_model = torch.load(each_model_path)
-                print(" #*#*#*#*#*#*#*# Generating activation analysis for model path:{} with save prefix :{} and postfix:{}".format(
-                    each_model_path, each_save_prefix, each_save_postfix))
-
-            if(sub_scheme_type == 'OVER_ORIGINAL'):
-                list_of_act_analyser = run_raw_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
-                                                                             activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name_for_gen, is_split_validation,
-                                                                             valid_split_size, torch_seed, wandb_group_name, exp_type,
-                                                                             custom_model=custom_model, root_save_prefix=each_save_prefix, final_postfix_for_save=each_save_postfix,
-                                                                             is_save_graph_visualizations=is_save_graph_visualizations, analysed_model_path=analysed_model_path)
-            elif(sub_scheme_type == 'OVER_RECONSTRUCTED'):
-                pass
-            elif(sub_scheme_type == 'OVER_ADVERSARIAL'):
-                is_save_adv = True
-                eps = 0.02
-                adv_attack_type = 'PGD'
-                number_of_adversarial_optimization_steps = 161
-                eps_step_size = 0.01
-                adv_target = None
-
-                final_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                    adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, each_save_postfix)
-                adv_save_path = models_base_path + final_postfix_for_save+"/adv_dataset.npy"
-
-                wandb_config_additional_dict = {"eps": eps, "adv_atack_type": adv_attack_type, "num_of_adversarial_optim_stps":
-                                                number_of_adversarial_optimization_steps, "eps_stp_size": eps_step_size, "adv_target": adv_target}
-
-                each_save_postfix = "EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
-                    eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size) + each_save_postfix
-
-                classes, num_classes, ret_config = get_preprocessing_and_other_configs(
-                    dataset, valid_split_size)
-                trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                    ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
-                if(is_act_collection_on_train):
-                    to_be_analysed_dataloader = trainloader
-                else:
-                    to_be_analysed_dataloader = testloader
-
-                is_current_adv_aug_available = os.path.exists(adv_save_path)
-                if(is_current_adv_aug_available):
-                    with open(adv_save_path, 'rb') as file:
-                        npzfile = np.load(adv_save_path)
-                        list_of_adv_images = npzfile['x']
-                        list_of_labels = npzfile['y']
-                        adv_dataset = CustomSimpleDataset(
-                            list_of_adv_images, list_of_labels)
-                        print("Loading adversarial examples from path:",
-                              adv_save_path)
-                else:
-                    adv_dataset = generate_adv_examples(
-                        to_be_analysed_dataloader, custom_model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=adv_save_path)
-
-                to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
-                    adv_dataset, shuffle=False, batch_size=128)
-
-                if(is_act_collection_on_train):
-                    custom_loader = to_be_analysed_adversarial_dataloader, None
-                else:
-                    custom_loader = None, to_be_analysed_adversarial_dataloader
-
-                list_of_act_analyser = run_raw_activation_analysis_on_config(dataset, model_arch_type, is_act_collection_on_train, is_class_segregation_on_ground_truth,
-                                                                             activation_calculation_batch_size, number_of_batch_to_collect, wand_project_name_for_gen,
-                                                                             is_split_validation, valid_split_size, torch_seed, wandb_group_name, exp_type,
-                                                                             custom_data_loader=custom_loader, custom_model=custom_model, root_save_prefix=each_save_prefix,
-                                                                             final_postfix_for_save=each_save_postfix, is_save_graph_visualizations=is_save_graph_visualizations,
-                                                                             analysed_model_path=analysed_model_path, wandb_config_additional_dict=wandb_config_additional_dict)
+        list_of_list_of_act_analyser = run_generate_scheme(models_base_path)
 
     elif(scheme_type == "LOAD_AND_SAVE"):
         class_ind_visualize = [9]
@@ -648,8 +667,47 @@ if __name__ == '__main__':
 
         for ind in range(len(list_of_load_paths)):
             current_analyser_loader_path = list_of_load_paths[ind]
-            list_of_act_analyser = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, current_analyser_loader_path, wandb_group_name=wandb_group_name,
+            list_of_act_analyser = load_and_save_activation_analysis_on_config(dataset, valid_split_size, model_arch_type, exp_type, wand_project_name, current_analyser_loader_path, wandb_group_name=wandb_group_name,
                                                                                class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True, save_only_thres=save_only_thres)
+
+    elif(scheme_type == "GENERATE_MERGE_AND_SAVE"):
+        merge_type = "DIFF"
+
+        class_ind_visualize = None
+
+        # class_ind_visualize = [0, 1]
+
+        list_of_model_paths = []
+        models_base_path = None
+
+        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+
+        if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
+            sub_scheme_type = 'OVER_ORIGINAL'
+            is_save_graph_visualizations = False
+
+            list_of_list_of_act_analyser_orig = run_generate_scheme(
+                models_base_path)
+
+            sub_scheme_type = 'OVER_ADVERSARIAL'
+            is_save_adv = True
+            eps = 0.02
+            adv_attack_type = 'PGD'
+            number_of_adversarial_optimization_steps = 161
+            eps_step_size = 0.01
+            adv_target = None
+
+            list_of_list_of_act_analyser_adv = run_generate_scheme(
+                models_base_path)
+
+            for ind in range(len(list_of_list_of_act_analyser_adv)):
+                list_of_act_analyser1 = list_of_list_of_act_analyser_adv[ind]
+                list_of_act_analyser2 = list_of_list_of_act_analyser_orig[ind]
+
+                if(merge_type == "DIFF"):
+                    is_save_graph_visualizations = True
+                    list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
+                                                                                  list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
 
     elif(scheme_type == "LOAD_AND_GENERATE_MERGE"):
         merge_type = "DIFF"
@@ -689,9 +747,9 @@ if __name__ == '__main__':
                       current_analyser_loader_path1)
                 print("current_analyser_loader_path2",
                       current_analyser_loader_path2)
-                list_of_act_analyser1 = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name=None, load_analyser_base_folder=current_analyser_loader_path1,
+                list_of_act_analyser1 = load_and_save_activation_analysis_on_config(dataset, valid_split_size, model_arch_type, exp_type, wand_project_name=None, load_analyser_base_folder=current_analyser_loader_path1,
                                                                                     class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=False)
-                list_of_act_analyser2 = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name=None, load_analyser_base_folder=current_analyser_loader_path2,
+                list_of_act_analyser2 = load_and_save_activation_analysis_on_config(dataset, valid_split_size, model_arch_type, exp_type, wand_project_name=None, load_analyser_base_folder=current_analyser_loader_path2,
                                                                                     class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=False)
                 list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                               list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)

@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import math
 import tqdm
+import matplotlib.animation as animation
+import matplotlib
 
 from configs.dlgn_conv_config import HardRelu
 
@@ -175,6 +177,104 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
         plt.savefig(save_path)
 
     return list_of_final_heatmap_data
+
+
+def generate_video_of_heatmap_from_data(full_heatmap_data, title, save_path=None, cmap='viridis'):
+    list_of_prev_ax = None
+    num_frames = full_heatmap_data.shape[0]
+    print("num_frames:", num_frames)
+    writervideo = animation.FFMpegWriter(fps=1)
+    # writer = Writer(fps=1, bitrate=1800)
+
+    heatmap_data = full_heatmap_data[0]
+    row, col = determine_row_col_from_features(heatmap_data.shape[0])
+
+    plt.suptitle(title, fontsize=14)
+    a = row * heatmap_data[0].shape[0]
+    b = col*heatmap_data[0].shape[1]
+    fig, ax_list = plt.subplots(
+        row, col, sharex=True, sharey=True, figsize=(b/4, a/4))
+
+    def init_func():
+        ix = 1
+        init_hm = np.zeros(
+            (heatmap_data.shape[0], heatmap_data.shape[1], heatmap_data.shape[2]))
+        list_of_final_heatmap_data = []
+        for r in tqdm.tqdm(range(row), desc=" Constructing heatmap for ind: init with title :{} with num_row:{}".format(title, row)):
+            for c in range(col):
+                print("row:{}, col:{}".format(r, c))
+                ind_c = c
+                if(col != 1):
+                    plt_ax = ax_list[r][ind_c]
+                else:
+                    plt_ax = ax_list
+
+                current_heatmap_data = init_hm[ix-1, :, :]
+
+                prev_ax = sns.heatmap(current_heatmap_data, ax=plt_ax,
+                                      cbar=False,
+                                      cmap=cmap)
+                ix += 1
+                list_of_final_heatmap_data.append(current_heatmap_data)
+
+        return list_of_final_heatmap_data
+
+    def heatmap_animate(i, *args):
+        # print("*args", *args)
+        # list_of_prev_ax = args[0]
+        # if(list_of_prev_ax is not None):
+        #     for each_ax in list_of_prev_ax:
+        #         each_ax.clear()
+        #         each_ax.cla()
+
+        # list_of_prev_ax = []
+
+        heatmap_data = full_heatmap_data[i]  # select data range
+        ix = 1
+        list_of_final_heatmap_data = []
+        # for r in range(row):
+        #     for c in range(col):
+        #         if(col != 1):
+        #             ax_list[r][c].cla()
+        #         else:
+        #             ax_list.cla()
+        # row, col = determine_row_col_from_features(heatmap_data.shape[0])
+        # print("construct_heatmaps_from_data Num row:{}, Num col:{}".format(row, col))
+        # assert row * \
+        #     col == heatmap_data.shape[0], 'All channels of heatmap data is not fit by row,col'
+        # plt.suptitle(title, fontsize=14)
+        # a = row * heatmap_data[0].shape[0]
+        # b = col*heatmap_data[0].shape[1]
+        # fig, ax_list = plt.subplots(
+        #     row, col, sharex=True, sharey=True, figsize=(b/2, a/2))
+        for r in tqdm.tqdm(range(row), desc=" Constructing heatmap for ind: {} with title :{} with num_row:{}".format(i, title, row)):
+            for c in range(col):
+                print("row:{}, col:{}".format(r, c))
+                ind_c = c
+                if(col != 1):
+                    plt_ax = ax_list[r][ind_c]
+                else:
+                    plt_ax = ax_list
+
+                plt_ax.set_title(ix)
+                current_heatmap_data = heatmap_data[ix-1, :, :]
+
+                prev_ax = sns.heatmap(current_heatmap_data, ax=plt_ax,
+                                      cbar=False,
+                                      cmap=cmap)
+
+                # list_of_prev_ax.append(prev_ax)
+                # plt.imshow(current_heatmap_data, cmap='viridis')
+                ix += 1
+                list_of_final_heatmap_data.append(current_heatmap_data)
+
+        return list_of_final_heatmap_data
+
+        # plt.setp(p.lines,linewidth=7)
+    ani = matplotlib.animation.FuncAnimation(
+        fig, heatmap_animate, frames=num_frames, fargs=[list_of_prev_ax], init_func=init_func)
+
+    ani.save(save_path, writer=writervideo)
 
 
 def construct_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viridis'):
