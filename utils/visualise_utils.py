@@ -8,6 +8,7 @@ import math
 import tqdm
 import matplotlib.animation as animation
 import matplotlib
+import os
 
 from configs.dlgn_conv_config import HardRelu
 
@@ -78,6 +79,27 @@ def save_image(im, path):
         im = format_np_output(im)
         im = Image.fromarray(im)
     im.save(path)
+
+
+def save_images_from_dataloader(dataloader, classes, postfix_folder_for_save='/', save_image_prefix=None):
+    loader = tqdm.tqdm(
+        dataloader, desc='Saving images from dataloader:'+str(postfix_folder_for_save))
+    for batch_idx, data in enumerate(loader, 0):
+        images, labels = data
+
+        if(batch_idx % 20 == 0 and save_image_prefix is not None):
+            ac_images = recreate_image(
+                images[0], unnormalize=False)
+
+            img_save_folder = save_image_prefix + \
+                "/"+str(postfix_folder_for_save)
+            if not os.path.exists(img_save_folder):
+                os.makedirs(img_save_folder)
+            save_im_path = img_save_folder+str(postfix_folder_for_save)+'_c' + \
+                str(classes[labels[0]])+'_batch_ind_' + \
+                str(batch_idx) + '.jpg'
+
+            save_image(ac_images, save_im_path)
 
 
 def recreate_image(im_as_var, unnormalize=True):

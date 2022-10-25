@@ -17,7 +17,7 @@ from visualization import recreate_image, save_image,  PerClassDataset, Template
 from utils.data_preprocessing import true_segregation
 from structure.generic_structure import CustomSimpleDataset
 
-from utils.visualise_utils import calculate_common_among_two_activation_patterns
+from utils.visualise_utils import calculate_common_among_two_activation_patterns, save_images_from_dataloader
 
 from cleverhans.torch.attacks.fast_gradient_method import fast_gradient_method
 from cleverhans.torch.attacks.projected_gradient_descent import (
@@ -54,6 +54,39 @@ def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv
         wandb_config["adv_target"] = adv_target
 
     return wandb_config
+
+
+def plain_evaluate_model(net, dataloader):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    correct = 0
+    total = 0
+    acc = 0.
+
+    net.train(False)
+
+    loader = tqdm.tqdm(dataloader, desc='Evaluating')
+    # since we're not training, we don't need to calculate the gradients for our outputs
+    # with torch.no_grad():
+    for batch_idx, data in enumerate(loader, 0):
+        begin_time = time.time()
+        images, labels = data
+        images, labels = images.to(
+            device), labels.to(device)
+
+        # calculate outputs by running images through the network
+        outputs = net(images)
+        # the class with the highest energy is what we choose as prediction
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+        cur_time = time.time()
+        step_time = cur_time - begin_time
+        acc = 100.*correct/total
+        loader.set_postfix(
+            acc=acc, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
+
+    return acc
 
 
 def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
@@ -110,6 +143,59 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
 
             save_image(orig_image, orig_im_path)
             save_image(adv_image, adv_im_path)
+
+        cur_time = time.time()
+        step_time = cur_time - begin_time
+        acc = 100.*correct/total
+        loader.set_postfix(
+            acc=acc, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
+
+    return acc
+
+
+def plain_evaluate_model_via_reconstructed(net, dataloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, save_image_prefix=None, postfix_folder_for_save="/"):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    correct = 0
+    total = 0
+    acc = 0.
+    is_targetted = adv_target is not None
+
+    net.train(False)
+
+    loader = tqdm.tqdm(dataloader, desc='Evaluating via reconstruction')
+    # since we're not training, we don't need to calculate the gradients for our outputs
+    # with torch.no_grad():
+    for batch_idx, data in enumerate(loader, 0):
+        begin_time = time.time()
+        images, labels = data
+        images, labels = images.to(
+            device), labels.to(device)
+
+        reconst_adv_images = quick_visualization_on_config(
+            net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
+            images_to_collect_upon=images, number_of_image_optimization_steps=number_of_image_optimization_steps, template_loss_type=template_loss_type)
+
+        # calculate outputs by running images through the network
+        outputs = net(reconst_adv_images)
+        # the class with the highest energy is what we choose as prediction
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+        if(batch_idx % 20 == 0 and save_image_prefix is not None):
+
+            reconst_adv_image = recreate_image(
+                reconst_adv_images[0], unnormalize=False)
+
+            recon_adv_save_folder = save_image_prefix + "/" + postfix_folder_for_save
+
+            if not os.path.exists(recon_adv_save_folder):
+                os.makedirs(recon_adv_save_folder)
+            recon_adv_im_path = recon_adv_save_folder+'/'+str(postfix_folder_for_save)+'_c' + \
+                str(classes[labels[0]])+'_batch_ind_' + \
+                str(batch_idx) + '.jpg'
+
+            save_image(reconst_adv_image, recon_adv_im_path)
 
         cur_time = time.time()
         step_time = cur_time - begin_time
@@ -468,8 +554,8 @@ if __name__ == '__main__':
         dataset = 'mnist'
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "adv_attack_for_active_pixels_on_reconst_augmentation"
-        # wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation"
-        wand_project_name = 'adv_attack_on_reconst_augmentation'
+        wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation_with_orig"
+        # wand_project_name = 'adv_attack_on_reconst_augmentation_with_orig'
         # wand_project_name = 'common_active_pixels_on_reconst_augmentation'
         # wand_project_name = None
 
@@ -477,11 +563,11 @@ if __name__ == '__main__':
         adv_attack_type = "PGD"
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST
-        exp_type = "ADV_ATTACK"
-        is_adv_attack_on_train = False
+        exp_type = "ADV_ATTACK_EVAL_VIA_RECONST"
+        is_adv_attack_on_train = True
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_test/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/"
+        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
         number_of_augment_iterations = 5
 
@@ -539,10 +625,42 @@ if __name__ == '__main__':
                             config=wandb_config,
                         )
 
-                    acc = evaluate_model(net, eval_loader, classes, eps, adv_attack_type,
-                                         number_of_adversarial_optimization_steps, eps_step_size, adv_target, save_folder)
+                    each_save_postfix = "/aug_indx_{}".format(
+                        current_aug_iter_num)
+                    final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                        adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train, each_save_postfix)
+                    adv_save_path = model_and_data_save_prefix + \
+                        final_adv_postfix_for_save+"/adv_dataset.npy"
+                    is_current_adv_aug_available = os.path.exists(
+                        adv_save_path)
+                    if(is_current_adv_aug_available):
+                        with open(adv_save_path, 'rb') as file:
+                            npzfile = np.load(adv_save_path)
+                            list_of_adv_images = npzfile['x']
+                            list_of_labels = npzfile['y']
+                            adv_dataset = CustomSimpleDataset(
+                                list_of_adv_images, list_of_labels)
+                            print("Loading adversarial examples from path:",
+                                  adv_save_path)
+                    else:
+                        print("adv_save_path:", adv_save_path)
+                        adv_dataset = generate_adv_examples(
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path)
+
+                    to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
+                        adv_dataset, shuffle=False, batch_size=128)
+
+                    save_images_from_dataloader(to_be_analysed_adversarial_dataloader, classes,
+                                                postfix_folder_for_save='adver', save_image_prefix=save_folder)
+
+                    eval_orig_acc = plain_evaluate_model(
+                        net, eval_loader)
+                    eval_adv_acc = plain_evaluate_model(
+                        net, to_be_analysed_adversarial_dataloader)
+
                     if(is_log_wandb):
-                        wandb.log({"eval_acc": acc})
+                        wandb.log({"eval_orig_acc": eval_orig_acc,
+                                  "eval_adv_acc": eval_adv_acc})
                         wandb.finish()
 
                 elif(exp_type == "ADV_ATTACK_EVAL_VIA_RECONST"):
@@ -567,11 +685,40 @@ if __name__ == '__main__':
                             group=f"{wandb_group_name}",
                             config=wandb_config,
                         )
-                    acc = evaluate_model_via_reconstructed(net, eval_loader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
-                                                           template_loss_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, save_folder)
+
+                    each_save_postfix = "/aug_indx_{}".format(
+                        current_aug_iter_num)
+                    final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                        adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train, each_save_postfix)
+                    adv_save_path = model_and_data_save_prefix + \
+                        final_adv_postfix_for_save+"/adv_dataset.npy"
+                    is_current_adv_aug_available = os.path.exists(
+                        adv_save_path)
+                    if(is_current_adv_aug_available):
+                        with open(adv_save_path, 'rb') as file:
+                            npzfile = np.load(adv_save_path)
+                            list_of_adv_images = npzfile['x']
+                            list_of_labels = npzfile['y']
+                            adv_dataset = CustomSimpleDataset(
+                                list_of_adv_images, list_of_labels)
+                            print("Loading adversarial examples from path:",
+                                  adv_save_path)
+                    else:
+                        print("adv_save_path:", adv_save_path)
+                        adv_dataset = generate_adv_examples(
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path)
+
+                    to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
+                        adv_dataset, shuffle=False, batch_size=128)
+
+                    eval_orig_via_reconst_acc = plain_evaluate_model_via_reconstructed(
+                        net, eval_loader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type)
+                    eval_adv_via_reconst_acc = plain_evaluate_model_via_reconstructed(
+                        net, to_be_analysed_adversarial_dataloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, save_image_prefix=save_folder, postfix_folder_for_save="/recons_adver/")
 
                     if(is_log_wandb):
-                        wandb.log({"eval_acc_via_reconst": acc})
+                        wandb.log({"eval_orig_via_reconst_acc": eval_orig_via_reconst_acc,
+                                  "eval_adv_via_reconst_acc": eval_adv_via_reconst_acc})
                         wandb.finish()
 
                 elif(exp_type == "ACTIVATION_COMPARE"):
