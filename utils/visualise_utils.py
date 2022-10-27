@@ -201,6 +201,104 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
     return list_of_final_heatmap_data
 
 
+def generate_video_of_image_from_data(full_heatmap_data, start, end, title, save_path=None, save_each_img_path=None, cmap='viridis'):
+    full_heatmap_data = full_heatmap_data[start:end]
+    num_frames = full_heatmap_data.shape[0]
+    print("num_frames:", num_frames)
+    writervideo = animation.FFMpegWriter(fps=1)
+
+    # Shift the range between [0,1]
+    arr_max = np.amax(full_heatmap_data)
+    arr_min = np.amin(full_heatmap_data)
+    full_heatmap_data = (
+        full_heatmap_data-arr_min)/(arr_max-arr_min)
+
+    full_heatmap_data *= 255
+    full_heatmap_data = np.clip(
+        full_heatmap_data, 0, 255).astype('uint8')
+
+    heatmap_data = full_heatmap_data[0]
+    row, col = determine_row_col_from_features(heatmap_data.shape[0])
+
+    plt.suptitle(title, fontsize=14)
+    a = row * heatmap_data[0].shape[0]
+    b = col*heatmap_data[0].shape[1]
+    fig, ax_list = plt.subplots(
+        row, col, sharex=True, sharey=True, figsize=(b/4, a/4))
+
+    sfolder = save_path[0:save_path.rfind("/")+1]
+    if not os.path.exists(sfolder):
+        os.makedirs(sfolder)
+
+    sfolder = save_each_img_path[0:save_each_img_path.rfind("/")+1]
+    if not os.path.exists(sfolder):
+        os.makedirs(sfolder)
+
+    def init_func():
+        ix = 1
+        init_hm = np.zeros(
+            (heatmap_data.shape[0], heatmap_data.shape[1], heatmap_data.shape[2]))
+        list_of_final_heatmap_data = []
+        for r in tqdm.tqdm(range(row), desc=" Constructing Image for ind: init with title :{} with num_row:{}".format(title, row)):
+            for c in range(col):
+                ind_c = c
+                if(col != 1):
+                    plt_ax = ax_list[r][ind_c]
+                else:
+                    plt_ax = ax_list
+
+                current_heatmap_data = init_hm[ix-1, :, :]
+
+                plt_ax.imshow(current_heatmap_data, cmap=cmap)
+                ix += 1
+                list_of_final_heatmap_data.append(current_heatmap_data)
+
+        return list_of_final_heatmap_data
+
+    def image_animate(i):
+        print("i:", i)
+        heatmap_data = full_heatmap_data[i]  # select data range
+        ix = 1
+        list_of_final_heatmap_data = []
+        for r in range(row):
+            for c in range(col):
+                if(col != 1):
+                    ax_list[r][c].cla()
+                else:
+                    ax_list.cla()
+
+        for r in tqdm.tqdm(range(row), desc=" Constructing image for ind: {} with title :{} with num_row:{}".format(i, title, row)):
+            for c in range(col):
+                ind_c = c
+                if(col != 1):
+                    plt_ax = ax_list[r][ind_c]
+                else:
+                    plt_ax = ax_list
+
+                plt_ax.set_title(ix)
+                current_heatmap_data = heatmap_data[ix-1, :, :]
+
+                plt_ax.imshow(current_heatmap_data, cmap=cmap)
+
+                ix += 1
+                list_of_final_heatmap_data.append(current_heatmap_data)
+
+        if(save_each_img_path is not None):
+            temp_each_img_path = save_each_img_path.replace(
+                "*", str(start+i))
+            print("temp_each_img_path:", temp_each_img_path)
+            plt.savefig(temp_each_img_path)
+
+        return list_of_final_heatmap_data
+
+    ani = matplotlib.animation.FuncAnimation(
+        fig, image_animate, frames=num_frames, init_func=init_func)
+    if(save_path is not None):
+        temp_path = save_path.replace("*", "{}_{}".format(start, end))
+        print("temp_path:", temp_path)
+        ani.save(temp_path, writer=writervideo)
+
+
 def generate_video_of_heatmap_from_data(full_heatmap_data, title, save_path=None, cmap='viridis'):
     list_of_prev_ax = None
     num_frames = full_heatmap_data.shape[0]

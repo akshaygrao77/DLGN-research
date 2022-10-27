@@ -7,7 +7,7 @@ import numpy as np
 import pickle
 
 
-from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_heatmap_from_data
+from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_image_from_data
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from structure.generic_structure import CustomSimpleDataset
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
@@ -15,6 +15,7 @@ from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
 from configs.generic_configs import get_preprocessing_and_other_configs
 from adversarial_attacks_tester import generate_adv_examples
+from configs.dlgn_conv_config import HardRelu
 
 
 def seed_worker(worker_id):
@@ -125,17 +126,21 @@ class RawActivationAnalyser():
 
         dict_full_path_to_saves = dict()
 
-        final_save_dir = base_save_folder+"/"
-        if not os.path.exists(final_save_dir):
-            os.makedirs(final_save_dir)
-
         current_post_activation_values = self.post_activation_values_all_batches
 
-        current_full_save_path = final_save_dir + \
-            "raw_postactivation_heatmap.mp4"
+        current_full_save_path = base_save_folder+"/Video/HardRelu/" + \
+            "hardrelu_raw_postactivation_images_*.mp4"
         dict_full_path_to_saves["raw_post_activation"] = current_full_save_path
-        generate_video_of_heatmap_from_data(
-            current_post_activation_values[0:4], "Raw post activation video", save_path=current_full_save_path)
+        print("current_full_save_path:", current_full_save_path)
+
+        current_full_img_save_path = base_save_folder + \
+            "/Images/HardRelu/" + \
+            "hard_relu_post_act_img_b_*.jpg"
+
+        print("current_full_img_save_path:", current_full_img_save_path)
+
+        generate_video_of_image_from_data(
+            current_post_activation_values, 200, 300, "Hard relu post activation video", save_path=current_full_save_path, save_each_img_path=current_full_img_save_path, cmap='binary')
 
         return
 
@@ -156,7 +161,8 @@ class RawActivationAnalyser():
             for indx in range(len(conv_outs)):
                 each_conv_output = conv_outs[indx]
 
-                each_conv_output = torch.nn.Sigmoid()(beta * each_conv_output)
+                # each_conv_output = torch.nn.Sigmoid()(beta * each_conv_output)
+                each_conv_output = HardRelu()(each_conv_output)
                 each_conv_output = each_conv_output.to(
                     cpudevice, non_blocking=True).numpy()
 
@@ -603,11 +609,13 @@ if __name__ == '__main__':
     activation_calculation_batch_size = 64
     number_of_batch_to_collect = None
     # wand_project_name = 'raw_activation_analyser'
-    wand_project_name = 'raw_activation_analysis_class'
-    # wand_project_name = None
+    # wand_project_name = 'new_raw_activation_analysis_class'
+    wand_project_name = None
     wand_project_name_for_gen = None
-    wand_project_name_for_merge = "raw_activation_analysis_augmented_mnist_conv4_dlgn_n16_small"
-    wandb_group_name = "raw_activation_analysis_augmented_mnist_conv4_dlgn"
+    wand_project_name_for_merge = None
+    # wand_project_name_for_merge = "raw_activation_analysis_augmented_mnist_conv4_dlgn_n16_small"
+    # wandb_group_name = "raw_activation_analysis_augmented_mnist_conv4_dlgn"
+    wandb_group_name = None
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
@@ -637,7 +645,7 @@ if __name__ == '__main__':
         eps_step_size = 0.01
         adv_target = None
 
-        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/"
+        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
         list_of_list_of_act_analyser = run_generate_scheme(models_base_path)
 
@@ -675,16 +683,16 @@ if __name__ == '__main__':
 
         class_ind_visualize = None
 
-        # class_ind_visualize = [0, 1]
+        class_ind_visualize = [9]
 
         list_of_model_paths = []
         models_base_path = None
 
-        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/"
 
         if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
             sub_scheme_type = 'OVER_ORIGINAL'
-            is_save_graph_visualizations = False
+            is_save_graph_visualizations = True
 
             list_of_list_of_act_analyser_orig = run_generate_scheme(
                 models_base_path)
