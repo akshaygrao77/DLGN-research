@@ -50,6 +50,13 @@ def get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type
     return wandb_config
 
 
+def print_array(arr):
+    for i in range(len(arr)):
+        for j in range(len(arr[i])):
+            print(arr[i][j], end=" ")
+        print("")
+
+
 class ActivationAnalyser():
 
     def __init__(self, model):
@@ -217,7 +224,101 @@ class ActivationAnalyser():
 
         return merged_act_analyser
 
-    def save_recorded_activation_states(self, base_save_folder, save_only_thres=False):
+    def normalize_data(self, input):
+
+        for indx in range(len(input)):
+            input[indx] -= input[indx].mean(0)
+            input[indx] /= input[indx].std(0)
+
+        return input
+
+    def shift_to_01_range(self, input):
+        arr_max = None
+        arr_min = None
+        for each_input in input:
+            current_max = torch.max(each_input).item()
+            current_min = torch.min(each_input).item()
+            if(arr_max is None):
+                arr_max = current_max
+            else:
+                if(current_max > arr_max):
+                    arr_max = current_max
+
+            if(arr_min is None):
+                arr_min = current_min
+            else:
+                if(current_min < arr_min):
+                    arr_min = current_min
+
+        print("arr_min:", arr_min)
+        print("arr_max:", arr_max)
+        for indx in range(len(input)):
+            input[indx] = (
+                input[indx]-arr_min)/(arr_max-arr_min)
+
+        return input
+
+    def standarize_all_recorded_activation_states(self):
+        cpudevice = torch.device("cpu")
+
+        self.active_thresholded_indicator_activation_map_list = self.shift_to_01_range(
+            self.active_thresholded_indicator_activation_map_list)
+        self.active_counts_activation_map_list = self.shift_to_01_range(
+            self.active_counts_activation_map_list)
+        self.active_inactive_diff_activation_map_list = self.shift_to_01_range(
+            self.active_inactive_diff_activation_map_list)
+        # print("Before mean_per_pixel_of_activations_map_list")
+        # print_array(self.mean_per_pixel_of_activations_map_list[0])
+        self.mean_per_pixel_of_activations_map_list = self.normalize_data(
+            self.mean_per_pixel_of_activations_map_list)
+        # print("After normalization mean_per_pixel_of_activations_map_list")
+        # print_array(self.mean_per_pixel_of_activations_map_list[0])
+        self.mean_per_pixel_of_activations_map_list = self.shift_to_01_range(
+            self.mean_per_pixel_of_activations_map_list)
+        # print("After mean_per_pixel_of_activations_map_list")
+        # print_array(self.mean_per_pixel_of_activations_map_list[0])
+        # temp = self.mean_per_pixel_of_activations_map_list[0] * 255
+        # print("Before final mean_per_pixel_of_activations_map_list")
+        # print_array(temp)
+        # temp = np.clip(
+        #     temp.to(cpudevice, non_blocking=True).numpy(), 0, 255).astype('uint8')
+        # print("Final mean_per_pixel_of_activations_map_list", temp.shape)
+        # print_array(temp)
+        self.std_per_pixel_of_activations_map_list = self.normalize_data(
+            self.std_per_pixel_of_activations_map_list)
+        self.std_per_pixel_of_activations_map_list = self.normalize_data(
+            self.std_per_pixel_of_activations_map_list)
+        self.min_per_pixel_of_activations_map_list = self.normalize_data(
+            self.min_per_pixel_of_activations_map_list)
+        self.max_per_pixel_of_activations_map_list = self.normalize_data(
+            self.max_per_pixel_of_activations_map_list)
+        self.avg_mean_per_activations_map_list = self.normalize_data(
+            self.avg_mean_per_activations_map_list)
+        self.avg_std_per_activations_map_list = self.normalize_data(
+            self.avg_std_per_activations_map_list)
+        self.avg_min_per_activations_map_list = self.normalize_data(
+            self.avg_min_per_activations_map_list)
+        self.avg_max_per_activations_map_list = self.normalize_data(
+            self.avg_max_per_activations_map_list)
+
+        self.std_per_pixel_of_activations_map_list = self.shift_to_01_range(
+            self.std_per_pixel_of_activations_map_list)
+        self.std_per_pixel_of_activations_map_list = self.shift_to_01_range(
+            self.std_per_pixel_of_activations_map_list)
+        self.min_per_pixel_of_activations_map_list = self.shift_to_01_range(
+            self.min_per_pixel_of_activations_map_list)
+        self.max_per_pixel_of_activations_map_list = self.shift_to_01_range(
+            self.max_per_pixel_of_activations_map_list)
+        self.avg_mean_per_activations_map_list = self.shift_to_01_range(
+            self.avg_mean_per_activations_map_list)
+        self.avg_std_per_activations_map_list = self.shift_to_01_range(
+            self.avg_std_per_activations_map_list)
+        self.avg_min_per_activations_map_list = self.shift_to_01_range(
+            self.avg_min_per_activations_map_list)
+        self.avg_max_per_activations_map_list = self.shift_to_01_range(
+            self.avg_max_per_activations_map_list)
+
+    def save_recorded_activation_states_as_hm(self, base_save_folder, save_only_thres=False):
         cpudevice = torch.device("cpu")
         # For each conv layer
         for indx in range(len(self.active_counts_activation_map_list)):
@@ -344,6 +445,127 @@ class ActivationAnalyser():
             #         image_log_dict[each_key] = wandb.Image(full_path)
 
             #     wandb.log(image_log_dict)
+
+        return
+
+    def save_recorded_activation_states(self, base_save_folder, save_only_thres=False):
+        cpudevice = torch.device("cpu")
+        # For each conv layer
+        for indx in range(len(self.active_counts_activation_map_list)):
+            print("Saving visualization for layer:", indx)
+            dict_full_path_to_saves = dict()
+
+            final_save_dir = base_save_folder+"/layer_{}/".format(indx)
+            if not os.path.exists(final_save_dir):
+                os.makedirs(final_save_dir)
+
+            current_active_thresholded_indicator_activation_map = self.active_thresholded_indicator_activation_map_list[
+                indx].to(cpudevice, non_blocking=True).numpy()
+
+            current_full_save_path = final_save_dir + \
+                "thres_active_indicators_over_activation_map_im.jpg"
+            dict_full_path_to_saves["thres_active_indictor_ov_act_map"] = current_full_save_path
+            construct_images_from_feature_maps(current_active_thresholded_indicator_activation_map,
+                                               title='Thresholded active pixel indicatoes over activation map', save_path=current_full_save_path)
+
+            if(save_only_thres == False):
+                current_active_counts_activation_map = self.active_counts_activation_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_active_inactive_diff_activation_map = self.active_inactive_diff_activation_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+
+                current_mean_per_pixel_of_activations_map = self.mean_per_pixel_of_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_std_per_pixel_of_activations_map = self.std_per_pixel_of_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_min_per_pixel_of_activations_map = self.min_per_pixel_of_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_max_per_pixel_of_activations_map = self.max_per_pixel_of_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+
+                current_avg_mean_per_activations_map = self.avg_mean_per_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_avg_std_per_activations_map = self.avg_std_per_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_avg_min_per_activations_map = self.avg_min_per_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+                current_avg_max_per_activations_map = self.avg_max_per_activations_map_list[
+                    indx].to(cpudevice, non_blocking=True).numpy()
+
+                current_full_save_path = final_save_dir + \
+                    "active_counts_over_activation_map_im.jpg"
+                dict_full_path_to_saves["active_count_ov_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(current_active_counts_activation_map, title='Active counts over activation map',
+                                                   save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "active_inact_diff_counts_over_activation_map_im.jpg"
+                dict_full_path_to_saves["act_inact_diff_count_ov_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(current_active_inactive_diff_activation_map, title='Active - inactive difference counts over activation map',
+                                                   save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "mean_per_pixel_over_activation_map_im_norm.jpg"
+                dict_full_path_to_saves["mean_per_pxl_ov_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(
+                    current_mean_per_pixel_of_activations_map, title="Mean per pixel over activation map", save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "std_dev_per_pixel_over_activation_map_im_norm.jpg"
+                dict_full_path_to_saves["std_dev_per_pxl_ov_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(
+                    current_std_per_pixel_of_activations_map, title="Standard deviation per pixel over activation map", save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "min_per_pixel_over_activation_map_im_norm.jpg"
+                dict_full_path_to_saves["min_per_pxl_ov_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(
+                    current_min_per_pixel_of_activations_map, title="Min per pixel over activation map", save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "max_per_pixel_over_activation_map_im_norm.jpg"
+                dict_full_path_to_saves["max_per_pxl_ov_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(
+                    current_max_per_pixel_of_activations_map, title="Max per pixel over activation map", save_path=current_full_save_path)
+
+                # Obtain the resize shape for num_filters dimension
+                r, c = determine_row_col_from_features(
+                    current_avg_mean_per_activations_map.shape[0])
+                current_avg_mean_per_activations_map = np.reshape(
+                    current_avg_mean_per_activations_map, (1, r, c))
+                current_avg_std_per_activations_map = np.reshape(
+                    current_avg_std_per_activations_map, (1, r, c))
+                current_avg_min_per_activations_map = np.reshape(
+                    current_avg_min_per_activations_map, (1, r, c))
+                current_avg_max_per_activations_map = np.reshape(
+                    current_avg_max_per_activations_map, (1, r, c))
+
+                current_full_save_path = final_save_dir + \
+                    "avg_mean_per_act_map_im_norm.jpg"
+                dict_full_path_to_saves["avg_mean_per_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(current_avg_mean_per_activations_map,
+                                                   title='Average of mean per activation map', save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "avg_std_per_act_map_im_norm.jpg"
+                dict_full_path_to_saves["avg_std_per_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(current_avg_std_per_activations_map,
+                                                   title='Average of std deviation per activation map', save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "avg_min_per_act_map_im_norm.jpg"
+                dict_full_path_to_saves["avg_min_per_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(current_avg_min_per_activations_map,
+                                                   title='Average of min per activation map', save_path=current_full_save_path)
+
+                current_full_save_path = final_save_dir + \
+                    "avg_max_per_act_map_im_norm.jpg"
+                dict_full_path_to_saves["avg_max_per_act_map"] = current_full_save_path
+                construct_images_from_feature_maps(current_avg_max_per_activations_map,
+                                                   title='Average of max per activation map', save_path=current_full_save_path)
+
+            print("dict_full_path_to_saves in iteration {}=>{}".format(
+                indx, dict_full_path_to_saves))
 
         return
 
@@ -817,10 +1039,13 @@ class ActivationAnalyser():
         if(is_log_wandb):
             wandb.finish()
 
-    def save_and_log_states(self, wand_project_name, wandb_group_name=None, root_save_prefix=None, final_postfix_for_save=None, is_save_graph_visualizations=True, save_only_thres=False):
+    def save_and_log_states(self, wand_project_name, wandb_group_name=None, root_save_prefix=None, final_postfix_for_save=None, is_save_graph_visualizations=True, save_only_thres=False, wandb_config_additional_dict=None):
         is_log_wandb = not(wand_project_name is None)
         log_dict = self.get_wandb_log_dict()
         print("log_dict", log_dict)
+
+        if(wandb_config_additional_dict is not None):
+            self.wandb_config.update(wandb_config_additional_dict)
 
         if(is_log_wandb):
             if(wandb_group_name is not None):
@@ -848,6 +1073,7 @@ class ActivationAnalyser():
                     self.final_postfix_for_save, final_postfix_for_save)
             if not os.path.exists(save_folder):
                 os.makedirs(save_folder)
+            self.standarize_all_recorded_activation_states()
             self.save_recorded_activation_states(save_folder, save_only_thres)
 
 
@@ -950,7 +1176,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
 
 def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, load_analyser_base_folder, wandb_group_name=None,
                                                 root_save_prefix=None, final_postfix_for_save=None,
-                                                class_indx_to_visualize=None, is_save_graph_visualizations=True, save_only_thres=False):
+                                                class_indx_to_visualize=None, is_save_graph_visualizations=True, save_only_thres=False, wandb_config_additional_dict=None):
     is_log_wandb = not(wand_project_name is None)
 
     print("Running for "+str(dataset))
@@ -976,7 +1202,7 @@ def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_
             with open(load_folder+'/analyser_state.pkl', 'rb') as in_file:
                 act_analyser = pickle.load(in_file)
                 act_analyser.save_and_log_states(
-                    wand_project_name, wandb_group_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations, save_only_thres)
+                    wand_project_name, wandb_group_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations, save_only_thres, wandb_config_additional_dict)
                 if(is_log_wandb):
                     wandb.finish()
                 list_of_act_analyser.append(act_analyser)
@@ -988,7 +1214,7 @@ def load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_
         with open(load_folder+'/analyser_state.pkl', 'rb') as in_file:
             act_analyser = pickle.load(in_file)
             act_analyser.save_and_log_states(
-                wand_project_name, wandb_group_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations, save_only_thres)
+                wand_project_name, wandb_group_name, root_save_prefix, final_postfix_for_save, is_save_graph_visualizations, save_only_thres, wandb_config_additional_dict)
             if(is_log_wandb):
                 wandb.finish()
 
@@ -1016,25 +1242,25 @@ if __name__ == '__main__':
     # plain_pure_conv4_dnn , conv4_dlgn
     model_arch_type = 'conv4_dlgn'
     # If False, then on test
-    is_act_collection_on_train = False
+    is_act_collection_on_train = True
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     activation_calculation_batch_size = 64
     number_of_batch_to_collect = None
     # wand_project_name = 'test_activation_analyser'
-    wand_project_name = 'activation_analysis_class'
-    # wand_project_name = None
+    # wand_project_name = 'activation_analysis_class'
+    wand_project_name = "new_activation_analysis_class"
     wand_project_name_for_gen = None
-    wand_project_name_for_merge = None
+    wand_project_name_for_merge = "merge_diff_activation_analysis_class"
     wandb_group_name = "activation_analysis_augmented_mnist_conv4_dlgn_adv_m95_c95"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
     # GENERATE_RECORD_STATS_PER_CLASS ,  GENERATE_RECORD_STATS_OVERALL
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
-    is_save_graph_visualizations = False
+    is_save_graph_visualizations = True
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE
-    scheme_type = "GENERATE"
+    scheme_type = "LOAD_AND_SAVE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ADVERSARIAL'
     collect_threshold = 0.95
@@ -1147,9 +1373,9 @@ if __name__ == '__main__':
                                                                          analysed_model_path=analysed_model_path, wandb_config_additional_dict=wandb_config_additional_dict)
 
     elif(scheme_type == "LOAD_AND_SAVE"):
-        class_ind_visualize = [9]
+        # class_ind_visualize = [9]
         # class_ind_visualize = [2, 4, 6, 8]
-        # class_ind_visualize = None
+        class_ind_visualize = None
         # class_ind_visualize = [3, 5,7,9]
         # class_ind_visualize = [7, 9]
 
@@ -1161,25 +1387,27 @@ if __name__ == '__main__':
         loader_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/ACT_ANALYSIS/OVER_ADVERSARIAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/EPS_0.02/ADV_TYPE_PGD/NUM_ADV_STEPS_161/eps_step_size_0.01/"
 
         if(loader_base_path != None):
-            num_iterations = 5
-            # for i in range(1, num_iterations+1):
-            for i in range(1, 2):
+            num_iterations = 3
+            for i in range(2, num_iterations+1):
+                # for i in range(1, 2):
                 each_model_prefix = "aug_indx_{}".format(i)
                 list_of_load_paths.append(loader_base_path+each_model_prefix)
 
         else:
             list_of_load_paths = ["root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.5/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"]
 
+        wandb_config_additional_dict = dict()
+        wandb_config_additional_dict["sub_scheme_type"] = "OVER_ADVERSARIAL"
         for ind in range(len(list_of_load_paths)):
             current_analyser_loader_path = list_of_load_paths[ind]
             list_of_act_analyser = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name, current_analyser_loader_path, wandb_group_name=wandb_group_name,
-                                                                               class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True, save_only_thres=save_only_thres)
+                                                                               class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True, save_only_thres=save_only_thres, wandb_config_additional_dict=wandb_config_additional_dict)
 
     elif(scheme_type == "LOAD_AND_GENERATE_MERGE"):
         merge_type = "DIFF"
-        # class_ind_visualize = [9]
+        class_ind_visualize = [9]
         # class_ind_visualize = [2, 4, 6, 8]
-        class_ind_visualize = None
+        # class_ind_visualize = None
         # class_ind_visualize = [3, 5,7,9]
         # class_ind_visualize = [7, 9]
 
@@ -1190,11 +1418,11 @@ if __name__ == '__main__':
 
         save_only_thres = False
 
-        loader_base_path1 = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ADVERSARIAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/EPS_0.02/ADV_TYPE_PGD/NUM_ADV_STEPS_161/eps_step_size_0.01/"
-        loader_base_path2 = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
+        loader_base_path1 = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/ACT_ANALYSIS/OVER_ADVERSARIAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/EPS_0.02/ADV_TYPE_PGD/NUM_ADV_STEPS_161/eps_step_size_0.01/"
+        loader_base_path2 = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/ACT_ANALYSIS/OVER_ORIGINAL/mnist/MT_conv4_dlgn_ET_GENERATE_RECORD_STATS_PER_CLASS/_ACT_OV_train/SEG_GT/TMP_COLL_BS_64_NO_TO_COLL_None/_torch_seed_2022_c_thres_0.95/"
 
         if(loader_base_path1 is not None and loader_base_path2 is not None):
-            num_iterations = 5
+            num_iterations = 3
             for i in range(1, num_iterations+1):
                 # for i in range(5, 6):
                 each_model_prefix = "aug_indx_{}".format(i)
@@ -1213,10 +1441,14 @@ if __name__ == '__main__':
                       current_analyser_loader_path1)
                 print("current_analyser_loader_path2",
                       current_analyser_loader_path2)
-                list_of_act_analyser1 = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name=None, load_analyser_base_folder=current_analyser_loader_path1,
-                                                                                    class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=False)
-                list_of_act_analyser2 = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name=None, load_analyser_base_folder=current_analyser_loader_path2,
-                                                                                    class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=False)
+                wandb_config_additional_dict = dict()
+                wandb_config_additional_dict["sub_scheme_type"] = "OVER_ADVERSARIAL"
+                list_of_act_analyser1 = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name=wand_project_name, load_analyser_base_folder=current_analyser_loader_path1, wandb_group_name=wandb_group_name,
+                                                                                    class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True, wandb_config_additional_dict=wandb_config_additional_dict)
+
+                wandb_config_additional_dict["sub_scheme_type"] = "OVER_ORIGINAL"
+                list_of_act_analyser2 = load_and_save_activation_analysis_on_config(dataset, exp_type, wand_project_name=wand_project_name, load_analyser_base_folder=current_analyser_loader_path2, wandb_group_name=wandb_group_name,
+                                                                                    class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=True, wandb_config_additional_dict=wandb_config_additional_dict)
                 list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                               list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
 

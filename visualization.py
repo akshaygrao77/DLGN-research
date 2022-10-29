@@ -518,8 +518,6 @@ class TemplateImageGenerator():
 
             loss += each_conv_loss
 
-        print("Percentage of non_zero pixels",
-              (100. * (non_zero_pixel_points/total_pixel_points)))
         return loss/active_pixel_points, active_pixel_points, total_pixel_points, non_zero_pixel_points
 
     def calculate_only_active_loss_for_template_image(self):
@@ -555,8 +553,6 @@ class TemplateImageGenerator():
 
             loss += each_conv_loss
 
-        print("Percentage of non_zero pixels",
-              (100. * (non_zero_pixel_points/total_pixel_points)))
         return loss/active_pixel_points, active_pixel_points, total_pixel_points, non_zero_pixel_points
 
     def get_wandb_config(self, exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,

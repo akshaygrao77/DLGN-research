@@ -9,6 +9,8 @@ import tqdm
 import matplotlib.animation as animation
 import matplotlib
 import os
+import gc
+from matplotlib import figure
 
 from configs.dlgn_conv_config import HardRelu
 
@@ -200,6 +202,16 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
 
     return list_of_final_heatmap_data
 
+def generate_list_of_images_from_data(full_heatmap_data, start, end, title, save_each_img_path=None, cmap='binary'):
+    full_heatmap_data = full_heatmap_data[start:end]
+    num_frames = full_heatmap_data.shape[0]
+    for i in range(num_frames):
+        if(save_each_img_path is not None):
+            temp_each_img_path = save_each_img_path.replace(
+                "*", str(start+i))
+            feature_maps = full_heatmap_data[i]
+            construct_images_from_feature_maps(feature_maps, title, save_path=temp_each_img_path,cmap=cmap)
+
 
 def generate_video_of_image_from_data(full_heatmap_data, start, end, title, save_path=None, save_each_img_path=None, cmap='viridis'):
     full_heatmap_data = full_heatmap_data[start:end]
@@ -238,7 +250,7 @@ def generate_video_of_image_from_data(full_heatmap_data, start, end, title, save
         ix = 1
         init_hm = np.zeros(
             (heatmap_data.shape[0], heatmap_data.shape[1], heatmap_data.shape[2]))
-        list_of_final_heatmap_data = []
+
         for r in tqdm.tqdm(range(row), desc=" Constructing Image for ind: init with title :{} with num_row:{}".format(title, row)):
             for c in range(col):
                 ind_c = c
@@ -251,21 +263,11 @@ def generate_video_of_image_from_data(full_heatmap_data, start, end, title, save
 
                 plt_ax.imshow(current_heatmap_data, cmap=cmap)
                 ix += 1
-                list_of_final_heatmap_data.append(current_heatmap_data)
-
-        return list_of_final_heatmap_data
 
     def image_animate(i):
         print("i:", i)
         heatmap_data = full_heatmap_data[i]  # select data range
         ix = 1
-        list_of_final_heatmap_data = []
-        for r in range(row):
-            for c in range(col):
-                if(col != 1):
-                    ax_list[r][c].cla()
-                else:
-                    ax_list.cla()
 
         for r in tqdm.tqdm(range(row), desc=" Constructing image for ind: {} with title :{} with num_row:{}".format(i, title, row)):
             for c in range(col):
@@ -278,10 +280,10 @@ def generate_video_of_image_from_data(full_heatmap_data, start, end, title, save
                 plt_ax.set_title(ix)
                 current_heatmap_data = heatmap_data[ix-1, :, :]
 
+                plt_ax.clear()
                 plt_ax.imshow(current_heatmap_data, cmap=cmap)
 
                 ix += 1
-                list_of_final_heatmap_data.append(current_heatmap_data)
 
         if(save_each_img_path is not None):
             temp_each_img_path = save_each_img_path.replace(
@@ -289,14 +291,14 @@ def generate_video_of_image_from_data(full_heatmap_data, start, end, title, save
             print("temp_each_img_path:", temp_each_img_path)
             plt.savefig(temp_each_img_path)
 
-        return list_of_final_heatmap_data
-
     ani = matplotlib.animation.FuncAnimation(
         fig, image_animate, frames=num_frames, init_func=init_func)
     if(save_path is not None):
         temp_path = save_path.replace("*", "{}_{}".format(start, end))
         print("temp_path:", temp_path)
         ani.save(temp_path, writer=writervideo)
+        plt.clf()
+        plt.close()
 
 
 def generate_video_of_heatmap_from_data(full_heatmap_data, title, save_path=None, cmap='viridis'):
@@ -431,6 +433,8 @@ def construct_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viri
 
     if(save_path is not None):
         plt.savefig(save_path)
+        plt.clf()
+        plt.close()
 
     return list_of_final_heatmap_data
 
@@ -449,45 +453,59 @@ def determine_row_col_from_features(num_features):
     return 0, 0
 
 
-def construct_images_from_feature_maps(feature_maps, title, save_path=None, is_normalize_data=False, cmap='viridis'):
+def construct_images_from_feature_maps(feature_maps, title, save_path=None, is_scale=False, is_shift=False, is_normalize_data=False, cmap='binary'):
+    matplotlib.use('Agg')
     print("Constructing Images for:{} and will be saved at:{}".format(
         title, save_path if not None else 'Not saved'))
-    list_of_final_plotted_activation_maps = []
     row, col = determine_row_col_from_features(feature_maps.shape[0])
 
     ix = 1
     assert row * \
         col == feature_maps.shape[0], 'All channels of feature_maps is not fit by row,col'
-    plt.suptitle(title, fontsize=14)
+
+    # plt.suptitle(title, fontsize=14)
     a = row * feature_maps[0].shape[0]
     b = col*feature_maps[0].shape[1]
+    fig = figure.Figure(figsize=(b/4, a/4))
+    fig.suptitle(title, fontsize=20)
+    ax_list = fig.subplots(row, col, sharex=True,
+                           sharey=True)
+    # fig, ax_list = plt.subplots(
+    #     row, col, sharex=True, sharey=True, figsize=(b/4, a/4))
+
+    if(is_shift == True):
+        # Shift the range between [0,1]
+        arr_max = np.amax(feature_maps)
+        arr_min = np.amin(feature_maps)
+        feature_maps = (
+            feature_maps-arr_min)/(arr_max-arr_min)
+
+    if(is_normalize_data):
+        feature_maps -= feature_maps.mean(0)
+        feature_maps /= feature_maps.std(0)
+    if(is_scale):
+        feature_maps *= 255
+        feature_maps = np.clip(
+            feature_maps, 0, 255).astype('uint8')
+
     for r in tqdm.tqdm(range(row), desc=" Constructing images for {} with num_row:{}".format(title, row)):
         for c in range(col):
             # specify subplot and turn of axis
-            ax = plt.subplot(row, col, ix)
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.set_title(ix)
+            if(col != 1):
+                plt_ax = ax_list[r][c]
+            else:
+                plt_ax = ax_list
+
+            plt_ax.set_title(ix)
             current_feature_map = feature_maps[ix-1, :, :]
 
-            # Shift the range between [0,1]
-            arr_max = np.amax(current_feature_map)
-            arr_min = np.amin(current_feature_map)
-            current_feature_map = (
-                current_feature_map-arr_min)/(arr_max-arr_min)
-
-            if(is_normalize_data):
-                current_feature_map -= current_feature_map.mean()
-                current_feature_map /= current_feature_map.std()
-
-            current_feature_map *= 255
-            current_feature_map = np.clip(
-                current_feature_map, 0, 255).astype('uint8')
-            ax.imshow(current_feature_map, cmap=cmap)
+            art_obj = plt_ax.imshow(current_feature_map, cmap=cmap)
             ix += 1
-            list_of_final_plotted_activation_maps.append(current_feature_map)
 
     if(save_path is not None):
-        plt.savefig(save_path)
-
-    return list_of_final_plotted_activation_maps
+        fig.savefig(save_path)
+        fig.clear()
+        plt.clf()
+        plt.close(fig)
+        plt.close('all')
+        gc.collect()

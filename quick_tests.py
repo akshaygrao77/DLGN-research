@@ -154,9 +154,10 @@ def generate_video_of_image_from_data(full_heatmap_data, title, save_path=None, 
 
             current_heatmap_data = init_hm[ix-1, :, :]
 
-            plt_ax.clear()
-            art_obj = plt_ax.imshow(current_heatmap_data, cmap=cmap)
-            # art_obj_list.append(art_obj)
+            # plt_ax.clear()
+            art_obj = plt_ax.imshow(
+                current_heatmap_data, cmap=cmap, animated=True)
+            art_obj_list.append(art_obj)
             ix += 1
 
     def image_animate(i):
