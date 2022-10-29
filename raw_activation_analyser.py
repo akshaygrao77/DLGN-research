@@ -7,7 +7,7 @@ import numpy as np
 import pickle
 
 
-from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_image_from_data
+from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself,generate_list_of_images_from_data, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_image_from_data
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from structure.generic_structure import CustomSimpleDataset
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
@@ -139,8 +139,9 @@ class RawActivationAnalyser():
 
         print("current_full_img_save_path:", current_full_img_save_path)
 
-        generate_video_of_image_from_data(
-            current_post_activation_values, 200, 300, "Hard relu post activation video", save_path=current_full_save_path, save_each_img_path=current_full_img_save_path, cmap='binary')
+        generate_list_of_images_from_data(current_post_activation_values, 200, 300, "Hard relu Raw post activation video", save_each_img_path=current_full_img_save_path,cmap='binary')
+        # generate_video_of_image_from_data(
+        #     current_post_activation_values, 200, 300, "Hard relu Raw post activation video", save_path=current_full_save_path, save_each_img_path=current_full_img_save_path, cmap='binary')
 
         return
 
@@ -200,12 +201,12 @@ class RawActivationAnalyser():
         per_class_data_loader = tqdm(
             per_class_data_loader, desc='Recording raw activation stats for class label:'+str(class_label))
         num_batches = 0
-        for i, per_class_per_batch_data in enumerate(per_class_data_loader):
-            num_batches += 1
-            torch.cuda.empty_cache()
-            c_inputs, _ = per_class_per_batch_data
-            if(i == 0 and c_inputs.size()[0] == 1 and is_save_original_image):
-                with torch.no_grad():
+        with torch.no_grad():
+            for i, per_class_per_batch_data in enumerate(per_class_data_loader):
+                num_batches += 1
+                torch.cuda.empty_cache()
+                c_inputs, _ = per_class_per_batch_data
+                if(i == 0 and c_inputs.size()[0] == 1 and is_save_original_image):
                     temp_image = recreate_image(
                         c_inputs, False)
                     save_folder = self.image_save_prefix_folder + \
@@ -217,11 +218,11 @@ class RawActivationAnalyser():
                     numpy_image = temp_image
                     save_image(numpy_image, im_path)
 
-            self.record_raw_activation_states_per_batch(
-                per_class_per_batch_data)
+                self.record_raw_activation_states_per_batch(
+                    per_class_per_batch_data)
 
-            if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
-                break
+                if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
+                    break
         print("self.post_activation_values_all_batches",
               self.post_activation_values_all_batches.shape)
         # print("self.post_activation_values_all_batches",
@@ -482,16 +483,16 @@ def load_and_save_activation_analysis_on_config(dataset, valid_split_size, model
     return list_of_act_analyser
 
 
-def run_generate_scheme(models_base_path):
+def run_generate_scheme(models_base_path, it_start=1, num_iterations=None):
+    if(num_iterations is None):
+        num_iterations = it_start + 1
     list_of_list_of_act_analyser = []
     list_of_model_paths = []
     if(models_base_path != None):
         list_of_save_prefixes = []
         list_of_save_postfixes = []
 
-        num_iterations = 4
-        # for i in range(1, 3):
-        for i in range(1, num_iterations+1):
+        for i in range(it_start, num_iterations):
             each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
             # each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
             list_of_model_paths.append(models_base_path+each_model_prefix)
@@ -614,8 +615,7 @@ if __name__ == '__main__':
     wand_project_name_for_gen = None
     wand_project_name_for_merge = None
     # wand_project_name_for_merge = "raw_activation_analysis_augmented_mnist_conv4_dlgn_n16_small"
-    # wandb_group_name = "raw_activation_analysis_augmented_mnist_conv4_dlgn"
-    wandb_group_name = None
+    wandb_group_name = "raw_activation_analysis_augmented_mnist_conv4_dlgn"
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
@@ -683,7 +683,7 @@ if __name__ == '__main__':
 
         class_ind_visualize = None
 
-        class_ind_visualize = [9]
+        class_ind_visualize = [0]
 
         list_of_model_paths = []
         models_base_path = None
@@ -691,31 +691,34 @@ if __name__ == '__main__':
         models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.75/"
 
         if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
-            sub_scheme_type = 'OVER_ORIGINAL'
-            is_save_graph_visualizations = True
+            num_iterations = 4
+            it_start = 1
+            for current_it_start in range(it_start, num_iterations + 1):
+                sub_scheme_type = 'OVER_ORIGINAL'
+                is_save_graph_visualizations = True
 
-            list_of_list_of_act_analyser_orig = run_generate_scheme(
-                models_base_path)
+                list_of_list_of_act_analyser_orig = run_generate_scheme(
+                    models_base_path, current_it_start)
 
-            sub_scheme_type = 'OVER_ADVERSARIAL'
-            is_save_adv = True
-            eps = 0.02
-            adv_attack_type = 'PGD'
-            number_of_adversarial_optimization_steps = 161
-            eps_step_size = 0.01
-            adv_target = None
+                sub_scheme_type = 'OVER_ADVERSARIAL'
+                is_save_adv = True
+                eps = 0.02
+                adv_attack_type = 'PGD'
+                number_of_adversarial_optimization_steps = 161
+                eps_step_size = 0.01
+                adv_target = None
 
-            list_of_list_of_act_analyser_adv = run_generate_scheme(
-                models_base_path)
+                list_of_list_of_act_analyser_adv = run_generate_scheme(
+                    models_base_path, current_it_start)
 
-            for ind in range(len(list_of_list_of_act_analyser_adv)):
-                list_of_act_analyser1 = list_of_list_of_act_analyser_adv[ind]
-                list_of_act_analyser2 = list_of_list_of_act_analyser_orig[ind]
+                for ind in range(len(list_of_list_of_act_analyser_adv)):
+                    list_of_act_analyser1 = list_of_list_of_act_analyser_adv[ind]
+                    list_of_act_analyser2 = list_of_list_of_act_analyser_orig[ind]
 
-                if(merge_type == "DIFF"):
-                    is_save_graph_visualizations = True
-                    list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
-                                                                                  list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
+                    if(merge_type == "DIFF"):
+                        is_save_graph_visualizations = True
+                        list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
+                                                                                      list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
 
     elif(scheme_type == "LOAD_AND_GENERATE_MERGE"):
         merge_type = "DIFF"
