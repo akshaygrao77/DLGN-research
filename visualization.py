@@ -100,6 +100,18 @@ def preprocess_image(im_as_arr, normalize=True, resize_im=False):
     return im_as_var
 
 
+def unroll_print_torch_3D_array(torch_arr):
+    (l, x, y, z) = torch_arr.size()
+    for a in range(l):
+        for i in range(x):
+            for j in range(y):
+                for k in range(z):
+                    print(torch_arr[a][i][j][k].item(), end=" ")
+                print("")
+            print("---------------------")
+        print("^^^^^^^^^^^^^^^^^^^^^^^^^")
+
+
 class SaveOutput:
     def __init__(self):
         self.outputs = []
@@ -511,11 +523,18 @@ class TemplateImageGenerator():
                                      each_conv_output * 0.004)
             exp_product_active_pixels = torch.where(
                 each_overall_y == 0, each_overall_y, pre_exponent)
+            # print("exp_product_active_pixels", exp_product_active_pixels)
 
             log_term = torch.log(1 + exp_product_active_pixels)
+            # print("log_term", log_term)
 
             each_conv_loss = torch.sum(log_term)
+            # print("each_conv_loss", each_conv_loss)
 
+            assert not(torch.isnan(each_conv_loss).any().item() or torch.isinf(
+                each_conv_loss).any().item()), 'Loss value is inf or nan while calculating temp loss'+str(each_conv_loss)
+            assert not(torch.isnan(each_conv_output).any().item() or torch.isinf(each_conv_output).any(
+            ).item()), 'Conv out has nan or inf values while calculating temp loss'
             loss += each_conv_loss
 
         return loss/active_pixel_points, active_pixel_points, total_pixel_points, non_zero_pixel_points
@@ -773,10 +792,11 @@ class TemplateImageGenerator():
                                 {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points, "non_zero_pixel_points": non_zero_pixel_points,
                                  "Percent_active_pixels": percent_active_pixels, "final_postfix_for_save": final_postfix_for_save}, step=(batch_indx+1))
 
-                    # print("loss", loss)
+                    print("{} Loss: {}".format(template_loss_type, loss))
                     # Backward
                     loss.backward()
 
+                    # print("self.initial_image", self.initial_image)
                     unnorm_gradients = self.initial_image.grad
                     # print("Original self.initial_image gradients", gradients)
 
@@ -833,7 +853,7 @@ class TemplateImageGenerator():
                 else:
                     list_of_reconst_images = np.vstack(
                         (list_of_reconst_images, init_img_np))
-                if(batch_indx % 20 == 0):
+                if(batch_indx % 40 == 0):
                     self.created_image = recreate_image(
                         self.initial_image, normalize_image)
                     save_folder = self.image_save_prefix_folder + \
@@ -1283,7 +1303,7 @@ class TemplateImageGenerator():
                 wandb.finish()
                 print("Reconstructed images written at:",
                       self.image_save_prefix_folder)
-        
+
         return self.initial_image.cpu().clone().detach().numpy()
 
 
@@ -1336,22 +1356,23 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
     print("Preprocessing and dataloader process completed of type:{} for dataset:{}".format(
         model_arch_type, dataset))
     if(custom_model is None):
-        model,_ = get_model_from_loader(model_arch_type, dataset)
+        model, _ = get_model_from_loader(model_arch_type, dataset)
         print("Model loaded is:", model)
     else:
         model = custom_model
         print("Custom model provided in arguments will be used")
 
-    input_data_list_per_class = segregate_classes(
-        model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth)
+    if(class_indx_to_visualize is None):
+        class_indx_to_visualize = [i for i in range(len(classes))]
+
+    if(len(class_indx_to_visualize) != 0):
+        input_data_list_per_class = segregate_classes(
+            model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth)
 
     if(exp_type == "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"):
         output_template_list_per_class = [None] * num_classes
         for i in range(num_classes):
             output_template_list_per_class[i] = []
-
-    if(class_indx_to_visualize is None):
-        class_indx_to_visualize = [i for i in range(len(classes))]
 
     for c_indx in class_indx_to_visualize:
         class_label = classes[c_indx]
@@ -1460,8 +1481,12 @@ if __name__ == '__main__':
     #                                                         template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
     #                                                         valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
 
+    custom_model = None
+    custom_model = torch.load("root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/aug_conv4_dlgn_iter_1_dir.pt")
+
     run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
-                                valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
+                                valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size,
+                                number_of_batches_to_calculate_entropy_on, custom_model=custom_model)
 
     print("Execution completed")

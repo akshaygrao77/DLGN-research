@@ -16,7 +16,7 @@ from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net, Conv4_DLGN_Net_N16_Sma
 from visualization import run_visualization_on_config
 
 
-def evaluate_model(dataloader):
+def evaluate_model(net, dataloader):
     correct = 0
     total = 0
     # since we're not training, we don't need to calculate the gradients for our outputs
@@ -32,10 +32,10 @@ def evaluate_model(dataloader):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-    return 100 * correct // total
+    return 100. * correct / total
 
 
-def train_model(net, trainloader, testloader, epochs, criterion, optimizer, best_model_save_path, wand_project_name=None):
+def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None):
     is_log_wandb = not(wand_project_name is None)
     best_test_acc = 0
     for epoch in range(epochs):  # loop over the dataset multiple times
@@ -73,24 +73,23 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, best
                                train_acc=100.*correct/total, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
 
         train_acc = 100. * correct/total
-        test_acc = evaluate_model(testloader)
+        test_acc = evaluate_model(net, testloader)
         if(is_log_wandb):
             wandb.log({"train_acc": train_acc, "test_acc": test_acc})
 
         print("Test_acc: ", test_acc)
-        per_epoch_model_save_path = best_model_save_path.replace(
+        per_epoch_model_save_path = final_model_save_path.replace(
             "_dir.pt", "")
         if not os.path.exists(per_epoch_model_save_path):
             os.makedirs(per_epoch_model_save_path)
         per_epoch_model_save_path += "/epoch_{}_dir.pt".format(epoch)
         torch.save(net, per_epoch_model_save_path)
-        if(test_acc > best_test_acc):
+        if(test_acc >= best_test_acc):
             best_test_acc = test_acc
-            torch.save(
-                net, best_model_save_path)
 
+    torch.save(net, final_model_save_path)
     print('Finished Training: Best saved model test acc is:', best_test_acc)
-    return best_test_acc
+    return best_test_acc, net
 
 
 def get_wandb_config(exp_type, classes, model_arch_type, dataset, is_template_image_on_train,
@@ -138,7 +137,7 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'conv4_dlgn'
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
     batch_size = 32
@@ -171,15 +170,15 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     if(model_arch_type == 'plain_pure_conv4_dnn'):
         net = Plain_CONV4_Net(inp_channel)
-        best_model_save_path = 'root/model/save/' + \
+        final_model_save_path = 'root/model/save/' + \
             str(dataset)+'/plain_pure_conv4_dnn_dir.pt'
     elif(model_arch_type == 'conv4_dlgn'):
         net = Conv4_DLGN_Net(inp_channel)
-        best_model_save_path = 'root/model/save/' + \
+        final_model_save_path = 'root/model/save/' + \
             str(dataset)+'/conv4_dlgn_dir.pt'
     elif(model_arch_type == 'conv4_dlgn_n16_small'):
         net = Conv4_DLGN_Net_N16_Small(inp_channel)
-        best_model_save_path = 'root/model/save/' + \
+        final_model_save_path = 'root/model/save/' + \
             str(dataset)+'/conv4_dlgn_n16_small_dir.pt'
 
     net.to(device)
@@ -202,8 +201,8 @@ if __name__ == '__main__':
         number_of_batch_to_collect = 1
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "template_images_visualization-test"
-        wand_project_name = "template_visualisation_augmentation"
-        # wand_project_name = None
+        # wand_project_name = "test_template_visualisation_augmentation"
+        wand_project_name = None
         wandb_group_name = "DS_"+str(dataset) + \
             "_template_vis_aug_"+str(model_arch_type)
         is_split_validation = False
@@ -232,8 +231,8 @@ if __name__ == '__main__':
         number_of_augment_iterations = 5
         epochs_in_each_augment_iteration = [32, 10, 10, 10, 5]
 
-        # number_of_augment_iterations = 2
-        # epochs_in_each_augment_iteration = [2, 1, 10, 10, 5]
+        # number_of_augment_iterations = 3
+        # epochs_in_each_augment_iteration = [5, 2, 2]
 
         current_augmented_x_train = None
         current_augmented_y_train = None
@@ -271,12 +270,14 @@ if __name__ == '__main__':
         augment_trainloader = trainloader
         is_log_wandb = not(wand_project_name is None)
         for current_aug_iter_num in range(1, number_of_augment_iterations+1):
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.Adam(net.parameters(), lr=3e-4)
             overall_output_template_list = None
             overall_y_label_list = None
 
-            best_model_save_path = model_and_data_save_prefix+'aug_conv4_dlgn_iter_{}_dir.pt'.format(
+            final_model_save_path = model_and_data_save_prefix+'aug_conv4_dlgn_iter_{}_dir.pt'.format(
                 current_aug_iter_num)
-            isExist = os.path.exists(best_model_save_path)
+            isExist = os.path.exists(final_model_save_path)
             if not os.path.exists(model_and_data_save_prefix):
                 os.makedirs(model_and_data_save_prefix)
             current_epoch = epochs_in_each_augment_iteration[current_aug_iter_num-1]
@@ -302,19 +303,22 @@ if __name__ == '__main__':
                         config=wandb_config,
                     )
 
-                best_test_acc = train_model(net,
-                                            augment_trainloader, testloader, current_epoch, criterion, optimizer, best_model_save_path,
-                                            wand_project_name)
-                net = torch.load(best_model_save_path)
+                optimizer = optim.Adam(net.parameters(), lr=3e-4)
+                best_test_acc, net = train_model(net,
+                                                 augment_trainloader, testloader, current_epoch, criterion, optimizer, final_model_save_path,
+                                                 wand_project_name)
+                net = torch.load(final_model_save_path)
                 if(is_log_wandb):
                     wandb.log({"best_test_acc": best_test_acc})
                     wandb.finish()
                 print(
                     "Completed training model for augment iteration:", current_aug_iter_num)
             else:
-                net = torch.load(best_model_save_path)
+                net = torch.load(final_model_save_path)
                 print(
-                    "Loaded previously trained model for augment iteration:{} from path :{}".format(current_aug_iter_num, best_model_save_path))
+                    "Loaded previously trained model for augment iteration:{} from path :{}".format(current_aug_iter_num, final_model_save_path))
+
+            optimizer = optim.Adam(net.parameters(), lr=3e-4)
 
             final_postfix_for_save = "aug_indx_{}/".format(
                 current_aug_iter_num)
@@ -416,6 +420,6 @@ if __name__ == '__main__':
                                                               shuffle=True)
 
     else:
-        best_test_acc = train_model(net,
-                                    trainloader, testloader, epochs, criterion, optimizer, best_model_save_path)
+        best_test_acc, net = train_model(net,
+                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path)
     print("Finished execution!!!")
