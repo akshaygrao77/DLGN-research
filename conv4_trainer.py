@@ -137,7 +137,7 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'conv4_dlgn_n16_small'
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
     batch_size = 32
@@ -201,8 +201,8 @@ if __name__ == '__main__':
         number_of_batch_to_collect = 1
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "template_images_visualization-test"
-        # wand_project_name = "test_template_visualisation_augmentation"
-        wand_project_name = None
+        wand_project_name = "test_template_visualisation_augmentation"
+        # wand_project_name = None
         wandb_group_name = "DS_"+str(dataset) + \
             "_template_vis_aug_"+str(model_arch_type)
         is_split_validation = False
@@ -211,7 +211,7 @@ if __name__ == '__main__':
         number_of_image_optimization_steps = 161
         # GENERATE_ALL_FINAL_TEMPLATE_IMAGES
         exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
-        collect_threshold = 0.95
+        collect_threshold = 0.70
         entropy_calculation_batch_size = 64
         number_of_batches_to_calculate_entropy_on = None
 
@@ -350,22 +350,23 @@ if __name__ == '__main__':
                     class_indx_to_visualize.append(current_c_indx)
 
             print("class_indx_to_visualize", class_indx_to_visualize)
-            output_template_list = run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
-                                                               template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
-                                                               valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
-                                                               entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix, final_postfix_for_save,
-                                                               custom_model=net, custom_data_loader=(trainloader, testloader), class_indx_to_visualize=class_indx_to_visualize)
-            # TO get one template image per class
-            run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
-                                        template_image_calculation_batch_size=32, template_loss_type=template_loss_type, number_of_batch_to_collect=None,
-                                        wand_project_name=wand_project_name, is_split_validation=is_split_validation, valid_split_size=valid_split_size,
-                                        torch_seed=torch_seed, number_of_image_optimization_steps=number_of_image_optimization_steps, wandb_group_name=wandb_group_name,
-                                        exp_type="GENERATE_TEMPLATE_IMAGES", collect_threshold=collect_threshold, entropy_calculation_batch_size=entropy_calculation_batch_size,
-                                        number_of_batches_to_calculate_entropy_on=number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix,
-                                        final_postfix_for_save=final_postfix_for_overall_save, custom_model=net,
-                                        custom_data_loader=(trainloader, testloader), class_indx_to_visualize=class_indx_to_visualize)
-
             for current_c_indx in class_indx_to_visualize:
+                current_class_indx_to_visualize = [current_c_indx]
+                output_template_list = run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                                                                   template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
+                                                                   valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
+                                                                   entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix, final_postfix_for_save,
+                                                                   custom_model=net, custom_data_loader=(trainloader, testloader), class_indx_to_visualize=current_class_indx_to_visualize)
+                # TO get one template image per class
+                run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                                            template_image_calculation_batch_size=32, template_loss_type=template_loss_type, number_of_batch_to_collect=None,
+                                            wand_project_name=wand_project_name, is_split_validation=is_split_validation, valid_split_size=valid_split_size,
+                                            torch_seed=torch_seed, number_of_image_optimization_steps=number_of_image_optimization_steps, wandb_group_name=wandb_group_name,
+                                            exp_type="GENERATE_TEMPLATE_IMAGES", collect_threshold=collect_threshold, entropy_calculation_batch_size=entropy_calculation_batch_size,
+                                            number_of_batches_to_calculate_entropy_on=number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix,
+                                            final_postfix_for_save=final_postfix_for_overall_save, custom_model=net,
+                                            custom_data_loader=(trainloader, testloader), class_indx_to_visualize=current_class_indx_to_visualize)
+
                 class_label = classes[current_c_indx]
                 each_class_output_template_list = output_template_list[current_c_indx]
                 if(not(each_class_output_template_list is None)):
