@@ -202,6 +202,79 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
 
     return list_of_final_heatmap_data
 
+
+def gallery(array, nrows, ncols):
+    nindex, height, width = array.shape
+    nrows = nindex//ncols
+    assert nindex == nrows*ncols
+    # want result.shape = (height*nrows, width*ncols, intensity)
+    result = (array.reshape(nrows, ncols, height, width)
+              .swapaxes(1, 2)
+              .reshape(height*nrows, width*ncols))
+    return result
+
+
+def recreate_np_image(recreated_im, unnormalize=False):
+    """
+        Recreates images from a torch variable, sort of reverse preprocessing
+    Args:
+        im_as_var (torch variable): Image to recreate
+    returns:
+        recreated_im (numpy arr): Recreated image in array
+    """
+    reverse_mean = [0.4914, 0.4822, 0.4465]
+    reverse_std = [1/0.2023, 1/0.1994, 1/0.2010]
+
+    arr_max = np.amax(recreated_im)
+    arr_min = np.amin(recreated_im)
+    recreated_im = (recreated_im-arr_min)/(arr_max-arr_min)
+
+    if(unnormalize):
+        for c in range(3):
+            recreated_im[c] /= reverse_std[c]
+            recreated_im[c] -= reverse_mean[c]
+    # recreated_im[recreated_im > 1] = 1
+    # recreated_im[recreated_im < 0] = 0
+    recreated_im = np.round(recreated_im * 255)
+
+    recreated_im = np.uint8(recreated_im)
+    # print("recreated_im shape", recreated_im.shape)
+    # print("recreated_im", recreated_im)
+    # recreated_im = recreated_im..transpose(1, 2, 0)
+    return recreated_im
+
+
+def generate_plain_image(image_data, save_path):
+    # print("image_data", image_data)
+    row, col = determine_row_col_from_features(image_data.shape[0])
+    reshaped_data = gallery(image_data, row, col)
+    # print("reshaped_data", reshaped_data)
+    re_image = recreate_np_image(reshaped_data)
+    save_image(re_image, save_path)
+
+
+def generate_list_of_plain_images_from_data(full_heatmap_data, start=None, end=None, save_each_img_path=None):
+    if(start is None):
+        start = 0
+    if(end is None):
+        end = full_heatmap_data.shape[0]
+    full_heatmap_data = full_heatmap_data[start:end]
+    num_frames = full_heatmap_data.shape[0]
+
+    sfolder = save_each_img_path[0:save_each_img_path.rfind("/")+1]
+    if not os.path.exists(sfolder):
+        os.makedirs(sfolder)
+    
+    for i in range(num_frames):
+        if(i % 50 == 0):
+            print("Writing image:",i)
+        if(save_each_img_path is not None):
+            temp_each_img_path = save_each_img_path.replace(
+                "*", str(start+i))
+            feature_maps = full_heatmap_data[i]
+            generate_plain_image(feature_maps, temp_each_img_path)
+
+
 def generate_list_of_images_from_data(full_heatmap_data, start, end, title, save_each_img_path=None, cmap='binary'):
     full_heatmap_data = full_heatmap_data[start:end]
     num_frames = full_heatmap_data.shape[0]
@@ -210,7 +283,8 @@ def generate_list_of_images_from_data(full_heatmap_data, start, end, title, save
             temp_each_img_path = save_each_img_path.replace(
                 "*", str(start+i))
             feature_maps = full_heatmap_data[i]
-            construct_images_from_feature_maps(feature_maps, title, save_path=temp_each_img_path,cmap=cmap)
+            construct_images_from_feature_maps(
+                feature_maps, title, save_path=temp_each_img_path, cmap=cmap)
 
 
 def generate_video_of_image_from_data(full_heatmap_data, start, end, title, save_path=None, save_each_img_path=None, cmap='viridis'):

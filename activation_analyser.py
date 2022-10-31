@@ -7,7 +7,7 @@ import numpy as np
 import pickle
 
 
-from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, determine_row_col_from_features
+from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, determine_row_col_from_features, generate_plain_image
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from configs.dlgn_conv_config import HardRelu
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
@@ -250,8 +250,6 @@ class ActivationAnalyser():
                 if(current_min < arr_min):
                     arr_min = current_min
 
-        print("arr_min:", arr_min)
-        print("arr_max:", arr_max)
         for indx in range(len(input)):
             input[indx] = (
                 input[indx]-arr_min)/(arr_max-arr_min)
@@ -455,7 +453,7 @@ class ActivationAnalyser():
             print("Saving visualization for layer:", indx)
             dict_full_path_to_saves = dict()
 
-            final_save_dir = base_save_folder+"/layer_{}/".format(indx)
+            final_save_dir = base_save_folder+"/layer_{}/plain/".format(indx)
             if not os.path.exists(final_save_dir):
                 os.makedirs(final_save_dir)
 
@@ -465,8 +463,8 @@ class ActivationAnalyser():
             current_full_save_path = final_save_dir + \
                 "thres_active_indicators_over_activation_map_im.jpg"
             dict_full_path_to_saves["thres_active_indictor_ov_act_map"] = current_full_save_path
-            construct_images_from_feature_maps(current_active_thresholded_indicator_activation_map,
-                                               title='Thresholded active pixel indicatoes over activation map', save_path=current_full_save_path)
+            generate_plain_image(
+                current_active_thresholded_indicator_activation_map, save_path=current_full_save_path)
 
             if(save_only_thres == False):
                 current_active_counts_activation_map = self.active_counts_activation_map_list[
@@ -495,38 +493,38 @@ class ActivationAnalyser():
                 current_full_save_path = final_save_dir + \
                     "active_counts_over_activation_map_im.jpg"
                 dict_full_path_to_saves["active_count_ov_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(current_active_counts_activation_map, title='Active counts over activation map',
-                                                   save_path=current_full_save_path)
+                generate_plain_image(current_active_counts_activation_map,
+                                     save_path=current_full_save_path)
 
                 current_full_save_path = final_save_dir + \
                     "active_inact_diff_counts_over_activation_map_im.jpg"
                 dict_full_path_to_saves["act_inact_diff_count_ov_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(current_active_inactive_diff_activation_map, title='Active - inactive difference counts over activation map',
-                                                   save_path=current_full_save_path)
+                generate_plain_image(current_active_inactive_diff_activation_map,
+                                     save_path=current_full_save_path)
 
                 current_full_save_path = final_save_dir + \
                     "mean_per_pixel_over_activation_map_im_norm.jpg"
                 dict_full_path_to_saves["mean_per_pxl_ov_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(
-                    current_mean_per_pixel_of_activations_map, title="Mean per pixel over activation map", save_path=current_full_save_path)
+                generate_plain_image(
+                    current_mean_per_pixel_of_activations_map,  save_path=current_full_save_path)
 
                 current_full_save_path = final_save_dir + \
                     "std_dev_per_pixel_over_activation_map_im_norm.jpg"
                 dict_full_path_to_saves["std_dev_per_pxl_ov_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(
-                    current_std_per_pixel_of_activations_map, title="Standard deviation per pixel over activation map", save_path=current_full_save_path)
+                generate_plain_image(
+                    current_std_per_pixel_of_activations_map, save_path=current_full_save_path)
 
                 current_full_save_path = final_save_dir + \
                     "min_per_pixel_over_activation_map_im_norm.jpg"
                 dict_full_path_to_saves["min_per_pxl_ov_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(
-                    current_min_per_pixel_of_activations_map, title="Min per pixel over activation map", save_path=current_full_save_path)
+                generate_plain_image(
+                    current_min_per_pixel_of_activations_map, save_path=current_full_save_path)
 
                 current_full_save_path = final_save_dir + \
                     "max_per_pixel_over_activation_map_im_norm.jpg"
                 dict_full_path_to_saves["max_per_pxl_ov_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(
-                    current_max_per_pixel_of_activations_map, title="Max per pixel over activation map", save_path=current_full_save_path)
+                generate_plain_image(
+                    current_max_per_pixel_of_activations_map, save_path=current_full_save_path)
 
                 # Obtain the resize shape for num_filters dimension
                 r, c = determine_row_col_from_features(
@@ -543,26 +541,26 @@ class ActivationAnalyser():
                 current_full_save_path = final_save_dir + \
                     "avg_mean_per_act_map_im_norm.jpg"
                 dict_full_path_to_saves["avg_mean_per_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(current_avg_mean_per_activations_map,
-                                                   title='Average of mean per activation map', save_path=current_full_save_path)
+                generate_plain_image(current_avg_mean_per_activations_map,
+                                     save_path=current_full_save_path)
 
                 current_full_save_path = final_save_dir + \
                     "avg_std_per_act_map_im_norm.jpg"
                 dict_full_path_to_saves["avg_std_per_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(current_avg_std_per_activations_map,
-                                                   title='Average of std deviation per activation map', save_path=current_full_save_path)
+                generate_plain_image(current_avg_std_per_activations_map,
+                                     save_path=current_full_save_path)
 
                 current_full_save_path = final_save_dir + \
                     "avg_min_per_act_map_im_norm.jpg"
                 dict_full_path_to_saves["avg_min_per_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(current_avg_min_per_activations_map,
-                                                   title='Average of min per activation map', save_path=current_full_save_path)
+                generate_plain_image(current_avg_min_per_activations_map,
+                                     save_path=current_full_save_path)
 
                 current_full_save_path = final_save_dir + \
                     "avg_max_per_act_map_im_norm.jpg"
                 dict_full_path_to_saves["avg_max_per_act_map"] = current_full_save_path
-                construct_images_from_feature_maps(current_avg_max_per_activations_map,
-                                                   title='Average of max per activation map', save_path=current_full_save_path)
+                generate_plain_image(current_avg_max_per_activations_map,
+                                     save_path=current_full_save_path)
 
             print("dict_full_path_to_saves in iteration {}=>{}".format(
                 indx, dict_full_path_to_saves))
@@ -1249,9 +1247,11 @@ if __name__ == '__main__':
     number_of_batch_to_collect = None
     # wand_project_name = 'test_activation_analyser'
     # wand_project_name = 'activation_analysis_class'
-    wand_project_name = "new_activation_analysis_class"
+    # wand_project_name = "new_activation_analysis_class"
+    wand_project_name = None
     wand_project_name_for_gen = None
-    wand_project_name_for_merge = "merge_diff_activation_analysis_class"
+    # wand_project_name_for_merge = "merge_diff_activation_analysis_class"
+    wand_project_name_for_merge = None
     wandb_group_name = "activation_analysis_augmented_mnist_conv4_dlgn_adv_m95_c95"
     is_split_validation = False
     valid_split_size = 0.1
@@ -1260,7 +1260,7 @@ if __name__ == '__main__':
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = True
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE
-    scheme_type = "LOAD_AND_SAVE"
+    scheme_type = "LOAD_AND_GENERATE_MERGE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ADVERSARIAL'
     collect_threshold = 0.95
@@ -1388,7 +1388,7 @@ if __name__ == '__main__':
 
         if(loader_base_path != None):
             num_iterations = 3
-            for i in range(2, num_iterations+1):
+            for i in range(1, num_iterations+1):
                 # for i in range(1, 2):
                 each_model_prefix = "aug_indx_{}".format(i)
                 list_of_load_paths.append(loader_base_path+each_model_prefix)
@@ -1405,9 +1405,9 @@ if __name__ == '__main__':
 
     elif(scheme_type == "LOAD_AND_GENERATE_MERGE"):
         merge_type = "DIFF"
-        class_ind_visualize = [9]
+        # class_ind_visualize = [9]
         # class_ind_visualize = [2, 4, 6, 8]
-        # class_ind_visualize = None
+        class_ind_visualize = None
         # class_ind_visualize = [3, 5,7,9]
         # class_ind_visualize = [7, 9]
 
