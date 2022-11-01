@@ -500,6 +500,47 @@ class TemplateImageGenerator():
 
         return list_of_active_maps
 
+    def calculate_tanh_loss_for_template_image(self):
+        tanh = torch.nn.Tanh()
+        loss = 0
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            conv_outs = self.model.module.linear_conv_outputs
+        else:
+            conv_outs = self.model.linear_conv_outputs
+
+        total_pixel_points = 0
+        active_pixel_points = 0
+        non_zero_pixel_points = 0
+        for indx in range(len(conv_outs)):
+            each_conv_output = conv_outs[indx]
+            each_overall_y = self.overall_y[indx]
+
+            total_pixel_points += torch.numel(each_overall_y)
+            current_active_pixel = torch.count_nonzero(
+                HardRelu()(each_overall_y))
+            non_zero_pixel_points += torch.count_nonzero(each_overall_y).item()
+            active_pixel_points += current_active_pixel.item()
+            pre_exponent = torch.exp(-each_overall_y *
+                                     tanh(each_conv_output))
+
+            exp_product_active_pixels = torch.where(
+                each_overall_y == 0, each_overall_y, pre_exponent)
+            # print("exp_product_active_pixels", exp_product_active_pixels)
+
+            log_term = torch.log(1 + exp_product_active_pixels)
+            # print("log_term", log_term)
+
+            each_conv_loss = torch.sum(log_term)
+            # print("each_conv_loss", each_conv_loss)
+
+            assert not(torch.isnan(each_conv_loss).any().item() or torch.isinf(
+                each_conv_loss).any().item()), 'Loss value is inf or nan while calculating temp loss'+str(each_conv_loss)
+            assert not(torch.isnan(each_conv_output).any().item() or torch.isinf(each_conv_output).any(
+            ).item()), 'Conv out has nan or inf values while calculating temp loss'
+            loss += each_conv_loss
+
+        return loss/active_pixel_points, active_pixel_points, total_pixel_points, non_zero_pixel_points
+
     def new_calculate_loss_for_template_image(self):
         loss = 0
         if(isinstance(self.model, torch.nn.DataParallel)):
@@ -521,6 +562,40 @@ class TemplateImageGenerator():
             active_pixel_points += current_active_pixel.item()
             pre_exponent = torch.exp(-each_overall_y *
                                      each_conv_output * 0.004)
+
+            # agmax = torch.argmax(each_conv_output)
+            # agmin = torch.argmin(each_conv_output)
+            # unroll_print_torch_3D_array(each_conv_output)
+            # print("max conv out", torch.max(each_conv_output))
+            # print("min conv out", torch.min(each_conv_output))
+            # print("argmax conv out", agmax)
+            # print("argmin conv out", agmin)
+            # print("each_overall_y size", each_overall_y.size())
+            # # print("argmax conv out", agmax)
+            # # print("argmin conv out", agmin)
+            # print("each_conv_output", torch.norm(each_conv_output))
+            # print("current active", current_active_pixel.item() /
+            #       torch.numel(each_overall_y))
+            # print("current inactive", torch.count_nonzero(
+            #     HardRelu()(-each_overall_y)).item()/torch.numel(each_overall_y))
+            # print("pre_exponent shape:", pre_exponent.size())
+            # print("pre_exponent", pre_exponent)
+
+            # zero = torch.zeros(1, device=self.device)
+            # exp_active = torch.where(
+            #     each_overall_y == 1, pre_exponent, zero)
+            # print("exp_active", exp_active)
+            # active_loss = torch.sum(torch.log(1 + exp_active))
+            # print("active_loss", active_loss)
+            # exp_inactive = torch.where(
+            #     each_overall_y == -1, pre_exponent, zero)
+            # print("exp_inactive", exp_inactive)
+            # # unroll_print_torch_3D_array(each_conv_output)
+            # log_inactive = torch.log(1 + exp_inactive)
+            # print("log_inactive:", log_inactive)
+            # inactive_loss = torch.sum(log_inactive)
+            # print("inactive_loss", inactive_loss)
+
             exp_product_active_pixels = torch.where(
                 each_overall_y == 0, each_overall_y, pre_exponent)
             # print("exp_product_active_pixels", exp_product_active_pixels)
@@ -619,6 +694,8 @@ class TemplateImageGenerator():
 
         if(template_loss_type == "TEMP_LOSS"):
             loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.new_calculate_loss_for_template_image()
+        elif(template_loss_type == "TANH_TEMP_LOSS"):
+            loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.calculate_tanh_loss_for_template_image()
         elif(template_loss_type == "TEMP_ACT_ONLY_LOSS"):
             loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.calculate_only_active_loss_for_template_image()
         elif(template_loss_type == "ENTR_TEMP_LOSS"):
@@ -1438,9 +1515,9 @@ if __name__ == '__main__':
     template_initial_image_type = 'zero_init_image'
     template_image_calculation_batch_size = 32
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
-    # CCE_TEMP_ACT_ONLY_LOSS_MIXED
-    template_loss_type = "TEMP_LOSS"
-    number_of_batch_to_collect = 1
+    # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
+    template_loss_type = "TANH_TEMP_LOSS"
+    number_of_batch_to_collect = None
     # wand_project_name = "cifar10_all_images_based_template_visualizations"
     # wand_project_name = "template_images_visualization-test"
     wand_project_name = None
@@ -1448,7 +1525,7 @@ if __name__ == '__main__':
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
-    number_of_image_optimization_steps = 11
+    number_of_image_optimization_steps = 161
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES
     exp_type = "GENERATE_TEMPLATE_IMAGES"
     collect_threshold = 0.95
