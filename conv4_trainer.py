@@ -83,7 +83,8 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
         if not os.path.exists(per_epoch_model_save_path):
             os.makedirs(per_epoch_model_save_path)
         per_epoch_model_save_path += "/epoch_{}_dir.pt".format(epoch)
-        torch.save(net, per_epoch_model_save_path)
+        if(epoch % 2 == 0):
+            torch.save(net, per_epoch_model_save_path)
         if(test_acc >= best_test_acc):
             best_test_acc = test_acc
 
@@ -137,7 +138,7 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'conv4_dlgn'
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
     batch_size = 32
@@ -211,7 +212,7 @@ if __name__ == '__main__':
         number_of_image_optimization_steps = 161
         # GENERATE_ALL_FINAL_TEMPLATE_IMAGES
         exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
-        collect_threshold = 0.70
+        collect_threshold = 0.64
         entropy_calculation_batch_size = 64
         number_of_batches_to_calculate_entropy_on = None
 

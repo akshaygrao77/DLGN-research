@@ -10,9 +10,10 @@ import wandb
 
 from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader
-from adversarial_attacks_tester import evaluate_model
+from adversarial_attacks_tester import evaluate_model, evaluate_model_via_reconstructed
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
+from configs.generic_configs import get_preprocessing_and_other_configs
 
 from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net
 
@@ -126,7 +127,7 @@ if __name__ == '__main__':
     wand_project_name = "fast_adv_training_and_visualisation"
     # wand_project_name = None
     # ADV_TRAINING ,  RECONST_VIS_ADV_TRAINED_MODEL
-    exp_type = "ADV_TRAINING"
+    exp_type = "RECONST_VIS_ADV_TRAINED_MODEL"
 
     epochs = 30
     adv_attack_type = "PGD"
@@ -251,6 +252,36 @@ if __name__ == '__main__':
                         print("Loaded model from:", model_save_path)
 
                         for is_template_image_on_train in [True, False]:
+                            if(is_log_wandb):
+                                wandb_run_name = str(
+                                    model_arch_type)+prefix2.replace(
+                                    "/", "_")
+                                wandb_config = dict()
+                                wandb_config["exp_type"] = "EVAL_VIA_RECONST"
+                                wandb_config["adv_attack_type"] = adv_attack_type
+                                wandb_config["model_arch_type"] = model_arch_type
+                                wandb_config["dataset"] = dataset
+                                wandb_config["eps"] = eps
+                                wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
+                                wandb_config["epochs"] = epochs
+                                wandb_config["batch_size"] = batch_size
+                                wandb_config["fast_adv_attack_type"] = fast_adv_attack_type
+                                wandb_config["eps_step_size"] = eps_step_size
+                                wandb_config["model_save_path"] = model_save_path
+
+                                wandb.init(
+                                    project=f"{wand_project_name}",
+                                    name=f"{wandb_run_name}",
+                                    group=f"{wandb_group_name}",
+                                    config=wandb_config,
+                                )
+                                acc_with_orig_via_reconst = evaluate_model_via_reconstructed(net, testloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
+                                                                                             template_loss_type, number_of_adversarial_optimization_steps=number_of_adversarial_optimization_steps, eps_step_size=eps_step_size, adv_target=None, save_adv_image_prefix=model_save_prefix)
+
+                                wandb.log(
+                                    {"adv_tr_test_acc_via_reconst": acc_with_orig_via_reconst})
+                                wandb.finish()
+
                             output_template_list = run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                                template_image_calculation_batch_size=1, template_loss_type=template_loss_type,
                                                                                number_of_batch_to_collect=1, wand_project_name=wand_project_name, is_split_validation=False,
