@@ -89,7 +89,7 @@ class RawActivationAnalyser():
             merged_act_analyser.wandb_group_name = self.wandb_group_name + \
                 "_*_" + other_activation_state.wandb_group_name
 
-        merged_act_analyser.image_save_prefix_folder = self.image_save_prefix_folder.replace(self.final_postfix_for_save, "") + "/"+str(root_save_prefix) + "/" +\
+        merged_act_analyser.image_save_prefix_folder = self.image_save_prefix_folder + "/"+str(root_save_prefix) + "/" +\
             other_activation_state.image_save_prefix_folder + \
             "/"+str(final_postfix_for_save)
 
@@ -305,14 +305,14 @@ class RawActivationAnalyser():
         save_folder = self.image_save_prefix_folder + \
             "class_"+str(class_label)+"/"
 
-        if(is_save_activation_records == True):
-            temp_model = self.model
-            self.model = None
-            if not os.path.exists(save_folder):
-                os.makedirs(save_folder)
-            with open(save_folder+'/raw_analyser_state.pkl', 'wb') as out_file:
-                pickle.dump(self, out_file)
-            self.model = temp_model
+        # if(is_save_activation_records == True):
+        #     temp_model = self.model
+        #     self.model = None
+        #     if not os.path.exists(save_folder):
+        #         os.makedirs(save_folder)
+        #     with open(save_folder+'/raw_analyser_state.pkl', 'wb') as out_file:
+        #         pickle.dump(self, out_file)
+        #     self.model = temp_model
 
         self.save_and_log_states(
             wand_project_name, is_save_graph_visualizations=is_save_graph_visualizations)
@@ -610,7 +610,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'conv4_dlgn'
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
@@ -630,7 +630,7 @@ if __name__ == '__main__':
     # GENERATE_RECORD_STATS_PER_CLASS ,  GENERATE_RECORD_STATS_OVERALL
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = True
-    is_save_activation_records = True
+    is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE
     scheme_type = "GENERATE_MERGE_AND_SAVE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
@@ -664,7 +664,7 @@ if __name__ == '__main__':
         eps_step_size = 0.01
         adv_target = None
 
-        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
         list_of_list_of_act_analyser = run_generate_scheme(
             models_base_path, to_be_analysed_dataloader, custom_data_loader)
@@ -701,44 +701,47 @@ if __name__ == '__main__':
     elif(scheme_type == "GENERATE_MERGE_AND_SAVE"):
         merge_type = "DIFF"
 
-        class_ind_visualize = None
+        c_indices = [i for i in range(10)]
 
-        # class_ind_visualize = [0]
+        # class_ind_visualize = None
 
-        list_of_model_paths = []
-        models_base_path = None
+        for c_i in c_indices:
+            class_ind_visualize = [c_i]
 
-        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+            list_of_model_paths = []
+            models_base_path = None
 
-        if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
-            num_iterations = 3
-            it_start = 1
-            for current_it_start in range(it_start, num_iterations + 1):
-                sub_scheme_type = 'OVER_ORIGINAL'
-                is_save_graph_visualizations = True
+            models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
-                list_of_list_of_act_analyser_orig = run_generate_scheme(
-                    models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start)
+            if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
+                num_iterations = 3
+                it_start = 1
+                for current_it_start in range(it_start, num_iterations + 1):
+                    sub_scheme_type = 'OVER_ORIGINAL'
+                    is_save_graph_visualizations = False
 
-                sub_scheme_type = 'OVER_ADVERSARIAL'
-                is_save_adv = True
-                eps = 0.02
-                adv_attack_type = 'PGD'
-                number_of_adversarial_optimization_steps = 161
-                eps_step_size = 0.01
-                adv_target = None
+                    list_of_list_of_act_analyser_orig = run_generate_scheme(
+                        models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start)
 
-                list_of_list_of_act_analyser_adv = run_generate_scheme(
-                    models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start)
+                    sub_scheme_type = 'OVER_ADVERSARIAL'
+                    is_save_adv = True
+                    eps = 0.02
+                    adv_attack_type = 'PGD'
+                    number_of_adversarial_optimization_steps = 161
+                    eps_step_size = 0.01
+                    adv_target = None
 
-                for ind in range(len(list_of_list_of_act_analyser_adv)):
-                    list_of_act_analyser1 = list_of_list_of_act_analyser_adv[ind]
-                    list_of_act_analyser2 = list_of_list_of_act_analyser_orig[ind]
+                    list_of_list_of_act_analyser_adv = run_generate_scheme(
+                        models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start)
 
-                    if(merge_type == "DIFF"):
-                        is_save_graph_visualizations = True
-                        list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
-                                                                                      list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
+                    for ind in range(len(list_of_list_of_act_analyser_adv)):
+                        list_of_act_analyser1 = list_of_list_of_act_analyser_adv[ind]
+                        list_of_act_analyser2 = list_of_list_of_act_analyser_orig[ind]
+
+                        if(merge_type == "DIFF"):
+                            is_save_graph_visualizations = True
+                            list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
+                                                                                          list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
 
     elif(scheme_type == "LOAD_AND_GENERATE_MERGE"):
         merge_type = "DIFF"
