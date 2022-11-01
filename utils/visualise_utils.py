@@ -204,14 +204,23 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
 
 
 def gallery(array, nrows, ncols):
-    nindex, height, width = array.shape
-    nrows = nindex//ncols
-    assert nindex == nrows*ncols
-    # want result.shape = (height*nrows, width*ncols, intensity)
-    result = (array.reshape(nrows, ncols, height, width)
-              .swapaxes(1, 2)
-              .reshape(height*nrows, width*ncols))
-    return result
+
+    if(len(array.shape) == 3):
+        nindex, height, width = array.shape
+        nrows = nindex//ncols
+        assert nindex == nrows*ncols
+        # want result.shape = (height*nrows, width*ncols, intensity)
+        result = (array.reshape(nrows, ncols, height, width)
+                  .swapaxes(1, 2)
+                  .reshape(height*nrows, width*ncols))
+        return result
+    elif(len(array.shape) == 4):
+        nrows, ncols, height, width = array.shape
+
+        result = (array.swapaxes(1, 2)
+                  .reshape(height*nrows, width*ncols))
+
+        return result
 
 
 def recreate_np_image(recreated_im, unnormalize=False):
@@ -245,10 +254,16 @@ def recreate_np_image(recreated_im, unnormalize=False):
 
 
 def generate_plain_image(image_data, save_path):
-    # print("image_data", image_data)
-    row, col = determine_row_col_from_features(image_data.shape[0])
+    # print("image_data", image_data.shape)
+    # print("image_data len", len(image_data.shape))
+    if(len(image_data.shape) == 3):
+        row, col = determine_row_col_from_features(image_data.shape[0])
+    elif(len(image_data.shape) == 4):
+        row, col = determine_row_col_from_features(
+            image_data.shape[0]*image_data.shape[1])
+
     reshaped_data = gallery(image_data, row, col)
-    # print("reshaped_data", reshaped_data)
+
     re_image = recreate_np_image(reshaped_data)
     save_image(re_image, save_path)
 
@@ -264,10 +279,10 @@ def generate_list_of_plain_images_from_data(full_heatmap_data, start=None, end=N
     sfolder = save_each_img_path[0:save_each_img_path.rfind("/")+1]
     if not os.path.exists(sfolder):
         os.makedirs(sfolder)
-    
+
     for i in range(num_frames):
         if(i % 50 == 0):
-            print("Writing image:",i)
+            print("Writing image:", i)
         if(save_each_img_path is not None):
             temp_each_img_path = save_each_img_path.replace(
                 "*", str(start+i))
