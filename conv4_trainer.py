@@ -12,7 +12,7 @@ from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
-from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net, Conv4_DLGN_Net_N16_Small
+from conv4_models import get_model_instance, get_model_save_path
 from visualization import run_visualization_on_config
 
 
@@ -137,7 +137,7 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     dataset = 'mnist'
-    # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small
+    # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     model_arch_type = 'conv4_dlgn'
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
@@ -169,18 +169,9 @@ if __name__ == '__main__':
             mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    if(model_arch_type == 'plain_pure_conv4_dnn'):
-        net = Plain_CONV4_Net(inp_channel)
-        final_model_save_path = 'root/model/save/' + \
-            str(dataset)+'/plain_pure_conv4_dnn_dir.pt'
-    elif(model_arch_type == 'conv4_dlgn'):
-        net = Conv4_DLGN_Net(inp_channel)
-        final_model_save_path = 'root/model/save/' + \
-            str(dataset)+'/conv4_dlgn_dir.pt'
-    elif(model_arch_type == 'conv4_dlgn_n16_small'):
-        net = Conv4_DLGN_Net_N16_Small(inp_channel)
-        final_model_save_path = 'root/model/save/' + \
-            str(dataset)+'/conv4_dlgn_n16_small_dir.pt'
+
+    net = get_model_instance(model_arch_type, inp_channel)
+    final_model_save_path = get_model_save_path(model_arch_type, dataset)
 
     net.to(device)
 
@@ -212,7 +203,8 @@ if __name__ == '__main__':
         number_of_image_optimization_steps = 161
         # GENERATE_ALL_FINAL_TEMPLATE_IMAGES
         exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
-        collect_threshold = 0.64
+        # Changing this parameter for the augmenting process acts merely as a different initialisation of model weight provided template_batch_size=1
+        collect_threshold = 0.9
         entropy_calculation_batch_size = 64
         number_of_batches_to_calculate_entropy_on = None
 
@@ -229,11 +221,11 @@ if __name__ == '__main__':
             str(dataset)+"/iterative_augmenting/DS_"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
                 seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"
 
-        number_of_augment_iterations = 5
-        epochs_in_each_augment_iteration = [32, 10, 10, 10, 5]
+        # number_of_augment_iterations = 5
+        # epochs_in_each_augment_iteration = [32, 10, 10, 10, 5]
 
-        # number_of_augment_iterations = 3
-        # epochs_in_each_augment_iteration = [5, 2, 2]
+        number_of_augment_iterations = 2
+        epochs_in_each_augment_iteration = [32, 10]
 
         current_augmented_x_train = None
         current_augmented_y_train = None

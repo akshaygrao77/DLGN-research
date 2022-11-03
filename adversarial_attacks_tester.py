@@ -191,7 +191,7 @@ def plain_evaluate_model_via_reconstructed(net, dataloader, classes, dataset, te
 
             if not os.path.exists(recon_adv_save_folder):
                 os.makedirs(recon_adv_save_folder)
-            recon_adv_im_path = recon_adv_save_folder+'/'+str(postfix_folder_for_save)+'_c' + \
+            recon_adv_im_path = recon_adv_save_folder+'/_c' + \
                 str(classes[labels[0]])+'_batch_ind_' + \
                 str(batch_idx) + '.jpg'
 
@@ -554,8 +554,8 @@ if __name__ == '__main__':
         dataset = 'mnist'
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "adv_attack_for_active_pixels_on_reconst_augmentation"
-        wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation_with_orig"
-        # wand_project_name = 'adv_attack_on_reconst_augmentation_with_orig'
+        # wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation_with_orig"
+        wand_project_name = 'adv_attack_on_reconst_augmentation_with_orig'
         # wand_project_name = 'common_active_pixels_on_reconst_augmentation'
         # wand_project_name = None
 
@@ -563,13 +563,13 @@ if __name__ == '__main__':
         adv_attack_type = "PGD"
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST
-        exp_type = "ADV_ATTACK_EVAL_VIA_RECONST"
+        exp_type = "ADV_ATTACK"
         is_adv_attack_on_train = True
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_64/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.94/"
 
-        number_of_augment_iterations = 5
+        number_of_augment_iterations = 3
 
         is_targetted = adv_target is not None
         is_log_wandb = not(wand_project_name is None)
@@ -651,7 +651,7 @@ if __name__ == '__main__':
                         adv_dataset, shuffle=False, batch_size=128)
 
                     save_images_from_dataloader(to_be_analysed_adversarial_dataloader, classes,
-                                                postfix_folder_for_save='adver', save_image_prefix=save_folder)
+                                                postfix_folder_for_save='/adver/', save_image_prefix=save_folder)
 
                     eval_orig_acc = plain_evaluate_model(
                         net, eval_loader)

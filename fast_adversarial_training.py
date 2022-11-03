@@ -15,7 +15,7 @@ from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
 from configs.generic_configs import get_preprocessing_and_other_configs
 
-from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net
+from conv4_models import get_model_instance, get_model_save_path
 
 
 def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375):
@@ -120,14 +120,14 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 if __name__ == '__main__':
     dataset = 'mnist'
-    # conv4_dlgn , plain_pure_conv4_dnn
-    model_arch_type = 'plain_pure_conv4_dnn'
+    # conv4_dlgn , plain_pure_conv4_dnn , plain_pure_conv4_dnn_n16_small , conv4_dlgn_n16_small
+    model_arch_type = 'conv4_dlgn'
     # scheme_type = ''
     # batch_size = 128
     wand_project_name = "fast_adv_training_and_visualisation"
     # wand_project_name = None
     # ADV_TRAINING ,  RECONST_VIS_ADV_TRAINED_MODEL
-    exp_type = "RECONST_VIS_ADV_TRAINED_MODEL"
+    exp_type = "ADV_TRAINING"
 
     epochs = 30
     adv_attack_type = "PGD"
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     valid_split_size = 0.1
     torch_seed = 2022
     number_of_image_optimization_steps = 171
-    collect_threshold = 0.5
+    collect_threshold = 0.95
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
@@ -150,7 +150,8 @@ if __name__ == '__main__':
     if(is_log_wandb):
         wandb.login()
 
-    batch_size_list = [256, 128, 64]
+    # batch_size_list = [256, 128, 64]
+    batch_size_list = [128]
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -179,28 +180,34 @@ if __name__ == '__main__':
                 mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        if(model_arch_type == 'plain_pure_conv4_dnn'):
-            net = Plain_CONV4_Net(inp_channel)
-            best_model_save_path = 'root/model/save/' + \
-                str(dataset)+'/plain_pure_conv4_dnn_dir.pt'
-        elif(model_arch_type == 'conv4_dlgn'):
-            net = Conv4_DLGN_Net(inp_channel)
-            best_model_save_path = 'root/model/save/' + \
-                str(dataset)+'/conv4_dlgn_dir.pt'
+
+        net = get_model_instance(model_arch_type, inp_channel)
+        start_net_path = None
+
+        start_net_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/aug_conv4_dlgn_iter_4_dir.pt"
+        net = torch.load(start_net_path)
 
         net.to(device)
 
-        eps_list = [0, 0.02, 0.03, 0.04, 0.05, 0.06, 0.1]
+        # eps_list = [0, 0.02, 0.03, 0.04, 0.05, 0.06, 0.1]
+        # fast_adv_attack_type_list = ['FGSM', 'PGD']
+        # number_of_adversarial_optimization_steps_list = [40, 80]
+
+        eps_list = [0.05]
         fast_adv_attack_type_list = ['FGSM', 'PGD']
-        number_of_adversarial_optimization_steps_list = [40, 80]
+        number_of_adversarial_optimization_steps_list = [80]
 
         for fast_adv_attack_type in fast_adv_attack_type_list:
             for number_of_adversarial_optimization_steps in number_of_adversarial_optimization_steps_list:
                 for eps in eps_list:
                     root_save_prefix = "root/ADVER_RECONS_SAVE/"
-                    model_save_prefix = "root/model/save/" + \
+                    init_prefix = "root/model/save/" + \
                         str(dataset)+"/adversarial_training/MT_" + \
-                        str(model_arch_type)+"_ET_ADV_TRAINING/"
+                        str(model_arch_type)
+                    if(start_net_path is not None):
+                        init_prefix = start_net_path[0:start_net_path.rfind("/")+1]
+                        root_save_prefix = init_prefix+"/ADVER_RECONS_SAVE/"
+                    model_save_prefix = str(init_prefix)+"_ET_ADV_TRAINING/"
                     prefix2 = "fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/".format(
                         fast_adv_attack_type, adv_attack_type, eps, batch_size, eps_step_size, number_of_adversarial_optimization_steps)
                     wandb_group_name = "DS_"+str(dataset) + "_EXP_"+str(exp_type) +\
@@ -229,6 +236,7 @@ if __name__ == '__main__':
                             wandb_config["fast_adv_attack_type"] = fast_adv_attack_type
                             wandb_config["eps_step_size"] = eps_step_size
                             wandb_config["model_save_path"] = model_save_path
+                            wandb_config["start_net_path"] = start_net_path
 
                             wandb.init(
                                 project=f"{wand_project_name}",
@@ -251,37 +259,43 @@ if __name__ == '__main__':
                         best_model = torch.load(model_save_path)
                         print("Loaded model from:", model_save_path)
 
-                        for is_template_image_on_train in [True, False]:
-                            if(is_log_wandb):
-                                wandb_run_name = str(
-                                    model_arch_type)+prefix2.replace(
-                                    "/", "_")
-                                wandb_config = dict()
-                                wandb_config["exp_type"] = "EVAL_VIA_RECONST"
-                                wandb_config["adv_attack_type"] = adv_attack_type
-                                wandb_config["model_arch_type"] = model_arch_type
-                                wandb_config["dataset"] = dataset
-                                wandb_config["eps"] = eps
-                                wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
-                                wandb_config["epochs"] = epochs
-                                wandb_config["batch_size"] = batch_size
-                                wandb_config["fast_adv_attack_type"] = fast_adv_attack_type
-                                wandb_config["eps_step_size"] = eps_step_size
-                                wandb_config["model_save_path"] = model_save_path
+                        if(is_log_wandb):
+                            wandb_run_name = str(
+                                model_arch_type)+prefix2.replace(
+                                "/", "_")
+                            wandb_config = dict()
+                            wandb_config["exp_type"] = "EVAL_VIA_RECONST"
+                            wandb_config["adv_attack_type"] = adv_attack_type
+                            wandb_config["model_arch_type"] = model_arch_type
+                            wandb_config["dataset"] = dataset
+                            wandb_config["eps"] = eps
+                            wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
+                            wandb_config["epochs"] = epochs
+                            wandb_config["batch_size"] = batch_size
+                            wandb_config["fast_adv_attack_type"] = fast_adv_attack_type
+                            wandb_config["eps_step_size"] = eps_step_size
+                            wandb_config["model_save_path"] = model_save_path
 
-                                wandb.init(
-                                    project=f"{wand_project_name}",
-                                    name=f"{wandb_run_name}",
-                                    group=f"{wandb_group_name}",
-                                    config=wandb_config,
-                                )
-                                acc_with_orig_via_reconst = evaluate_model_via_reconstructed(net, testloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
-                                                                                             template_loss_type, number_of_adversarial_optimization_steps=number_of_adversarial_optimization_steps, eps_step_size=eps_step_size, adv_target=None, save_adv_image_prefix=model_save_prefix)
+                        if(is_log_wandb):
+                            wandb_run_name = str(
+                                model_arch_type)+prefix2.replace(
+                                "/", "_")
 
-                                wandb.log(
-                                    {"adv_tr_test_acc_via_reconst": acc_with_orig_via_reconst})
-                                wandb.finish()
+                            wandb.init(
+                                project=f"{wand_project_name}",
+                                name=f"{wandb_run_name}",
+                                group=f"{wandb_group_name}",
+                                config=wandb_config,
+                            )
+                            acc_with_orig_via_reconst = evaluate_model_via_reconstructed(net, testloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
+                                                                                         template_loss_type, number_of_adversarial_optimization_steps=number_of_adversarial_optimization_steps, eps_step_size=eps_step_size, adv_target=None, save_adv_image_prefix=model_save_prefix)
 
+                            wandb.log(
+                                {"adv_tr_test_acc_via_reconst": acc_with_orig_via_reconst})
+                            wandb.finish()
+
+                        for is_template_image_on_train in [True]:
+                            wandb_config["is_template_image_on_train"] = is_template_image_on_train
                             output_template_list = run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                                template_image_calculation_batch_size=1, template_loss_type=template_loss_type,
                                                                                number_of_batch_to_collect=1, wand_project_name=wand_project_name, is_split_validation=False,
@@ -289,7 +303,7 @@ if __name__ == '__main__':
                                                                                wandb_group_name=wandb_group_name, exp_type="GENERATE_ALL_FINAL_TEMPLATE_IMAGES", collect_threshold=collect_threshold,
                                                                                entropy_calculation_batch_size=entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on=number_of_batches_to_calculate_entropy_on,
                                                                                root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save,
-                                                                               custom_model=best_model, custom_data_loader=(trainloader, testloader))
+                                                                               custom_model=best_model, custom_data_loader=(trainloader, testloader), wandb_config_additional_dict=wandb_config)
                             # TO get one template image per class
                             run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                                         template_image_calculation_batch_size=32, template_loss_type=template_loss_type, number_of_batch_to_collect=None,
@@ -298,7 +312,7 @@ if __name__ == '__main__':
                                                         exp_type="GENERATE_TEMPLATE_IMAGES", collect_threshold=collect_threshold, entropy_calculation_batch_size=entropy_calculation_batch_size,
                                                         number_of_batches_to_calculate_entropy_on=number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix,
                                                         final_postfix_for_save=final_postfix_for_overall_save, custom_model=best_model,
-                                                        custom_data_loader=(trainloader, testloader))
+                                                        custom_data_loader=(trainloader, testloader), wandb_config_additional_dict=wandb_config)
                 print("Finished fast_adv_attack_type:{} ,eps{}".format(
                     fast_adv_attack_type, eps))
 print("Finished execution!!!")

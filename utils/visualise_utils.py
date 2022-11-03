@@ -89,7 +89,7 @@ def save_images_from_dataloader(dataloader, classes, postfix_folder_for_save='/'
     for batch_idx, data in enumerate(loader, 0):
         images, labels = data
 
-        if(batch_idx % 20 == 0 and save_image_prefix is not None):
+        if(batch_idx % 50 == 0 and save_image_prefix is not None):
             ac_images = recreate_image(
                 images[0], unnormalize=False)
 
@@ -97,7 +97,7 @@ def save_images_from_dataloader(dataloader, classes, postfix_folder_for_save='/'
                 "/"+str(postfix_folder_for_save)
             if not os.path.exists(img_save_folder):
                 os.makedirs(img_save_folder)
-            save_im_path = img_save_folder+str(postfix_folder_for_save)+'_c' + \
+            save_im_path = img_save_folder+str(postfix_folder_for_save.replace("/", ""))+'_c' + \
                 str(classes[labels[0]])+'_batch_ind_' + \
                 str(batch_idx) + '.jpg'
 

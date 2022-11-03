@@ -736,7 +736,7 @@ class TemplateImageGenerator():
                                                         is_class_segregation_on_ground_truth, template_initial_image_type,
                                                         template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                         exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
-                                                        plot_iteration_interval=None, root_save_prefix="root", final_postfix_for_save=""):
+                                                        plot_iteration_interval=None, root_save_prefix="root", final_postfix_for_save="",wandb_config_additional_dict=None):
         list_of_reconst_images = None
         is_log_wandb = not(wand_project_name is None)
 
@@ -803,6 +803,8 @@ class TemplateImageGenerator():
                                                  is_class_segregation_on_ground_truth, template_initial_image_type,
                                                  template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
                                                  plot_iteration_interval, collect_threshold=collect_threshold)
+            if(wandb_config_additional_dict is not None):
+                wandb_config.update(wandb_config_additional_dict)
             wandb_config["alpha"] = alpha
 
             wandb.init(
@@ -1127,7 +1129,7 @@ class TemplateImageGenerator():
     def generate_template_image_per_class(self, exp_type, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                           is_class_segregation_on_ground_truth, template_initial_image_type,
                                           template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold,
-                                          entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix="root", final_postfix_for_save=""):
+                                          entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix="root", final_postfix_for_save="",wandb_config_additional_dict=None):
         is_log_wandb = not(wand_project_name is None)
         plot_iteration_interval = 5
 
@@ -1197,6 +1199,8 @@ class TemplateImageGenerator():
                                                      is_class_segregation_on_ground_truth, template_initial_image_type,
                                                      template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
                                                      number_of_batch_to_collect=number_of_batch_to_collect, collect_threshold=collect_threshold)
+                if(wandb_config_additional_dict is not None):
+                    wandb_config.update(wandb_config_additional_dict)    
                 wandb_config["alpha"] = alpha
 
                 wandb.init(
@@ -1417,7 +1421,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
                                 entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix='root', final_postfix_for_save="aug_indx_1",
-                                custom_model=None, custom_data_loader=None, class_indx_to_visualize=None):
+                                custom_model=None, custom_data_loader=None, class_indx_to_visualize=None,wandb_config_additional_dict=None):
     output_template_list_per_class = None
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
@@ -1466,25 +1470,29 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
             tmp_gen.generate_template_image_per_class(exp_type,
                                                       per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                                       is_class_segregation_on_ground_truth, template_initial_image_type,
-                                                      template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save)
+                                                      template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold, entropy_calculation_batch_size, 
+                                                      number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save,wandb_config_additional_dict=wandb_config_additional_dict)
 
         elif(exp_type == "TEMPLATE_ACC_WITH_CUSTOM_PLOTS"):
             tmp_gen.generate_accuracies_of_template_image_per_class(
                 per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                 is_class_segregation_on_ground_truth, template_initial_image_type,
-                template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, plot_iteration_interval=10)
+                template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, 
+                exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, plot_iteration_interval=10,wandb_config_additional_dict=wandb_config_additional_dict)
 
         elif(exp_type == "TEMPLATE_ACC"):
             tmp_gen.generate_accuracies_of_template_image_per_class(
                 per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                 is_class_segregation_on_ground_truth, template_initial_image_type,
-                template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
+                template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, exp_type, 
+                collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,wandb_config_additional_dict=wandb_config_additional_dict)
         elif(exp_type == "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"):
             list_of_reconst_images = tmp_gen.generate_accuracies_of_template_image_per_class(per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                                                                              is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                                              template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                                                              exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
-                                                                                             plot_iteration_interval=10, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save)
+                                                                                             plot_iteration_interval=10, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save,
+                                                                                             wandb_config_additional_dict=wandb_config_additional_dict)
             output_template_list_per_class[c_indx] = list_of_reconst_images
 
     return output_template_list_per_class

@@ -500,28 +500,35 @@ def load_and_save_activation_analysis_on_config(dataset, valid_split_size, model
     return list_of_act_analyser
 
 
-def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data_loader, it_start=1, num_iter=None):
+def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data_loader, it_start=1, num_iter=None, direct_model_path=None):
     if(num_iter is None):
         num_iter = it_start + 1
     list_of_list_of_act_analyser = []
-    list_of_model_paths = []
-    if(models_base_path != None):
-        list_of_save_prefixes = []
-        list_of_save_postfixes = []
+    list_of_save_prefixes = []
+    list_of_save_postfixes = []
 
-        for i in range(it_start, num_iter):
-            each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
-            # each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
-            list_of_model_paths.append(models_base_path+each_model_prefix)
-            list_of_save_prefixes.append(
-                str(models_base_path)+"/RAW_ACT_ANALYSIS/"+str(sub_scheme_type))
-            list_of_save_postfixes.append("/aug_indx_{}".format(i))
+    if(direct_model_path is None):
+        list_of_model_paths = []
+        if(models_base_path != None):
+            for i in range(it_start, num_iter):
+                each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
+                # each_model_prefix = "aug_conv4_dlgn_iter_{}_dir.pt".format(i)
+                list_of_model_paths.append(models_base_path+each_model_prefix)
+                list_of_save_prefixes.append(
+                    str(models_base_path)+"/RAW_ACT_ANALYSIS/"+str(sub_scheme_type))
+                list_of_save_postfixes.append("/aug_indx_{}".format(i))
 
+        else:
+            list_of_model_paths = [None]
+            list_of_save_prefixes = [
+                "root/RAW_ACT_PATTERN_ANALYSIS/"+str(sub_scheme_type)]
+            list_of_save_postfixes = [None]
     else:
-        list_of_model_paths = [None]
-        list_of_save_prefixes = [
-            "root/RAW_ACT_PATTERN_ANALYSIS/"+str(sub_scheme_type)]
-        list_of_save_postfixes = [None]
+        list_of_model_paths = [direct_model_path]
+        models_base_path = direct_model_path[0:direct_model_path.rfind("/")+1]
+        list_of_save_prefixes.append(
+            str(models_base_path)+"/RAW_ACT_ANALYSIS/"+str(sub_scheme_type))
+        list_of_save_postfixes.append("")
 
     for ind in range(len(list_of_model_paths)):
         each_model_path = list_of_model_paths[ind]
@@ -609,8 +616,8 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_inbuilt_norm_with_flip_crop
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
-    # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small
-    model_arch_type = 'conv4_dlgn'
+    # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
+    model_arch_type = 'conv4_dlgn_n16_small'
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
@@ -711,28 +718,32 @@ if __name__ == '__main__':
             list_of_model_paths = []
             models_base_path = None
 
-            models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+            models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+
+            direct_model_path = None
+
+            direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/fast_adv_attack_type_FGSM/adv_type_PGD/EPS_0.05/batch_size_128/eps_stp_size_0.01/adv_steps_80/adv_model_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
-                num_iterations = 3
+                num_iterations = 1
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
                     sub_scheme_type = 'OVER_ORIGINAL'
                     is_save_graph_visualizations = False
 
                     list_of_list_of_act_analyser_orig = run_generate_scheme(
-                        models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start)
+                        models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=direct_model_path)
 
                     sub_scheme_type = 'OVER_ADVERSARIAL'
                     is_save_adv = True
-                    eps = 0.02
+                    eps = 0.06
                     adv_attack_type = 'PGD'
                     number_of_adversarial_optimization_steps = 161
                     eps_step_size = 0.01
                     adv_target = None
 
                     list_of_list_of_act_analyser_adv = run_generate_scheme(
-                        models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start)
+                        models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=direct_model_path)
 
                     for ind in range(len(list_of_list_of_act_analyser_adv)):
                         list_of_act_analyser1 = list_of_list_of_act_analyser_adv[ind]
