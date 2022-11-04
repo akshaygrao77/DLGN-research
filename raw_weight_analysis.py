@@ -78,7 +78,7 @@ def run_raw_weight_analysis_on_config(model, root_save_prefix='root/RAW_WEIGHT_A
             generate_plain_image(current_weight_np, current_full_img_save_path)
 
 
-def run_generate_weight_analysis(models_base_path, it_start=1, num_iter=None):
+def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None):
     if(num_iter is None):
         num_iter = it_start + 1
 
@@ -123,6 +123,6 @@ if __name__ == '__main__':
     num_iterations = 1
     start_index = 1
     for current_it_start in range(start_index, num_iterations + 1):
-        run_generate_weight_analysis(models_base_path, current_it_start)
+        run_generate_raw_weight_analysis(models_base_path, current_it_start)
 
     print("Finished execution!!!")

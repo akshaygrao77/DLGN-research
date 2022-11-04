@@ -99,10 +99,10 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         if(is_log_wandb):
             wandb.log({"live_train_acc": live_train_acc,
                       "current_epoch": epoch, "test_acc": test_acc})
-
-        per_epoch_save_model_path = model_save_path.replace(
-            ".pt", '_epoch_{}.pt'.format(epoch))
-        torch.save(model, per_epoch_save_model_path)
+        if(epoch % 5 == 0):
+            per_epoch_save_model_path = model_save_path.replace(
+                ".pt", '_epoch_{}.pt'.format(epoch))
+            torch.save(model, per_epoch_save_model_path)
 
         if(test_acc > best_test_acc):
             best_test_acc = test_acc
@@ -120,7 +120,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 if __name__ == '__main__':
     dataset = 'mnist'
-    # conv4_dlgn , plain_pure_conv4_dnn , plain_pure_conv4_dnn_n16_small , conv4_dlgn_n16_small
+    # conv4_dlgn , plain_pure_conv4_dnn , plain_pure_conv4_dnn_n16_small , conv4_dlgn_n16_small , conv4_deep_gated_net
     model_arch_type = 'conv4_dlgn'
     # scheme_type = ''
     # batch_size = 128
@@ -189,13 +189,13 @@ if __name__ == '__main__':
 
         net.to(device)
 
-        # eps_list = [0, 0.02, 0.03, 0.04, 0.05, 0.06, 0.1]
-        # fast_adv_attack_type_list = ['FGSM', 'PGD']
-        # number_of_adversarial_optimization_steps_list = [40, 80]
-
-        eps_list = [0.05]
+        eps_list = [0.04, 0.05, 0.06, 0.1]
         fast_adv_attack_type_list = ['FGSM', 'PGD']
         number_of_adversarial_optimization_steps_list = [80]
+
+        # eps_list = [0.05]
+        # fast_adv_attack_type_list = ['FGSM', 'PGD']
+        # number_of_adversarial_optimization_steps_list = [80]
 
         for fast_adv_attack_type in fast_adv_attack_type_list:
             for number_of_adversarial_optimization_steps in number_of_adversarial_optimization_steps_list:
@@ -205,7 +205,8 @@ if __name__ == '__main__':
                         str(dataset)+"/adversarial_training/MT_" + \
                         str(model_arch_type)
                     if(start_net_path is not None):
-                        init_prefix = start_net_path[0:start_net_path.rfind("/")+1]
+                        init_prefix = start_net_path[0:start_net_path.rfind(
+                            "/")+1]
                         root_save_prefix = init_prefix+"/ADVER_RECONS_SAVE/"
                     model_save_prefix = str(init_prefix)+"_ET_ADV_TRAINING/"
                     prefix2 = "fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/".format(

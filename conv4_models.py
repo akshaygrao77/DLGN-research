@@ -236,6 +236,13 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
 
         return x_w6
 
+def get_model_instance_from_dataset(dataset,model_arch_type):
+    if(dataset == "cifar10"):
+        inp_channel = 3
+    elif(dataset == "mnist"):
+        inp_channel = 1
+    
+    return get_model_instance(model_arch_type,inp_channel)
 
 def get_model_instance(model_arch_type, inp_channel):
     net = None
@@ -247,23 +254,14 @@ def get_model_instance(model_arch_type, inp_channel):
         net = Conv4_DLGN_Net_N16_Small(inp_channel)
     elif(model_arch_type == 'plain_pure_conv4_dnn_n16_small'):
         net = Plain_CONV4_Net_N16_Small(inp_channel)
+    elif(model_arch_type == 'conv4_deep_gated_net'):
+        net = Conv4_DeepGated_Net(inp_channel)
 
     return net
 
 
 def get_model_save_path(model_arch_type, dataset):
-    final_model_save_path = ""
-    if(model_arch_type == 'plain_pure_conv4_dnn'):
-        final_model_save_path = 'root/model/save/' + \
-            str(dataset)+'/plain_pure_conv4_dnn_dir.pt'
-    elif(model_arch_type == 'conv4_dlgn'):
-        final_model_save_path = 'root/model/save/' + \
-            str(dataset)+'/conv4_dlgn_dir.pt'
-    elif(model_arch_type == 'conv4_dlgn_n16_small'):
-        final_model_save_path = 'root/model/save/' + \
-            str(dataset)+'/conv4_dlgn_n16_small_dir.pt'
-    elif(model_arch_type == 'plain_pure_conv4_dnn_n16_small'):
-        final_model_save_path = 'root/model/save/' + \
-            str(dataset)+'/plain_pure_conv4_dnn_n16_small_dir.pt'
+    final_model_save_path = "root/model/save/" + \
+        str(dataset)+"/"+str(model_arch_type)+"_dir.pt"
 
     return final_model_save_path
