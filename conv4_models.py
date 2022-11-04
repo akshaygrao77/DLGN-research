@@ -39,6 +39,21 @@ class Plain_CONV4_Net(nn.Module):
 
         return x_g6
 
+    def get_layer_object(self, network_type, layer_num):
+        if(network_type == "GATE_NET"):
+            if(layer_num == 0):
+                return self.conv1_g
+            elif(layer_num == 1):
+                return self.conv2_g
+            elif(layer_num == 2):
+                return self.conv3_g
+            elif(layer_num == 3):
+                return self.conv4_g
+            elif(layer_num == 4):
+                return self.pool
+            elif(layer_num == 5):
+                return self.fc1
+
 
 class Plain_CONV4_Net_N16_Small(nn.Module):
     def __init__(self, input_channel):
@@ -76,6 +91,21 @@ class Plain_CONV4_Net_N16_Small(nn.Module):
         x_g6 = self.fc1(x_g5)
 
         return x_g6
+
+    def get_layer_object(self, network_type, layer_num):
+        if(network_type == "GATE_NET"):
+            if(layer_num == 0):
+                return self.conv1_g
+            elif(layer_num == 1):
+                return self.conv2_g
+            elif(layer_num == 2):
+                return self.conv3_g
+            elif(layer_num == 3):
+                return self.conv4_g
+            elif(layer_num == 4):
+                return self.pool
+            elif(layer_num == 5):
+                return self.fc1
 
 
 class Conv4_DLGN_Net(nn.Module):
@@ -127,6 +157,30 @@ class Conv4_DLGN_Net(nn.Module):
         x_w6 = self.fc1(x_w5)
 
         return x_w6
+
+    def get_layer_object(self, network_type, layer_num):
+        if(network_type == "GATE_NET"):
+            if(layer_num == 0):
+                return self.conv1_g
+            elif(layer_num == 1):
+                return self.conv2_g
+            elif(layer_num == 2):
+                return self.conv3_g
+            elif(layer_num == 3):
+                return self.conv4_g
+        elif(network_type == "WEIGHT_NET"):
+            if(layer_num == 0):
+                return self.conv1_w
+            elif(layer_num == 1):
+                return self.conv2_w
+            elif(layer_num == 2):
+                return self.conv3_w
+            elif(layer_num == 3):
+                return self.conv4_w
+            elif(layer_num == 4):
+                return self.pool
+            elif(layer_num == 5):
+                return self.fc1
 
 
 class Conv4_DeepGated_Net(nn.Module):
@@ -236,13 +290,39 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
 
         return x_w6
 
-def get_model_instance_from_dataset(dataset,model_arch_type):
+    def get_layer_object(self, network_type, layer_num):
+        if(network_type == "GATE_NET"):
+            if(layer_num == 0):
+                return self.conv1_g
+            elif(layer_num == 1):
+                return self.conv2_g
+            elif(layer_num == 2):
+                return self.conv3_g
+            elif(layer_num == 3):
+                return self.conv4_g
+        elif(network_type == "WEIGHT_NET"):
+            if(layer_num == 0):
+                return self.conv1_w
+            elif(layer_num == 1):
+                return self.conv2_w
+            elif(layer_num == 2):
+                return self.conv3_w
+            elif(layer_num == 3):
+                return self.conv4_w
+            elif(layer_num == 4):
+                return self.pool
+            elif(layer_num == 5):
+                return self.fc1
+
+
+def get_model_instance_from_dataset(dataset, model_arch_type):
     if(dataset == "cifar10"):
         inp_channel = 3
     elif(dataset == "mnist"):
         inp_channel = 1
-    
-    return get_model_instance(model_arch_type,inp_channel)
+
+    return get_model_instance(model_arch_type, inp_channel)
+
 
 def get_model_instance(model_arch_type, inp_channel):
     net = None

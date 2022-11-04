@@ -203,6 +203,19 @@ def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None,
     return list_of_final_heatmap_data
 
 
+def gallery_into_3D_array(array, nrows, ncols):
+
+    if(len(array.shape) == 4):
+        nindex, channel, height, width = array.shape
+        nrows = nindex//ncols
+        assert nindex == nrows*ncols
+        # want result.shape = (height*nrows, width*ncols, intensity)
+        result = (array.reshape(nrows, ncols, channel, height, width)
+                  .swapaxes(2, 3)
+                  .reshape(channel, height*nrows, width*ncols))
+        return result
+
+
 def gallery(array, nrows, ncols):
 
     if(len(array.shape) == 3):
@@ -253,7 +266,20 @@ def recreate_np_image(recreated_im, unnormalize=False):
     return recreated_im
 
 
-def generate_plain_image(image_data, save_path):
+def generate_plain_3DImage(image_data, save_path, is_standarize=True):
+    # print("image_data", image_data.shape)
+    # print("image_data len", len(image_data.shape))
+    if(len(image_data.shape) == 4):
+        row, col = determine_row_col_from_features(image_data.shape[0])
+
+    reshaped_data = gallery_into_3D_array(image_data, row, col)
+    # print("reshaped_data", reshaped_data.shape)
+    if(is_standarize):
+        reshaped_data = recreate_np_image(reshaped_data)
+    save_image(reshaped_data, save_path)
+
+
+def generate_plain_image(image_data, save_path, is_standarize=True):
     # print("image_data", image_data.shape)
     # print("image_data len", len(image_data.shape))
     if(len(image_data.shape) == 3):
@@ -263,9 +289,9 @@ def generate_plain_image(image_data, save_path):
             image_data.shape[0]*image_data.shape[1])
 
     reshaped_data = gallery(image_data, row, col)
-
-    re_image = recreate_np_image(reshaped_data)
-    save_image(re_image, save_path)
+    if(is_standarize):
+        reshaped_data = recreate_np_image(reshaped_data)
+    save_image(reshaped_data, save_path)
 
 
 def generate_list_of_plain_images_from_data(full_heatmap_data, start=None, end=None, save_each_img_path=None):
