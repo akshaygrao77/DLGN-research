@@ -9,6 +9,7 @@ from visualization import preprocess_image, get_initial_image
 from tqdm import tqdm, trange
 from utils.visualise_utils import recreate_image, generate_plain_3DImage, save_image
 import cv2
+import scipy.ndimage as nd
 
 
 class SaveFeatures():
@@ -22,6 +23,15 @@ class SaveFeatures():
         self.hook.remove()
 
 
+def blur_img(img, sigma):
+    # print("blur img shape", img.shape)
+    if sigma > 0:
+        img[0] = nd.filters.gaussian_filter(img[0], sigma, order=0)
+        # img[1] = nd.filters.gaussian_filter(img[1], sigma, order=0)
+        # img[2] = nd.filters.gaussian_filter(img[2], sigma, order=0)
+    return img
+
+
 class FilterVisualizer():
     def __init__(self, model, weight_vis_initial_image_type, weight_vis_loss_type, size=10, upscaling_steps=10, upscaling_factor=1.2):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -30,8 +40,9 @@ class FilterVisualizer():
         self.model = model
         self.original_image = get_initial_image(
             dataset, weight_vis_initial_image_type, self.size)
+        print("self.original_image", self.original_image)
 
-    def visualize(self, network_type, layer_num, filter_indx, number_of_image_optimization_steps=20, lr=0.1, blur=None):
+    def visualize(self, network_type, layer_num, filter_indx, number_of_image_optimization_steps=20, lr=0.1):
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         sz = self.size
@@ -45,34 +56,62 @@ class FilterVisualizer():
 
         layer_obj = self.model.get_layer_object(network_type, layer_num)
         save_features = SaveFeatures(layer_obj)
+        start_sigma = 1
+        end_sigma = 0.1
+        start_step_size = 5
+        end_step_size = 1
 
         for _ in range(self.upscaling_steps):  # scale the image up upscaling_steps times
             img_var = img
-            optimizer = torch.optim.Adam([img_var], lr=lr, weight_decay=1e-6)
+            # optimizer = torch.optim.Adam([img_var], lr=lr)
             # optimize pixel values for opt_steps times
             for optim_num in range(number_of_image_optimization_steps):
-                optimizer.zero_grad()
+                step_size = start_step_size + \
+                    ((end_step_size - start_step_size) * optim_num) / \
+                    number_of_image_optimization_steps
+                # optimizer = torch.optim.SGD([img_var], lr=step_size)
+                sigma = start_sigma + \
+                    ((end_sigma - start_sigma) * optim_num) / \
+                    number_of_image_optimization_steps
+
+                # optimizer.zero_grad()
                 model_outputs = self.model(img_var)
                 loss = get_vis_loss_value(
                     self.weight_vis_loss_type, network_type, save_features, model_outputs, filter_indx, self.model)
                 loss.backward()
-                optimizer.step()
+
+                with torch.no_grad():
+                    blurred_grad = blur_img(
+                        img_var.grad.cpu().detach().numpy()[0], sigma)
+                    img_var = img_var.cpu().detach().numpy()[0]
+                    img_var -= step_size / \
+                        np.abs(blurred_grad).mean() * blurred_grad
+
+                    # optimizer.step()
+                    # print("sigma:", sigma)
+                    # print("img_var shape:", img_var.size())
+                    img_var = blur_img(
+                        img_var, sigma)
+                    img_var = torch.from_numpy(img_var[None])
+                img_var = img_var.to(device)
+                img_var.requires_grad_()
 
             # print("img_var shape:", img_var.size())
             img = img_var.cpu().detach().numpy()[0][0]
 
             sz = int(self.upscaling_factor * sz)  # calculate new image size
             # scale image up
+            # print("img size:", img.size())
             img = cv2.resize(img, (sz, sz), interpolation=cv2.INTER_CUBIC)
+            # print("img size:", img.size())
+            # if blur is not None:
+            # blur image to reduce high frequency patterns
+            # img = cv2.blur(img, (blur, blur))
             img = torch.from_numpy(img[None][None])
             self.output = img
 
             img = img.to(device)
             img.requires_grad_()
-            # print("img size:", img.size())
-            if blur is not None:
-                # blur image to reduce high frequency patterns
-                img = cv2.blur(img, (blur, blur))
 
         # self.save(layer_num, filter)
         save_features.close()
@@ -86,7 +125,7 @@ class FilterVisualizer():
         # created_image = np.clip(self.output.cpu().detach().numpy()[0], 0, 1)
         created_image = recreate_image(
             self.output, False)
-        # print("created_image", created_image)
+        print("created_image", created_image)
         # print("created_image shape", created_image.shape)
         save_folder = save_folder+"/LAYER_NUM_"+str(layer_num)+"/"
         if not os.path.exists(save_folder):
@@ -186,7 +225,7 @@ def run_weight_visualization_on_config(model, weight_vis_initial_image_type, wei
             model, weight_vis_initial_image_type, weight_vis_loss_type, size, upscaling_steps, upscaling_factor,)
 
         # Iterate each layer
-        for layer_num in range(len(list_of_weights)):
+        for layer_num in range(1, len(list_of_weights)):
             print(
                 " ******************************************** Visualizing layer:", layer_num)
             save_folder = root_save_prefix + "/" + \
@@ -205,6 +244,7 @@ def run_weight_visualization_on_config(model, weight_vis_initial_image_type, wei
                     current_image_vis = filter_vis_obj.visualize(
                         network_type, layer_num, filter_indx, number_of_image_optimization_steps)
                     print("current_image_vis size:", current_image_vis.shape)
+                    print("current_image_vis", current_image_vis)
                     filter_vis_obj.save(layer_num, filter_indx, save_folder)
                     list_of_img_vis_per_filter.append(current_image_vis)
 
@@ -298,20 +338,21 @@ def run_weight_visualization(models_base_path, weight_vis_initial_image_type, we
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'plain_pure_conv4_dnn'
     # uniform_init_image , zero_init_image , gaussian_init_image
-    weight_vis_initial_image_type = 'gaussian_init_image'
+    weight_vis_initial_image_type = 'normal_init_image'
     weight_vis_loss_type = "MAXIMIZE_FILTER_OUTPUT"
     wand_project_name = None
     wandb_group_name = "test"
-    number_of_image_optimization_steps = 51
+    number_of_image_optimization_steps = 301
     is_save_graph_visualizations = True
     network_type = "GATE_NET"
-    size = 56
-    upscaling_steps = 12
-    upscaling_factor = 1.2
+    size = 28
+    upscaling_steps = 1
+    upscaling_factor = 1
 
-    models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+    models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
+    # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
     wandb_additional_dict = None
     if(not(wand_project_name is None)):
