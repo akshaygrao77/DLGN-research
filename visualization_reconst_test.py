@@ -205,6 +205,62 @@ class TemplateImageGenerator():
             self.y_plus_list.append(current_y_plus)
             self.y_minus_list.append(current_y_minus)
 
+    def find_overall_between_two_images(self, inp1, inp2):
+        inp1 = inp1.to(self.device)
+
+        # Forward pass to store layer outputs from hooks
+        self.model(inp1)
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            conv_outs1 = self.model.module.linear_conv_outputs
+        else:
+            conv_outs1 = self.model.linear_conv_outputs
+
+        inp2 = inp2.to(self.device)
+
+        # Forward pass to store layer outputs from hooks
+        self.model(inp2)
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            conv_outs2 = self.model.module.linear_conv_outputs
+        else:
+            conv_outs2 = self.model.linear_conv_outputs
+
+        overlap_count = 0
+        total_pixel_points = 0
+
+        with torch.no_grad():
+            for indx in range(len(conv_outs1)):
+                # for indx in range(0, 4):
+                each_conv_output1 = conv_outs1[indx]
+                each_conv_output2 = conv_outs2[indx]
+
+                positives1 = HardRelu()(each_conv_output1)
+                positives2 = HardRelu()(each_conv_output2)
+
+                total_pixel_points += torch.numel(positives1)
+
+                red_pos1 = add_lower_dimension_vectors_within_itself(
+                    positives1)
+                red_pos2 = add_lower_dimension_vectors_within_itself(
+                    positives2)
+
+                over_pos = red_pos1 * red_pos2
+                # print("over_pos", over_pos)
+
+                overlap_count += torch.count_nonzero(over_pos)
+
+                negatives1 = HardRelu()(-each_conv_output1)
+                negatives2 = HardRelu()(-each_conv_output2)
+                red_neg1 = add_lower_dimension_vectors_within_itself(
+                    negatives1)
+                red_neg2 = add_lower_dimension_vectors_within_itself(
+                    negatives2)
+
+                over_neg = red_neg1 * red_neg2
+                # print("over_neg", over_neg)
+                overlap_count += torch.count_nonzero(over_neg)
+
+        return overlap_count, total_pixel_points, 100. * overlap_count/total_pixel_points
+
     def update_y_lists(self):
         if(isinstance(self.model, torch.nn.DataParallel)):
             conv_outs = self.model.module.linear_conv_outputs
@@ -365,7 +421,6 @@ class TemplateImageGenerator():
                     print("Percentage of active pixels:",
                           percent_active_pixels)
 
-                print("loss", loss.item())
                 # Backward
                 loss.backward()
 
@@ -400,7 +455,8 @@ class TemplateImageGenerator():
                         self.initial_image, sigma)
                     self.initial_image = torch.from_numpy(
                         self.initial_image[None])
-                    print("norm image", torch.norm(self.initial_image))
+                    pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
+                        self.initial_image).item())
                     # self.initial_image = 0.9 * self.initial_image
                     # self.initial_image = torch.clamp(
                     #     self.initial_image, -1, 1)
@@ -496,13 +552,13 @@ test_data_loader = get_data_loader(
     X_test, y_test, 32)
 
 dataset = 'mnist'
-# conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net
-model_arch_type = 'conv4_dlgn'
+# conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net,conv4_deep_gated_net_with_actual_inp_in_wt_net
+model_arch_type = 'conv4_deep_gated_net_with_actual_inp_in_wt_net'
 
 models_base_path = None
 # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.93/aug_conv4_dlgn_iter_1_dir.pt"
 # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/aug_conv4_dlgn_iter_1_dir.pt"
-models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/aug_conv4_dlgn_iter_1_dir.pt"
+# models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.74/aug_conv4_dlgn_iter_1_dir.pt"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # vis_model = torch.load("/content/conv4_dgn_iter_1_dir.pt",map_location=device)
@@ -516,7 +572,7 @@ vis_model = vis_model.to(device)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(vis_model.parameters(), lr=3e-4)
-num_epochs_to_train = 0
+num_epochs_to_train = 32
 for epoch in range(num_epochs_to_train):  # loop over the dataset multiple times
     correct = 0
     total = 0
@@ -550,65 +606,79 @@ image_ind = 220
 template_loss_type = "TEMP_LOSS"
 class_indx_to_visualize = [i for i in range(9)]
 input_data_list_per_class = true_segregation(train_data_loader, 10)
-c_indx = 0
 
-class_label = c_indx
-print("************************************************************ Class:", class_label)
-per_class_dataset = PerClassDataset(
-    input_data_list_per_class[c_indx], c_indx)
-
-intial_image = torch.from_numpy(np.random.normal(128, 8, (1, 28, 28))/255)
+intial_image = torch.from_numpy(np.random.normal(
+    128, 8, (1, 28, 28)).astype('float32')/255)
 # intial_image = torch.from_numpy(np.uint8(np.random.uniform(0, 1, (1, 28, 28))))
 # intial_image = torch.from_numpy(np.uint8(np.random.uniform(0, 1, (1, 28, 28))))
 
-coll_seed_gen = torch.Generator()
-coll_seed_gen.manual_seed(2022)
+print("intial_image dtype:", intial_image.dtype)
 
 vis_model.train(False)
 # print(per_class_dataset[image_ind])
-total = 0
-reconst_correct = 0
-for image_ind in range(0, 20):
-    images_to_collect_upon = per_class_dataset[image_ind][0]
-    orig_image = recreate_image(
-        images_to_collect_upon, unnormalize=False)
-    save_image(orig_image, "root/temp/original_c_"+str(c_indx) +
-               "_image_ind_"+str(image_ind)+"_"+str(model_arch_type)+".jpg")
+overall_total = 0
+overall_reconst_correct = 0
+overall_overlap_percent_avg = 0
+for c_indx in class_indx_to_visualize:
+    total = 0
+    reconst_correct = 0
+    overlap_percent_avg = 0
+    class_label = c_indx
+    print("************************************************************ Class:", class_label)
+    per_class_dataset = PerClassDataset(
+        input_data_list_per_class[c_indx], c_indx)
+    with trange(20, unit="Indx", desc="Generating template image for image of class:{}".format(class_label)) as pbar:
+        for image_ind in pbar:
+            images_to_collect_upon = per_class_dataset[image_ind][0]
+            # orig_image = recreate_image(
+            #     images_to_collect_upon, unnormalize=False)
+            # save_image(orig_image, "root/temp/original_c_"+str(c_indx) +
+            #            "_image_ind_"+str(image_ind)+"_"+str(model_arch_type)+".jpg")
 
-    number_of_image_optimization_steps = 161
-    start_sigma = 0.75
-    end_sigma = 0.1
-    start_step_size = 0.1
-    end_step_size = 0.05
+            number_of_image_optimization_steps = 161
+            start_sigma = 0.75
+            end_sigma = 0.1
+            start_step_size = 0.1
+            end_step_size = 0.05
 
-    tmp_gen = TemplateImageGenerator(
-        vis_model, intial_image)
-    vis_image = tmp_gen.generate_template_image_over_given_image(
-        images_to_collect_upon, number_of_image_optimization_steps, template_loss_type)
+            tmp_gen = TemplateImageGenerator(
+                vis_model, intial_image)
+            vis_image = tmp_gen.generate_template_image_over_given_image(
+                images_to_collect_upon, number_of_image_optimization_steps, template_loss_type)
 
-    reconst_outputs = vis_model(vis_image)
-    reconst_outputs_softmax = reconst_outputs.softmax(dim=1)
-    print("Confidence over Reconstructed image")
-    reconst_img_norm = torch.norm(vis_image)
-    print("Norm of reconstructed image is:", reconst_img_norm)
-    for i in range(len(reconst_outputs[0])):
-        print("Class {} => {}".format(
-            class_label, reconst_outputs[0][i]))
-    reconst_pred = reconst_outputs_softmax.max(1).indices
-    print("Reconstructed image Class predicted:",
-          reconst_pred)
+            reconst_outputs = vis_model(vis_image)
+            reconst_outputs_softmax = reconst_outputs.softmax(dim=1)
+            print("Confidence over Reconstructed image")
+            reconst_img_norm = torch.norm(vis_image)
+            print("Norm of reconstructed image is:", reconst_img_norm)
+            for i in range(len(reconst_outputs[0])):
+                print("Class {} => {}".format(
+                    class_label, reconst_outputs[0][i]))
+            reconst_pred = reconst_outputs_softmax.max(1).indices
+            print("Reconstructed image Class predicted:",
+                  reconst_pred)
 
-    total += 1
-    reconst_correct += reconst_pred.eq(class_label).sum().item()
+            overlap_bw_reconst_and_orig, total_pixel_points, overlap_bw_reconst_and_orig_percent = tmp_gen.find_overall_between_two_images(
+                vis_image, tmp_gen.original_image[None])
+            overlap_percent_avg += overlap_bw_reconst_and_orig_percent
+            total += 1
+            reconst_correct += reconst_pred.eq(class_label).sum().item()
+            pbar.set_postfix(
+                reconst_ratio="{}/{}".format(reconst_correct, total), recon_acc=100. * reconst_correct/total, ovlap="{}/{}".format(overlap_bw_reconst_and_orig, total_pixel_points), ovlap_per=overlap_bw_reconst_and_orig_percent.item(), ov_per_avg=overlap_percent_avg.item()/total)
 
-    reconst_image = recreate_image(
-        vis_image, unnormalize=False)
-    path = "root/temp/reconst_c_"+str(c_indx) +\
-        "_ep_"+str(num_epochs_to_train)+"_image_ind_"+str(image_ind) + \
-        "_st_"+str(number_of_image_optimization_steps) + \
-        "_"+str(model_arch_type)+"_2.jpg"
-    print("path saved:", path)
-    save_image(reconst_image, path)
+            reconst_image = recreate_image(
+                vis_image, unnormalize=False)
+            path = "root/temp/reconst_c_"+str(c_indx) +\
+                "_ep_"+str(num_epochs_to_train)+"_image_ind_"+str(image_ind) + \
+                "_st_"+str(number_of_image_optimization_steps) + \
+                "_"+str(model_arch_type)+"_recent.jpg"
+            print("path saved:", path)
+            save_image(reconst_image, path)
+    overall_total += total
+    overall_overlap_percent_avg += overlap_percent_avg
+    overall_reconst_correct += reconst_correct
 
-reconst_acc = 100. * reconst_correct/total
+reconst_acc = 100. * overall_reconst_correct/overall_total
 print("reconst_acc:", reconst_acc)
+overall_overlap_percent_avg = overall_overlap_percent_avg / overall_total
+print("overall_overlap_percent_avg:", overall_overlap_percent_avg)
