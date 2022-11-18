@@ -1404,9 +1404,11 @@ def get_initial_image(dataset, template_initial_image_type, size=None):
         if(template_initial_image_type == 'zero_init_image'):
             return torch.from_numpy(np.uint8(np.random.uniform(0, 1, (1, size, size))))
         elif(template_initial_image_type == 'uniform_init_image'):
-            return torch.from_numpy(np.uint8(np.random.uniform(100, 160, (1, size, size)))/255)
+            return torch.from_numpy(np.uint8(np.random.uniform(100, 180, (1, size, size)))/255)
         elif(template_initial_image_type == 'gaussian_init_image'):
             return torch.from_numpy(np.uint8(np.random.random((1, size, size)) * 20 + 128.)/255)
+        elif(template_initial_image_type == 'normal_init_image'):
+            return torch.from_numpy(np.random.normal(128, 8, (1, 28, 28)).astype('float32')/255)
 
 
 def quick_visualization_on_config(model, dataset, exp_type, template_initial_image_type, images_to_collect_upon, number_of_image_optimization_steps, template_loss_type):
