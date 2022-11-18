@@ -56,62 +56,74 @@ class FilterVisualizer():
 
         layer_obj = self.model.get_layer_object(network_type, layer_num)
         save_features = SaveFeatures(layer_obj)
-        start_sigma = 1
+        start_sigma = 0.75
         end_sigma = 0.1
-        start_step_size = 5
-        end_step_size = 1
+        start_step_size = 0.1
+        end_step_size = 0.05
 
         for _ in range(self.upscaling_steps):  # scale the image up upscaling_steps times
             img_var = img
             # optimizer = torch.optim.Adam([img_var], lr=lr)
             # optimize pixel values for opt_steps times
-            for optim_num in range(number_of_image_optimization_steps):
-                step_size = start_step_size + \
-                    ((end_step_size - start_step_size) * optim_num) / \
-                    number_of_image_optimization_steps
-                # optimizer = torch.optim.SGD([img_var], lr=step_size)
-                sigma = start_sigma + \
-                    ((end_sigma - start_sigma) * optim_num) / \
-                    number_of_image_optimization_steps
+            with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for given image") as pbar:
+                for optim_num in pbar:
+                    step_size = start_step_size + \
+                        ((end_step_size - start_step_size) * optim_num) / \
+                        number_of_image_optimization_steps
+                    # optimizer = torch.optim.SGD([img_var], lr=step_size)
+                    sigma = start_sigma + \
+                        ((end_sigma - start_sigma) * optim_num) / \
+                        number_of_image_optimization_steps
 
-                # optimizer.zero_grad()
-                model_outputs = self.model(img_var)
-                loss = get_vis_loss_value(
-                    self.weight_vis_loss_type, network_type, save_features, model_outputs, filter_indx, self.model)
-                loss.backward()
+                    # optimizer.zero_grad()
+                    model_outputs = self.model(img_var)
+                    loss = get_vis_loss_value(
+                        self.weight_vis_loss_type, network_type, save_features, model_outputs, filter_indx, self.model)
+                    loss.backward()
 
-                with torch.no_grad():
-                    blurred_grad = blur_img(
-                        img_var.grad.cpu().detach().numpy()[0], sigma)
-                    img_var = img_var.cpu().detach().numpy()[0]
-                    img_var -= step_size / \
-                        np.abs(blurred_grad).mean() * blurred_grad
+                    unnorm_gradients = img_var.grad
 
-                    # optimizer.step()
-                    # print("sigma:", sigma)
-                    # print("img_var shape:", img_var.size())
-                    img_var = blur_img(
-                        img_var, sigma)
-                    img_var = torch.from_numpy(img_var[None])
-                img_var = img_var.to(device)
-                img_var.requires_grad_()
+                    gradients = unnorm_gradients / \
+                        torch.std(unnorm_gradients) + 1e-8
+
+                    with torch.no_grad():
+                        # self.initial_image = self.initial_image - gradients*step_size
+                        blurred_grad = gradients.cpu().detach().numpy()[0]
+                        blurred_grad = blur_img(
+                            blurred_grad, sigma)
+                        img_var = img_var.cpu().detach().numpy()[
+                            0]
+                        img_var -= step_size / \
+                            np.abs(blurred_grad).mean() * blurred_grad
+
+                        img_var = blur_img(
+                            img_var, sigma)
+                        img_var = torch.from_numpy(
+                            img_var[None])
+                        pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
+                            img_var).item())
+                        img_var = img_var.to(device)
+                        img_var.requires_grad_()
 
             # print("img_var shape:", img_var.size())
-            img = img_var.cpu().detach().numpy()[0][0]
+            img = img_var
+            if(self.upscaling_factor != 1):
+                img = img_var.cpu().detach().numpy()[0][0]
+                # calculate new image size
+                sz = int(self.upscaling_factor * sz)
+                # scale image up
+                # print("img size:", img.size())
+                img = cv2.resize(
+                    img, (sz, sz), interpolation=cv2.INTER_CUBIC)
+                # print("img size:", img.size())
+                # if blur is not None:
+                # blur image to reduce high frequency patterns
+                # img = cv2.blur(img, (blur, blur))
+                img = torch.from_numpy(img[None][None])
+                img = img.to(device)
+                img.requires_grad_()
 
-            sz = int(self.upscaling_factor * sz)  # calculate new image size
-            # scale image up
-            # print("img size:", img.size())
-            img = cv2.resize(img, (sz, sz), interpolation=cv2.INTER_CUBIC)
-            # print("img size:", img.size())
-            # if blur is not None:
-            # blur image to reduce high frequency patterns
-            # img = cv2.blur(img, (blur, blur))
-            img = torch.from_numpy(img[None][None])
             self.output = img
-
-            img = img.to(device)
-            img.requires_grad_()
 
         # self.save(layer_num, filter)
         save_features.close()
@@ -338,21 +350,22 @@ def run_weight_visualization(models_base_path, weight_vis_initial_image_type, we
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net
-    model_arch_type = 'plain_pure_conv4_dnn'
+    model_arch_type = 'conv4_dlgn'
     # uniform_init_image , zero_init_image , gaussian_init_image
     weight_vis_initial_image_type = 'normal_init_image'
     weight_vis_loss_type = "MAXIMIZE_FILTER_OUTPUT"
     wand_project_name = None
     wandb_group_name = "test"
-    number_of_image_optimization_steps = 301
+    number_of_image_optimization_steps = 161
     is_save_graph_visualizations = True
     network_type = "GATE_NET"
     size = 28
     upscaling_steps = 1
     upscaling_factor = 1
 
-    models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
+    # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
     # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+    models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.93/"
 
     wandb_additional_dict = None
     if(not(wand_project_name is None)):
