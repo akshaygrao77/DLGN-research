@@ -439,6 +439,10 @@ class TemplateImageGenerator():
                 loss.backward()
 
                 unnorm_gradients = self.initial_image.grad
+                std_unnorm_grad = torch.std(unnorm_gradients)
+                print("torch.norm(unnorm_gradients):",
+                      torch.norm(unnorm_gradients))
+                print("std_unnorm_grad:", std_unnorm_grad)
 
                 if(step_iter == 0):
                     first_norm = torch.norm(unnorm_gradients) + 1e-8
@@ -448,7 +452,10 @@ class TemplateImageGenerator():
 
                 # gradients = unnorm_gradients / first_norm
                 gradients = unnorm_gradients / \
-                    torch.std(unnorm_gradients) + 1e-8
+                    std_unnorm_grad + 1e-8
+
+                print("torch.norm(gradients):",
+                      torch.norm(gradients))
 
                 # print("After normalize self.initial_image gradients", gradients)
 
@@ -480,7 +487,7 @@ class TemplateImageGenerator():
                 self.initial_image = self.initial_image.to(device)
                 self.initial_image.requires_grad_()
 
-        return self.initial_image
+        return self.initial_image, loss
 
 
 def recreate_image(im_as_var, unnormalize=True):
@@ -571,14 +578,16 @@ test_data_loader = get_data_loader(
 dataset = 'mnist'
 # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net,
 # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-model_arch_type = 'conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net'
+# conv4_deep_gated_net_with_random_ones_in_wt_net
+model_arch_type = 'plain_pure_conv4_dnn'
 
 models_base_path = None
 # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.93/aug_conv4_dlgn_iter_1_dir.pt"
-# models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/aug_conv4_dlgn_iter_1_dir.pt"
+models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/aug_conv4_dlgn_iter_1_dir.pt"
 # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.74/aug_conv4_dlgn_iter_1_dir.pt"
 # models_base_path = "root/model/save/mnist/conv4_deep_gated_net_with_actual_inp_in_wt_net_dir.pt"
-models_base_path = "root/model/save/mnist/conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net_dir.pt"
+# models_base_path = "root/model/save/mnist/conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net_dir.pt"
+# models_base_path = "root/model/save/mnist/conv4_deep_gated_net_with_random_ones_in_wt_net_dir.pt"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # vis_model = torch.load("/content/conv4_dgn_iter_1_dir.pt",map_location=device)
@@ -653,34 +662,46 @@ overall_reconst_correct = 0
 overall_overlap_percent_avg = 0
 overall_orig_grad_norm_avg = 0
 overall_reconst_grad_norm_avg = 0
+overall_final_reconst_loss_avg = 0
 for c_indx in class_indx_to_visualize:
     total = 0
     reconst_correct = 0
     overlap_percent_avg = 0
     orig_grad_norm_avg = 0
+    final_reconst_loss_avg = 0
     reconst_grad_norm_avg = 0
     class_label = c_indx
     print("************************************************************ Class:", class_label)
     per_class_dataset = PerClassDataset(
         input_data_list_per_class[c_indx], c_indx)
-    with trange(len(per_class_dataset), unit="Indx", desc="Generating template image for image of class:{}".format(class_label)) as pbar:
+    # num_samples = len(per_class_dataset)
+    num_samples = 20
+    with trange(num_samples, unit="Indx", desc="Generating template image for image of class:{}".format(class_label)) as pbar:
         for image_ind in pbar:
             images_to_collect_upon = per_class_dataset[image_ind][0]
             # orig_image = recreate_image(
             #     images_to_collect_upon, unnormalize=False)
             # save_image(orig_image, "root/temp/original_c_"+str(c_indx) +
             #            "_image_ind_"+str(image_ind)+"_"+str(model_arch_type)+".jpg")
-
-            number_of_image_optimization_steps = 161
+            if(model_arch_type == 'conv4_deep_gated_net'):
+                number_of_image_optimization_steps = 500
+            else:
+                number_of_image_optimization_steps = 161
             start_sigma = 0.75
             end_sigma = 0.1
-            start_step_size = 0.1
-            end_step_size = 0.05
+            if(model_arch_type == 'conv4_deep_gated_net'):
+                start_step_size = 1
+                end_step_size = 0.5
+            else:
+                start_step_size = 0.1
+                end_step_size = 0.05
 
             tmp_gen = TemplateImageGenerator(
                 vis_model, intial_image)
-            vis_image = tmp_gen.generate_template_image_over_given_image(
+            vis_image, final_reconst_loss = tmp_gen.generate_template_image_over_given_image(
                 images_to_collect_upon, number_of_image_optimization_steps, template_loss_type)
+
+            final_reconst_loss_avg += final_reconst_loss.item()
 
             image_to_collect_upon = torch.unsqueeze(images_to_collect_upon, 0)
             image_to_collect_upon = image_to_collect_upon.to(device)
@@ -715,14 +736,14 @@ for c_indx in class_indx_to_visualize:
             total += 1
             reconst_correct += reconst_pred.eq(class_label).sum().item()
             pbar.set_postfix(
-                reconst_ratio="{}/{}".format(reconst_correct, total), recon_acc=100. * reconst_correct/total, ovlap="{}/{}".format(overlap_bw_reconst_and_orig, total_pixel_points), ovlap_per=overlap_bw_reconst_and_orig_percent.item(), ov_per_avg=overlap_percent_avg.item()/total, orig_grad_norm_avg=orig_grad_norm_avg.item()/total, reconst_grad_norm_avg=reconst_grad_norm_avg.item()/total)
+                reconst_ratio="{}/{}".format(reconst_correct, total), recon_acc=100. * reconst_correct/total, ovlap="{}/{}".format(overlap_bw_reconst_and_orig, total_pixel_points), ovlap_per=overlap_bw_reconst_and_orig_percent.item(), ov_per_avg=overlap_percent_avg.item()/total, orig_grad_norm_avg=orig_grad_norm_avg.item()/total, reconst_grad_norm_avg=reconst_grad_norm_avg.item()/total, final_reconst_loss_avg=final_reconst_loss_avg/total)
 
-            if(image_ind % 50 == 0):
+            if(image_ind % 1 == 0):
                 reconst_image = recreate_image(
                     vis_image, unnormalize=False)
                 path = "root/reconstruction_images/MT_"+str(model_arch_type)+"/class_"+str(c_indx) +\
                     "/EP_"+str(num_epochs_to_train)+"/image_ind_"+str(image_ind) + \
-                    "_st_"+str(number_of_image_optimization_steps) + \
+                    "_st_"+str(number_of_image_optimization_steps)+"_st_siz_"+str(start_step_size)+"_st_end_siz_"+str(end_step_size) + \
                     "_trained.jpg"
                 print("path saved:", path)
                 save_image(reconst_image, path)
@@ -731,12 +752,15 @@ for c_indx in class_indx_to_visualize:
     overall_reconst_grad_norm_avg += reconst_grad_norm_avg
     overall_overlap_percent_avg += overlap_percent_avg
     overall_reconst_correct += reconst_correct
+    overall_final_reconst_loss_avg += final_reconst_loss_avg
 
 reconst_acc = 100. * overall_reconst_correct/overall_total
 print("reconst_acc:", reconst_acc)
 overall_overlap_percent_avg = overall_overlap_percent_avg / overall_total
 print("overall_overlap_percent_avg:", overall_overlap_percent_avg)
-overall_orig_grad_norm_avg = overall_orig_grad_norm_avg/total
+overall_orig_grad_norm_avg = overall_orig_grad_norm_avg/overall_total
 print("overall_orig_grad_norm_avg", overall_orig_grad_norm_avg)
-overall_reconst_grad_norm_avg = overall_reconst_grad_norm_avg/total
+overall_reconst_grad_norm_avg = overall_reconst_grad_norm_avg/overall_total
 print("overall_reconst_grad_norm_avg", overall_reconst_grad_norm_avg)
+overall_final_reconst_loss_avg = overall_final_reconst_loss_avg/overall_total
+print("overall_final_reconst_loss_avg", overall_final_reconst_loss_avg)
