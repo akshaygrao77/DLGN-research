@@ -439,10 +439,11 @@ class TemplateImageGenerator():
                 loss.backward()
 
                 unnorm_gradients = self.initial_image.grad
-                std_unnorm_grad = torch.std(unnorm_gradients)
+                # std_unnorm_grad = torch.std(unnorm_gradients)
+                norm_grad = torch.norm(unnorm_gradients)
                 print("torch.norm(unnorm_gradients):",
-                      torch.norm(unnorm_gradients))
-                print("std_unnorm_grad:", std_unnorm_grad)
+                      norm_grad)
+                # print("std_unnorm_grad:", std_unnorm_grad)
 
                 if(step_iter == 0):
                     first_norm = torch.norm(unnorm_gradients) + 1e-8
@@ -452,7 +453,7 @@ class TemplateImageGenerator():
 
                 # gradients = unnorm_gradients / first_norm
                 gradients = unnorm_gradients / \
-                    std_unnorm_grad + 1e-8
+                    norm_grad + 1e-8
 
                 print("torch.norm(gradients):",
                       torch.norm(gradients))
