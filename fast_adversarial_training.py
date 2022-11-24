@@ -15,10 +15,11 @@ from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
 from configs.generic_configs import get_preprocessing_and_other_configs
 
-from conv4_models import get_model_instance, get_model_save_path
+from conv4_models import get_model_instance
 
 
 def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375):
+    print("Model will be saved at", model_save_path)
     is_log_wandb = not(wand_project_name is None)
     best_test_acc = 0
     opt = torch.optim.Adam(model.parameters(), lr=lr_max)
@@ -109,8 +110,11 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             torch.save(model, model_save_path)
             print("Saved model at", model_save_path)
 
+    save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
+    if not os.path.exists(save_adv_image_prefix):
+        os.makedirs(save_adv_image_prefix)
     train_acc = evaluate_model(net, train_loader, classes, eps, adv_attack_type,
-                               number_of_adversarial_optimization_steps, eps_step_size, adv_target)
+                               number_of_adversarial_optimization_steps, eps_step_size, adv_target, save_adv_image_prefix)
     if(is_log_wandb):
         wandb.log({"train_acc": train_acc, "test_acc": test_acc})
 
@@ -120,19 +124,19 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 if __name__ == '__main__':
     dataset = 'mnist'
-    # conv4_dlgn , plain_pure_conv4_dnn , plain_pure_conv4_dnn_n16_small , conv4_dlgn_n16_small , conv4_deep_gated_net
-    model_arch_type = 'conv4_dlgn'
+    # conv4_dlgn , plain_pure_conv4_dnn , plain_pure_conv4_dnn_n16_small , conv4_dlgn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_with_actual_inp_in_wt_net
+    model_arch_type = 'conv4_deep_gated_net'
     # scheme_type = ''
     # batch_size = 128
-    wand_project_name = "fast_adv_training_and_visualisation"
+    # wand_project_name = "fast_adv_training_and_visualisation"
+    wand_project_name = "common_model_init_exps"
     # wand_project_name = None
     # ADV_TRAINING ,  RECONST_VIS_ADV_TRAINED_MODEL
     exp_type = "ADV_TRAINING"
 
-    epochs = 30
+    epochs = 32
     adv_attack_type = "PGD"
     adv_target = None
-    eps_step_size = 0.01
 
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
@@ -140,7 +144,15 @@ if __name__ == '__main__':
     template_loss_type = "TEMP_LOSS"
     is_split_validation = False
     valid_split_size = 0.1
+
+    # torch_seed = ""
     torch_seed = 2022
+
+    if(torch_seed == ""):
+        torch_seed_str = ""
+    else:
+        torch_seed_str = "/ST_"+str(torch_seed)+"/"
+
     number_of_image_optimization_steps = 171
     collect_threshold = 0.95
     entropy_calculation_batch_size = 64
@@ -181,25 +193,28 @@ if __name__ == '__main__':
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        net = get_model_instance(model_arch_type, inp_channel)
+        net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
         start_net_path = None
 
-        start_net_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/aug_conv4_dlgn_iter_4_dir.pt"
-        net = torch.load(start_net_path)
+        # start_net_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/aug_conv4_dlgn_iter_3_dir.pt"
+        # net = torch.load(start_net_path)
 
         net.to(device)
 
-        eps_list = [0.04, 0.05, 0.06, 0.1]
-        fast_adv_attack_type_list = ['FGSM', 'PGD']
+        # eps_list = [0.03, 0.06, 0.1]
+        fast_adv_attack_type_list = ['PGD']
+        # fast_adv_attack_type_list = ['FGSM', 'PGD']
         number_of_adversarial_optimization_steps_list = [80]
 
-        # eps_list = [0.05]
+        eps_list = [0.1]
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         # number_of_adversarial_optimization_steps_list = [80]
 
         for fast_adv_attack_type in fast_adv_attack_type_list:
             for number_of_adversarial_optimization_steps in number_of_adversarial_optimization_steps_list:
                 for eps in eps_list:
+                    eps_step_size = 1 * eps
+
                     root_save_prefix = "root/ADVER_RECONS_SAVE/"
                     init_prefix = "root/model/save/" + \
                         str(dataset)+"/adversarial_training/MT_" + \
@@ -208,8 +223,9 @@ if __name__ == '__main__':
                         init_prefix = start_net_path[0:start_net_path.rfind(
                             "/")+1]
                         root_save_prefix = init_prefix+"/ADVER_RECONS_SAVE/"
-                    model_save_prefix = str(init_prefix)+"_ET_ADV_TRAINING/"
-                    prefix2 = "fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/".format(
+                    model_save_prefix = str(
+                        init_prefix)+"_ET_ADV_TRAINING/"
+                    prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/".format(
                         fast_adv_attack_type, adv_attack_type, eps, batch_size, eps_step_size, number_of_adversarial_optimization_steps)
                     wandb_group_name = "DS_"+str(dataset) + "_EXP_"+str(exp_type) +\
                         "_fast_adv_training_TYP_"+str(model_arch_type)
@@ -234,6 +250,7 @@ if __name__ == '__main__':
                             wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
                             wandb_config["epochs"] = epochs
                             wandb_config["batch_size"] = batch_size
+                            wandb_config["torch_seed"] = torch_seed
                             wandb_config["fast_adv_attack_type"] = fast_adv_attack_type
                             wandb_config["eps_step_size"] = eps_step_size
                             wandb_config["model_save_path"] = model_save_path

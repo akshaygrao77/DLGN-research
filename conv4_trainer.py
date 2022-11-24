@@ -14,9 +14,12 @@ from structure.dlgn_conv_config_structure import DatasetConfig
 
 from conv4_models import get_model_instance, get_model_save_path
 from visualization import run_visualization_on_config
+from utils.weight_utils import get_gating_layer_weights
+from raw_weight_analysis import convert_list_tensor_to_numpy
 
 
 def evaluate_model(net, dataloader):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
     # since we're not training, we don't need to calculate the gradients for our outputs
@@ -83,7 +86,7 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
         if not os.path.exists(per_epoch_model_save_path):
             os.makedirs(per_epoch_model_save_path)
         per_epoch_model_save_path += "/epoch_{}_dir.pt".format(epoch)
-        if(epoch % 2 == 0):
+        if(epoch % 5 == 0):
             torch.save(net, per_epoch_model_save_path)
         if(test_acc >= best_test_acc):
             best_test_acc = test_acc
@@ -137,11 +140,20 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     dataset = 'mnist'
-    # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
-    model_arch_type = 'conv4_dlgn'
-    scheme_type = 'iterative_augmenting'
+    # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net,
+    # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
+    # conv4_deep_gated_net_with_random_ones_in_wt_net
+    model_arch_type = 'conv4_deep_gated_net'
+    # iterative_augmenting , nil
+    scheme_type = 'nil'
     # scheme_type = ''
     batch_size = 32
+
+    # torch_seed = ""
+    torch_seed = 2022
+
+    wand_project_name = None
+    wand_project_name = "common_model_init_exps"
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -170,13 +182,22 @@ if __name__ == '__main__':
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    net = get_model_instance(model_arch_type, inp_channel)
-    final_model_save_path = get_model_save_path(model_arch_type, dataset)
+    net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
+    final_model_save_path = get_model_save_path(
+        model_arch_type, dataset, torch_seed)
+
+    # list_of_weights, list_of_bias = get_gating_layer_weights(net)
+
+    # list_of_weights = convert_list_tensor_to_numpy(list_of_weights)
+    # for i in range(len(list_of_weights)):
+    #     current_weight_np = list_of_weights[i]
+    #     print("ind:{}=>{}".format(i,current_weight_np))
 
     net.to(device)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(net.parameters(), lr=3e-4)
+    lr = 3e-4
+    optimizer = optim.Adam(net.parameters(), lr=lr)
     epochs = 32
 
     if(scheme_type == 'iterative_augmenting'):
@@ -199,12 +220,12 @@ if __name__ == '__main__':
             "_template_vis_aug_"+str(model_arch_type)
         is_split_validation = False
         valid_split_size = 0.1
-        torch_seed = 2022
+
         number_of_image_optimization_steps = 161
         # GENERATE_ALL_FINAL_TEMPLATE_IMAGES
         exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
         # Changing this parameter for the augmenting process acts merely as a different initialisation of model weight provided template_batch_size=1
-        collect_threshold = 0.9
+        collect_threshold = 0.73
         entropy_calculation_batch_size = 64
         number_of_batches_to_calculate_entropy_on = None
 
@@ -221,11 +242,11 @@ if __name__ == '__main__':
             str(dataset)+"/iterative_augmenting/DS_"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
                 seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"
 
-        # number_of_augment_iterations = 5
-        # epochs_in_each_augment_iteration = [32, 10, 10, 10, 5]
+        number_of_augment_iterations = 5
+        epochs_in_each_augment_iteration = [32, 10, 10, 10, 5]
 
-        number_of_augment_iterations = 2
-        epochs_in_each_augment_iteration = [32, 10]
+        # number_of_augment_iterations = 2
+        # epochs_in_each_augment_iteration = [32, 10]
 
         current_augmented_x_train = None
         current_augmented_y_train = None
@@ -414,6 +435,45 @@ if __name__ == '__main__':
                                                               shuffle=True)
 
     else:
+        is_log_wandb = not(wand_project_name is None)
+        if(is_log_wandb):
+            wandb_group_name = "DS_"+str(dataset) + \
+                "_MT_"+str(model_arch_type)+"_SEED_"+str(torch_seed)
+            wandb_run_name = "MT_" + \
+                str(model_arch_type)+"/SEED_"+str(torch_seed)+"/EP_"+str(epochs)+"/LR_" + \
+                str(lr)+"/OPT_"+str(optimizer)+"/LOSS_TYPE_" + \
+                str(criterion)+"/BS_"+str(batch_size) + \
+                "/SCH_TYP_"+str(scheme_type)
+            wandb_run_name = wandb_run_name.replace("/", "")
+
+            wandb_config = dict()
+            wandb_config["dataset"] = dataset
+            wandb_config["model_arch_type"] = model_arch_type
+            wandb_config["torch_seed"] = torch_seed
+            wandb_config["scheme_type"] = scheme_type
+            wandb_config["final_model_save_path"] = final_model_save_path
+            wandb_config["epochs"] = epochs
+            wandb_config["optimizer"] = optimizer
+            wandb_config["criterion"] = criterion
+            wandb_config["lr"] = lr
+            wandb_config["batch_size"] = batch_size
+
+            wandb.init(
+                project=f"{wand_project_name}",
+                name=f"{wandb_run_name}",
+                group=f"{wandb_group_name}",
+                config=wandb_config,
+            )
+
+        model_save_folder = final_model_save_path[0:final_model_save_path.rfind(
+            "/")+1]
+        if not os.path.exists(model_save_folder):
+            os.makedirs(model_save_folder)
+
         best_test_acc, net = train_model(net,
                                          trainloader, testloader, epochs, criterion, optimizer, final_model_save_path)
+        if(is_log_wandb):
+            wandb.log({"best_test_acc": best_test_acc})
+            wandb.finish()
+
     print("Finished execution!!!")
