@@ -124,8 +124,10 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 if __name__ == '__main__':
     dataset = 'mnist'
-    # conv4_dlgn , plain_pure_conv4_dnn , plain_pure_conv4_dnn_n16_small , conv4_dlgn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_with_actual_inp_in_wt_net
-    model_arch_type = 'conv4_deep_gated_net'
+    # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
+    # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
+    # conv4_deep_gated_net_with_random_ones_in_wt_net
+    model_arch_type = 'conv4_deep_gated_net_n16_small'
     # scheme_type = ''
     # batch_size = 128
     # wand_project_name = "fast_adv_training_and_visualisation"
@@ -206,7 +208,7 @@ if __name__ == '__main__':
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         number_of_adversarial_optimization_steps_list = [80]
 
-        eps_list = [0.1]
+        eps_list = [0.06]
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         # number_of_adversarial_optimization_steps_list = [80]
 
