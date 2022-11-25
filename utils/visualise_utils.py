@@ -274,14 +274,12 @@ def generate_plain_3DImage(image_data, save_path, is_standarize=True):
 
     reshaped_data = gallery_into_3D_array(image_data, row, col)
     # print("reshaped_data", reshaped_data.shape)
-    if(is_standarize):
-        reshaped_data = recreate_np_image(reshaped_data)
+    reshaped_data = recreate_np_image(reshaped_data, is_standarize)
+
     save_image(reshaped_data, save_path)
 
 
-def generate_plain_image(image_data, save_path, is_standarize=True):
-    # print("image_data", image_data.shape)
-    # print("image_data len", len(image_data.shape))
+def generate_plain_image_data(image_data):
     if(len(image_data.shape) == 3):
         row, col = determine_row_col_from_features(image_data.shape[0])
     elif(len(image_data.shape) == 4):
@@ -289,12 +287,21 @@ def generate_plain_image(image_data, save_path, is_standarize=True):
             image_data.shape[0]*image_data.shape[1])
 
     reshaped_data = gallery(image_data, row, col)
-    if(is_standarize):
-        reshaped_data = recreate_np_image(reshaped_data)
+
+    return reshaped_data
+
+
+def generate_plain_image(image_data, save_path, is_standarize=True):
+    # print("image_data", image_data.shape)
+    # print("image_data len", len(image_data.shape))
+
+    reshaped_data = generate_plain_image_data(image_data)
+
+    reshaped_data = recreate_np_image(reshaped_data, is_standarize)
     save_image(reshaped_data, save_path)
 
 
-def generate_list_of_plain_images_from_data(full_heatmap_data, start=None, end=None, save_each_img_path=None):
+def generate_list_of_plain_images_from_data(full_heatmap_data, start=None, end=None, save_each_img_path=None, is_standarize=True):
     if(start is None):
         start = 0
     if(end is None):
@@ -313,7 +320,8 @@ def generate_list_of_plain_images_from_data(full_heatmap_data, start=None, end=N
             temp_each_img_path = save_each_img_path.replace(
                 "*", str(start+i))
             feature_maps = full_heatmap_data[i]
-            generate_plain_image(feature_maps, temp_each_img_path)
+            generate_plain_image(
+                feature_maps, temp_each_img_path, is_standarize=is_standarize)
 
 
 def generate_list_of_images_from_data(full_heatmap_data, start, end, title, save_each_img_path=None, cmap='binary'):
