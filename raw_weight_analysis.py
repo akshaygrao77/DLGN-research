@@ -5,10 +5,13 @@ import numpy as np
 from utils.weight_utils import get_gating_layer_weights
 from utils.visualise_utils import generate_list_of_plain_images_from_data, generate_plain_image, generate_plain_image_data, save_image, recreate_image
 from conv4_models import get_model_instance_from_dataset
-from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader, seed_worker, segregate_classes
-from structure.generic_structure import PerClassDataset
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader, seed_worker, true_segregation
+from structure.generic_structure import PerClassDataset, CustomSimpleDataset
 from structure.dlgn_conv_config_structure import DatasetConfig
 from tqdm import tqdm
+from PIL import Image
+import torchvision.transforms as T
+import cv2
 
 
 def convert_list_tensor_to_numpy(list_of_tensors):
@@ -246,13 +249,13 @@ def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
                       current_final_postfix_for_save)
 
 
-def generate_per_batch_filter_outs(filter_weights, batch_inputs):
+def generate_per_batch_filter_outs(inp_channel, filter_weights, batch_inputs):
     # print("filter_weights before size", filter_weights.shape)
     filter_weights = np.expand_dims(filter_weights, axis=1)
     # print("filter_weights after size", filter_weights.shape)
     filter_weights = torch.from_numpy(filter_weights)
     # print("filter_weights size", filter_weights.size())
-    conv_obj = torch.nn.Conv2d(1, filter_weights.size()[
+    conv_obj = torch.nn.Conv2d(inp_channel, filter_weights.size()[
         0], filter_weights.size()[-1], padding=1)
     # print("conv_obj.weight size", conv_obj.weight.size())
     conv_obj.weight = torch.nn.Parameter(filter_weights)
@@ -264,7 +267,7 @@ def generate_per_batch_filter_outs(filter_weights, batch_inputs):
     return filter_out
 
 
-def generate_filter_outputs_per_image(filter_vis_dataset, class_label, c_indx,
+def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                                       per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize, final_postfix_for_save):
 
     save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
@@ -291,7 +294,7 @@ def generate_filter_outputs_per_image(filter_vis_dataset, class_label, c_indx,
                     layer_num, current_layer_weights.shape, filter_ind, current_filter_weights.shape))
 
                 f_outs = generate_per_batch_filter_outs(
-                    current_filter_weights, c_inputs)
+                    inp_channel, current_filter_weights, c_inputs)
 
                 for fil_ind in range(len(f_outs)):
                     each_filter_outs = f_outs[fil_ind]
@@ -336,6 +339,42 @@ def generate_filter_outputs_per_image(filter_vis_dataset, class_label, c_indx,
         overall_indx_count += c_inputs.size()[0]
         if(not(num_batches_to_visualize is None) and batch_idx == num_batches_to_visualize - 1):
             break
+
+
+def generate_dataset_from_images_folder(img_fold, reduce_dim_to_single, transform=None):
+    class_list = os.listdir(img_fold)
+    list_of_x = []
+    list_of_y = []
+    list_of_classes = []
+    for c_ind in range(len(class_list)):
+        c_label = class_list[c_ind]
+        list_of_classes.append(c_label)
+        class_path = os.path.join(img_fold, c_label)
+        # print("class_path", class_path)
+        img_list = os.listdir(class_path)
+        num_imgs = len(img_list)
+        for n in range(num_imgs):
+            name = img_list[n]
+            img_path = os.path.join(img_fold, c_label, name)
+            # print("img_path", img_path)
+            if os.path.isfile(img_path):
+                if(reduce_dim_to_single):
+                    im = cv2.imread(img_path, 0)
+                else:
+                    im = cv2.imread(img_path)
+
+                if(transform is None):
+                    im = torch.from_numpy(im)
+                else:
+                    # print("Before Image size:", im.shape)
+                    im = transform(im)
+                # print("Appended Image size:", im.size())
+                list_of_x.append(im)
+                list_of_y.append(c_ind)
+
+    dataset = CustomSimpleDataset(list_of_x, list_of_y)
+
+    return dataset, list_of_classes
 
 
 if __name__ == '__main__':
@@ -385,14 +424,15 @@ if __name__ == '__main__':
         # IND , DIFF , START
         sub_scheme_type = 'IND'
 
-        filter_vis_dataset = "mnist"
+        # std_image_preprocessing , mnist
+        filter_vis_dataset = "std_image_preprocessing"
         num_batches_to_visualize = 1
         batch_size = 32
 
         coll_seed_gen = torch.Generator()
         coll_seed_gen.manual_seed(torch_seed)
 
-        model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_n16_small_dir.pt"
+        model_path = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.03/batch_size_128/eps_stp_size_0.03/adv_steps_80/adv_model_dir.pt"
         model = get_model_from_path(dataset, model_arch_type, model_path)
 
         save_prefix = get_prefix_for_save(model_path, model_arch_type)
@@ -402,9 +442,9 @@ if __name__ == '__main__':
             list_of_weights, list_of_bias = run_raw_weight_analysis_on_config(model, root_save_prefix=save_prefix, final_postfix_for_save="",
                                                                               is_save_graph_visualizations=False)
 
+        print("Training over " + str(filter_vis_dataset))
         if(filter_vis_dataset == "mnist"):
             inp_channel = 1
-            print("Training over MNIST")
             classes = [str(i) for i in range(0, 10)]
             num_classes = len(classes)
 
@@ -413,6 +453,43 @@ if __name__ == '__main__':
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+        elif(filter_vis_dataset == "cifar10"):
+            inp_channel = 3
+            print("Training over CIFAR 10")
+            classes = ('plane', 'car', 'bird', 'cat',
+                       'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+            num_classes = len(classes)
+
+            cifar10_config = DatasetConfig(
+                'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size)
+
+            trainloader, _, testloader = preprocess_dataset_get_data_loader(
+                cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+        else:
+            if(filter_vis_dataset == "std_image_preprocessing"):
+                inp_channel = 1
+                reduce_dim_to_single = True
+                transform = T.Compose([
+                    T.ToPILImage(),
+                    T.Resize([512, 512]),
+                    T.ToTensor()])
+                train_ds_path = 'root/Datasets/std_image_preprocessing/train'
+                test_ds_path = 'root/Datasets/std_image_preprocessing/test'
+
+            train_dataset, classes = generate_dataset_from_images_folder(
+                train_ds_path, reduce_dim_to_single, transform)
+            test_dataset, classes = generate_dataset_from_images_folder(
+                test_ds_path, reduce_dim_to_single, transform)
+
+            print("train_dataset len", len(train_dataset))
+            print("test_dataset len", len(test_dataset))
+            print("classes", classes)
+
+            num_classes = len(classes)
+            trainloader = torch.utils.data.DataLoader(
+                train_dataset, batch_size=batch_size, shuffle=False)
+            testloader = torch.utils.data.DataLoader(
+                test_dataset, batch_size=batch_size, shuffle=False)
 
         train_dataset = generate_dataset_from_loader(trainloader)
         test_dataset = generate_dataset_from_loader(testloader)
@@ -424,14 +501,16 @@ if __name__ == '__main__':
 
         for is_template_image_on_train in [True, False]:
             if(is_template_image_on_train):
+                evalloader = trainloader
                 final_postfix_for_save = 'TRAIN'
             else:
+                evalloader = testloader
                 final_postfix_for_save = "TEST"
             class_indx_to_visualize = [i for i in range(len(classes))]
 
             if(len(class_indx_to_visualize) != 0):
-                input_data_list_per_class = segregate_classes(
-                    model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth=True)
+                input_data_list_per_class = true_segregation(
+                    evalloader, num_classes)
 
             for c_indx in class_indx_to_visualize:
                 class_label = classes[c_indx]
@@ -439,7 +518,7 @@ if __name__ == '__main__':
                     "************************************************************ Class:", class_label)
                 per_class_dataset = PerClassDataset(
                     input_data_list_per_class[c_indx], c_indx)
-                generate_filter_outputs_per_image(filter_vis_dataset, class_label, c_indx,
+                generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                                                   per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
                                                   final_postfix_for_save=final_postfix_for_save)
 
