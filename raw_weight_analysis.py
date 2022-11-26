@@ -65,11 +65,22 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
     if not os.path.exists(txt_save_folder):
         os.makedirs(txt_save_folder)
 
-    for i in range(len(list_of_weights)):
-        current_weight_np = list_of_weights[i]
+    for layer_num in range(len(list_of_weights)):
+        current_layer_weights = list_of_weights[layer_num]
+
+        for filter_ind in range(len(current_layer_weights)):
+            current_filter_weights = current_layer_weights[filter_ind]
+            each_filter_txt_save_folder = txt_save_folder + "/LAY_NUM_" + \
+                str(layer_num)+"/FILT_IND_" + \
+                str(filter_ind)
+            if not os.path.exists(each_filter_txt_save_folder):
+                os.makedirs(each_filter_txt_save_folder)
+            with open(each_filter_txt_save_folder + "/raw_filter_weights.txt", "w") as f:
+                f.write("\n".join(",".join(map(str, x))
+                        for x in current_filter_weights))
 
         print("Param {} size:{}".format(
-            final_postfix_for_save, current_weight_np.shape))
+            final_postfix_for_save, current_layer_weights.shape))
 
     for i in range(len(list_of_weights)):
         # current_full_img_save_path = save_folder + \
@@ -320,11 +331,20 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                         current_filt_channel_save_path = current_save_folder + \
                             "filter_out_channel_" + \
                             str(each_fil_channel_indx)+".jpg"
+                        std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
+                        raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
 
                         std_filter_out_image = recreate_image(
                             each_fil_channel, unnormalize=False)
                         save_image(std_filter_out_image,
                                    current_filt_channel_save_path)
+
+                        with open(std_txt_save_folder, "w") as f:
+                            f.write("\n".join(
+                                ",".join(map(str, x)) for x in std_filter_out_image))
+                        with open(raw_txt_save_folder, "w") as f:
+                            f.write("\n".join(
+                                ",".join(map(str, x)) for x in each_fil_channel))
 
                         diff_fil_channel = each_fil_channel - orig_image
                         current_diff_save_path = current_save_folder + \
@@ -382,7 +402,7 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
 
     torch_seed = 2022
 
@@ -425,14 +445,15 @@ if __name__ == '__main__':
         sub_scheme_type = 'IND'
 
         # std_image_preprocessing , mnist
-        filter_vis_dataset = "std_image_preprocessing"
+        # filter_vis_dataset = "std_image_preprocessing"
+        filter_vis_dataset = "mnist"
         num_batches_to_visualize = 1
         batch_size = 32
 
         coll_seed_gen = torch.Generator()
         coll_seed_gen.manual_seed(torch_seed)
 
-        model_path = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.03/batch_size_128/eps_stp_size_0.03/adv_steps_80/adv_model_dir.pt"
+        model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
         model = get_model_from_path(dataset, model_arch_type, model_path)
 
         save_prefix = get_prefix_for_save(model_path, model_arch_type)
@@ -440,7 +461,7 @@ if __name__ == '__main__':
         if(sub_scheme_type == "IND"):
 
             list_of_weights, list_of_bias = run_raw_weight_analysis_on_config(model, root_save_prefix=save_prefix, final_postfix_for_save="",
-                                                                              is_save_graph_visualizations=False)
+                                                                              is_save_graph_visualizations=True)
 
         print("Training over " + str(filter_vis_dataset))
         if(filter_vis_dataset == "mnist"):
