@@ -2,7 +2,6 @@ import torch
 import os
 from tqdm import tqdm
 import wandb
-import random
 import numpy as np
 import pickle
 
@@ -10,19 +9,13 @@ import pickle
 from utils.visualise_utils import save_image, recreate_image, add_lower_dimension_vectors_within_itself, construct_images_from_feature_maps, construct_heatmaps_from_data, determine_row_col_from_features, generate_plain_image
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from configs.dlgn_conv_config import HardRelu
-from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes, seed_worker
 from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
 from configs.generic_configs import get_preprocessing_and_other_configs
 from adversarial_attacks_tester import generate_adv_examples
 from utils.generic_utils import save_dataset_into_path_from_loader
 from structure.generic_structure import CustomSimpleDataset
-
-
-def seed_worker(worker_id):
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_id + worker_seed)
-    random.seed(worker_id - worker_seed)
 
 
 def get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_act_collection_on_train,
