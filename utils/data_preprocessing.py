@@ -10,6 +10,13 @@ from algos.dlgn_conv_preprocess import add_channel_to_image
 from sklearn.model_selection import train_test_split
 import torchvision.transforms as transforms
 from structure.generic_structure import CustomSimpleDataset
+import random
+
+
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_id + worker_seed)
+    random.seed(worker_id - worker_seed)
 
 
 def get_data_loader(x_data, labels, bs, orig_labels=None):

@@ -3,8 +3,12 @@ import torch
 import os
 import numpy as np
 from utils.weight_utils import get_gating_layer_weights
-from utils.visualise_utils import generate_list_of_plain_images_from_data, generate_plain_image, generate_plain_image_data
+from utils.visualise_utils import generate_list_of_plain_images_from_data, generate_plain_image, generate_plain_image_data, save_image, recreate_image
 from conv4_models import get_model_instance_from_dataset
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader, seed_worker, segregate_classes
+from structure.generic_structure import PerClassDataset
+from structure.dlgn_conv_config_structure import DatasetConfig
+from tqdm import tqdm
 
 
 def convert_list_tensor_to_numpy(list_of_tensors):
@@ -151,7 +155,7 @@ def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None
         if(len(list_of_model_paths) == 0):
             list_of_model_paths = [None]
             list_of_save_prefixes = [
-                "root/RAW_WEIGHT_ANALYSIS/"]
+                "root/RAW_WEIGHT_ANALYSIS/MT_"+str(model_arch_type)+"/"]
             list_of_save_postfixes = [None]
         else:
             list_of_save_prefixes = []
@@ -171,11 +175,12 @@ def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None
         print("each_model_path", each_model_path)
 
         custom_model = get_model_instance_from_dataset(
-            dataset, model_arch_type)
+            dataset, model_arch_type, torch_seed)
 
-        custom_temp_model = torch.load(
-            each_model_path, map_location=device)
-        custom_model.load_state_dict(custom_temp_model.state_dict())
+        if(each_model_path is not None):
+            custom_temp_model = torch.load(
+                each_model_path, map_location=device)
+            custom_model.load_state_dict(custom_temp_model.state_dict())
 
         print(" #*#*#*#*#*#*#*# Generating weights analysis for model path:{} with save prefix :{} and postfix:{}".format(
             each_model_path, each_save_prefix, each_save_postfix))
@@ -184,30 +189,34 @@ def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None
                                               is_save_graph_visualizations=True)
 
 
-def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
+def get_model_from_path(dataset, model_arch_type, model_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    custom1_model = get_model_instance_from_dataset(
+    custom_model = get_model_instance_from_dataset(
         dataset, model_arch_type)
 
     custom_temp_model = torch.load(
-        model1_path, map_location=device)
-    custom1_model.load_state_dict(custom_temp_model.state_dict())
+        model_path, map_location=device)
+    custom_model.load_state_dict(custom_temp_model.state_dict())
+    custom_model = custom_model.to(device)
+    return custom_model
 
-    custom2_model = get_model_instance_from_dataset(
-        dataset, model_arch_type)
 
-    custom_temp_model = torch.load(
-        model2_path, map_location=device)
-    custom2_model.load_state_dict(custom_temp_model.state_dict())
+def get_prefix_for_save(model_path, model_arch_type):
+    base_path = model_path[0:model_path.rfind("/")+1]
 
-    base1_path = model1_path[0:model1_path.rfind("/")+1]
-    base2_path = model2_path[0:model2_path.rfind("/")+1]
-
-    save1_prefix = str(base1_path)+"/"+str(model_arch_type) + \
+    save_prefix = str(base_path)+"/"+str(model_arch_type) + \
         "/RAW_WEIGHT_ANALYSIS/"
-    save2_prefix = str(base2_path)+"/"+str(model_arch_type) + \
-        "/RAW_WEIGHT_ANALYSIS/"
+    return save_prefix
+
+
+def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
+
+    custom1_model = get_model_from_path(dataset, model_arch_type, model1_path)
+
+    custom2_model = get_model_from_path(dataset, model_arch_type, model2_path)
+
+    save1_prefix = get_prefix_for_save(model1_path, model_arch_type)
+    save2_prefix = get_prefix_for_save(model2_path, model_arch_type)
 
     list_of_weights_diff = []
     list_of_bias_diff = []
@@ -237,34 +246,201 @@ def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
                       current_final_postfix_for_save)
 
 
+def generate_per_batch_filter_outs(filter_weights, batch_inputs):
+    # print("filter_weights before size", filter_weights.shape)
+    filter_weights = np.expand_dims(filter_weights, axis=1)
+    # print("filter_weights after size", filter_weights.shape)
+    filter_weights = torch.from_numpy(filter_weights)
+    # print("filter_weights size", filter_weights.size())
+    conv_obj = torch.nn.Conv2d(1, filter_weights.size()[
+        0], filter_weights.size()[-1], padding=1)
+    # print("conv_obj.weight size", conv_obj.weight.size())
+    conv_obj.weight = torch.nn.Parameter(filter_weights)
+    # print("filter_weights", filter_weights)
+    # print("conv_obj.weight size", conv_obj.weight.size())
+    # print("conv_obj.weight", conv_obj.weight)
+    filter_out = conv_obj(batch_inputs)
+    # print("filter_out size", filter_out.size())
+    return filter_out
+
+
+def generate_filter_outputs_per_image(filter_vis_dataset, class_label, c_indx,
+                                      per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize, final_postfix_for_save):
+
+    save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
+        str(final_postfix_for_save)+"/FILTER_OUTS/C_"+str(class_label)+"/"
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
+    per_class_data_loader = torch.utils.data.DataLoader(
+        per_class_dataset, batch_size=batch_size, shuffle=False)
+
+    per_class_data_loader = tqdm(
+        per_class_data_loader, desc='Outing filter outputs for class:'+str(class_label))
+    overall_indx_count = 0
+    for batch_idx, per_class_per_batch_data in enumerate(per_class_data_loader):
+        c_inputs, _ = per_class_per_batch_data
+
+        for layer_num in range(len(list_of_weights)):
+            current_layer_weights = list_of_weights[layer_num]
+
+            for filter_ind in range(len(current_layer_weights)):
+                current_filter_weights = current_layer_weights[filter_ind]
+
+                print("Layer_num:{} shape:{} =>Filter ind:{}=> shape:{}".format(
+                    layer_num, current_layer_weights.shape, filter_ind, current_filter_weights.shape))
+
+                f_outs = generate_per_batch_filter_outs(
+                    current_filter_weights, c_inputs)
+
+                for fil_ind in range(len(f_outs)):
+                    each_filter_outs = f_outs[fil_ind]
+                    batch_save_folder = save_folder + \
+                        "/BTCH_IND_" + str(fil_ind)
+                    current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + \
+                        str(layer_num)+"/FILT_IND_"+str(filter_ind) + "/"
+
+                    if not os.path.exists(current_save_folder):
+                        os.makedirs(current_save_folder)
+
+                    current_original_save_path = batch_save_folder+"/original_img.jpg"
+                    orig_image = c_inputs[fil_ind]
+                    orig_image = orig_image[None, :]
+                    std_orig_image = recreate_image(
+                        orig_image, unnormalize=False)
+
+                    save_image(std_orig_image, current_original_save_path)
+
+                    for each_fil_channel_indx in range(len(each_filter_outs)):
+                        each_fil_channel = each_filter_outs[each_fil_channel_indx]
+                        each_fil_channel = each_fil_channel[None, :]
+                        current_filt_channel_save_path = current_save_folder + \
+                            "filter_out_channel_" + \
+                            str(each_fil_channel_indx)+".jpg"
+
+                        std_filter_out_image = recreate_image(
+                            each_fil_channel, unnormalize=False)
+                        save_image(std_filter_out_image,
+                                   current_filt_channel_save_path)
+
+                        diff_fil_channel = each_fil_channel - orig_image
+                        current_diff_save_path = current_save_folder + \
+                            "filter_diff_" + \
+                            str(each_fil_channel_indx)+".jpg"
+
+                        std_diff_fil_channel = recreate_image(
+                            diff_fil_channel, unnormalize=False)
+                        save_image(std_diff_fil_channel,
+                                   current_diff_save_path)
+
+        overall_indx_count += c_inputs.size()[0]
+        if(not(num_batches_to_visualize is None) and batch_idx == num_batches_to_visualize - 1):
+            break
+
+
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
 
-    # IND , DIFF
-    scheme_type = 'DIFF'
+    torch_seed = 2022
 
-    if(scheme_type == 'IND'):
-        list_of_model_paths = []
-        models_base_path = None
-        # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.93/"
-        list_of_model_paths = [
-            "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_n16_small_dir.pt"]
-        # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
-        # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
+    # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER
+    scheme_type = "IMAGE_OUTPUTS_PER_FILTER"
 
-        num_iterations = 1
-        start_index = 1
-        for current_it_start in range(start_index, num_iterations + 1):
-            run_generate_raw_weight_analysis(
-                models_base_path, current_it_start, list_of_model_paths=list_of_model_paths)
-    elif(scheme_type == 'DIFF'):
-        model1_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_n16_small_dir.pt"
-        model2_path = "root/model/save/mnist/adversarial_training/MT_conv4_deep_gated_net_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    if(scheme_type == "RAW_FILTERS_GEN"):
+        # IND , DIFF , START
+        sub_scheme_type = 'START'
 
-        run_generate_diff_raw_weight_analysis(model1_path, model2_path)
+        if(sub_scheme_type == 'IND'):
+            list_of_model_paths = []
+            models_base_path = None
+            # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.93/"
+            list_of_model_paths = [
+                "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_n16_small_dir.pt"]
+            # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+            # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
+
+            num_iterations = 1
+            start_index = 1
+            for current_it_start in range(start_index, num_iterations + 1):
+                run_generate_raw_weight_analysis(
+                    models_base_path, current_it_start, list_of_model_paths=list_of_model_paths)
+        elif(sub_scheme_type == 'DIFF'):
+            model1_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_n16_small_dir.pt"
+            model2_path = "root/model/save/mnist/adversarial_training/MT_conv4_deep_gated_net_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+
+            run_generate_diff_raw_weight_analysis(model1_path, model2_path)
+        elif(sub_scheme_type == 'START'):
+            models_base_path = None
+            list_of_model_paths = []
+            num_iterations = 1
+            start_index = 1
+            for current_it_start in range(start_index, num_iterations + 1):
+                run_generate_raw_weight_analysis(
+                    models_base_path, current_it_start, list_of_model_paths=list_of_model_paths)
+    elif(scheme_type == "IMAGE_OUTPUTS_PER_FILTER"):
+        # IND , DIFF , START
+        sub_scheme_type = 'IND'
+
+        filter_vis_dataset = "mnist"
+        num_batches_to_visualize = 1
+        batch_size = 32
+
+        coll_seed_gen = torch.Generator()
+        coll_seed_gen.manual_seed(torch_seed)
+
+        model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_n16_small_dir.pt"
+        model = get_model_from_path(dataset, model_arch_type, model_path)
+
+        save_prefix = get_prefix_for_save(model_path, model_arch_type)
+
+        if(sub_scheme_type == "IND"):
+
+            list_of_weights, list_of_bias = run_raw_weight_analysis_on_config(model, root_save_prefix=save_prefix, final_postfix_for_save="",
+                                                                              is_save_graph_visualizations=False)
+
+        if(filter_vis_dataset == "mnist"):
+            inp_channel = 1
+            print("Training over MNIST")
+            classes = [str(i) for i in range(0, 10)]
+            num_classes = len(classes)
+
+            mnist_config = DatasetConfig(
+                'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+
+            trainloader, _, testloader = preprocess_dataset_get_data_loader(
+                mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+
+        train_dataset = generate_dataset_from_loader(trainloader)
+        test_dataset = generate_dataset_from_loader(testloader)
+
+        trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
+                                                  shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+        testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
+                                                 shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+
+        for is_template_image_on_train in [True, False]:
+            if(is_template_image_on_train):
+                final_postfix_for_save = 'TRAIN'
+            else:
+                final_postfix_for_save = "TEST"
+            class_indx_to_visualize = [i for i in range(len(classes))]
+
+            if(len(class_indx_to_visualize) != 0):
+                input_data_list_per_class = segregate_classes(
+                    model, trainloader, testloader, num_classes, is_template_image_on_train, is_class_segregation_on_ground_truth=True)
+
+            for c_indx in class_indx_to_visualize:
+                class_label = classes[c_indx]
+                print(
+                    "************************************************************ Class:", class_label)
+                per_class_dataset = PerClassDataset(
+                    input_data_list_per_class[c_indx], c_indx)
+                generate_filter_outputs_per_image(filter_vis_dataset, class_label, c_indx,
+                                                  per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
+                                                  final_postfix_for_save=final_postfix_for_save)
 
     print("Finished execution!!!")
