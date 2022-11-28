@@ -12,6 +12,7 @@ from tqdm import tqdm
 from PIL import Image
 import torchvision.transforms as T
 import cv2
+from configs.dlgn_conv_config import HardRelu
 
 
 def convert_list_tensor_to_numpy(list_of_tensors):
@@ -260,6 +261,117 @@ def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
                       current_final_postfix_for_save)
 
 
+def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label, c_indx,
+                                          per_class_dataset, save_prefix, num_batches_to_visualize, final_postfix_for_save):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
+        str(final_postfix_for_save)+"/SEQ_FILTER_OUTS/C_"+str(class_label)+"/"
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
+    per_class_data_loader = torch.utils.data.DataLoader(
+        per_class_dataset, batch_size=batch_size, shuffle=False)
+
+    per_class_data_loader = tqdm(
+        per_class_data_loader, desc='Outing seq filter outputs for class:'+str(class_label))
+    overall_indx_count = 0
+    num_b = 0
+    model = model.to(device)
+    model.train(False)
+
+    for batch_idx, per_class_per_batch_data in enumerate(per_class_data_loader):
+        num_b += 1
+        c_inputs, _ = per_class_per_batch_data
+        c_inputs = c_inputs.to(device)
+
+        model(c_inputs)
+
+        if(isinstance(model, torch.nn.DataParallel)):
+            conv_outs = model.module.linear_conv_outputs
+        else:
+            conv_outs = model.linear_conv_outputs
+
+        hard_relu_active_percentage = np.zeros(len(conv_outs))
+
+        with torch.no_grad():
+            for layer_num in range(len(conv_outs)):
+                current_layer_conv_output = conv_outs[layer_num]
+                current_layer_Hrelu_output = HardRelu()(current_layer_conv_output)
+                for each_batch_indx in range(len(current_layer_conv_output)):
+                    current_batch_conv_output = current_layer_conv_output[each_batch_indx]
+                    current_batch_HRelu_output = current_layer_Hrelu_output[each_batch_indx]
+
+                    total_pixel_points = torch.numel(
+                        current_batch_HRelu_output)
+                    current_active_pixel = torch.count_nonzero(
+                        (current_batch_HRelu_output))
+                    hard_relu_active_percentage[layer_num] += (
+                        current_active_pixel/total_pixel_points)
+
+                    for channel_ind in range(len(current_batch_conv_output)):
+                        current_channel_conv_output = current_batch_conv_output[channel_ind]
+                        current_channel_HRelu_output = current_batch_HRelu_output[channel_ind]
+
+                        batch_save_folder = save_folder + \
+                            "/BTCH_IND_" + str(each_batch_indx)
+                        current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + \
+                            str(layer_num)+"/"
+
+                        if not os.path.exists(current_save_folder):
+                            os.makedirs(current_save_folder)
+
+                        current_channel_conv_output = current_channel_conv_output[None, :]
+                        current_channel_HRelu_output = current_channel_HRelu_output[None, :]
+                        current_filt_channel_save_path = current_save_folder + \
+                            "filter_out_channel_" + \
+                            str(channel_ind)+".jpg"
+                        current_filt_HRelu_channel_save_path = current_save_folder + \
+                            "HRelu_filter_out_channel_" + \
+                            str(channel_ind)+".jpg"
+                        std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
+                        raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
+
+                        std_filter_out_image = recreate_image(
+                            current_channel_conv_output, unnormalize=False)
+                        save_image(std_filter_out_image,
+                                   current_filt_channel_save_path)
+
+                        std_HRelu_filter_out_image = recreate_image(
+                            current_channel_HRelu_output, unnormalize=False)
+                        save_image(std_HRelu_filter_out_image,
+                                   current_filt_HRelu_channel_save_path)
+
+                        # with open(std_txt_save_folder, "w") as f:
+                        #     f.write("\n".join(
+                        #         ",".join(map(str, x)) for x in std_filter_out_image))
+                        # with open(raw_txt_save_folder, "w") as f:
+                        #     f.write("\n".join(
+                        #         ",".join(map(str, x)) for x in current_channel_conv_output))
+
+                        orig_image = c_inputs[each_batch_indx]
+                        orig_image = orig_image[None, :]
+
+                        diff_fil_channel = current_channel_conv_output - orig_image
+                        current_diff_save_path = current_save_folder + \
+                            "filter_diff_" + \
+                            str(channel_ind)+".jpg"
+
+                        std_diff_fil_channel = recreate_image(
+                            diff_fil_channel, unnormalize=False)
+                        save_image(std_diff_fil_channel,
+                                   current_diff_save_path)
+
+            hard_relu_active_percentage = hard_relu_active_percentage / \
+                c_inputs.size()[0]
+        overall_indx_count += c_inputs.size()[0]
+        if(not(num_batches_to_visualize is None) and batch_idx == num_batches_to_visualize - 1):
+            break
+    hard_relu_active_percentage = hard_relu_active_percentage / \
+        num_b
+
+    print("Average hard_relu_active_percentage:", hard_relu_active_percentage)
+
+
 def generate_per_batch_filter_outs(inp_channel, filter_weights, batch_inputs):
     # print("filter_weights before size", filter_weights.shape)
     filter_weights = np.expand_dims(filter_weights, axis=1)
@@ -339,12 +451,12 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                         save_image(std_filter_out_image,
                                    current_filt_channel_save_path)
 
-                        with open(std_txt_save_folder, "w") as f:
-                            f.write("\n".join(
-                                ",".join(map(str, x)) for x in std_filter_out_image))
-                        with open(raw_txt_save_folder, "w") as f:
-                            f.write("\n".join(
-                                ",".join(map(str, x)) for x in each_fil_channel))
+                        # with open(std_txt_save_folder, "w") as f:
+                        #     f.write("\n".join(
+                        #         ",".join(map(str, x)) for x in std_filter_out_image))
+                        # with open(raw_txt_save_folder, "w") as f:
+                        #     f.write("\n".join(
+                        #         ",".join(map(str, x)) for x in each_fil_channel))
 
                         diff_fil_channel = each_fil_channel - orig_image
                         current_diff_save_path = current_save_folder + \
@@ -406,8 +518,78 @@ if __name__ == '__main__':
 
     torch_seed = 2022
 
-    # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER
-    scheme_type = "IMAGE_OUTPUTS_PER_FILTER"
+    # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER
+    scheme_type = "IMAGE_SEQ_OUTPUTS_PER_FILTER"
+
+    # std_image_preprocessing , mnist
+    # filter_vis_dataset = "std_image_preprocessing"
+    filter_vis_dataset = "mnist"
+
+    batch_size = 16
+
+    coll_seed_gen = torch.Generator()
+    coll_seed_gen.manual_seed(torch_seed)
+
+    model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.1/batch_size_128/eps_stp_size_0.1/adv_steps_80/adv_model_dir.pt"
+    model = get_model_from_path(dataset, model_arch_type, model_path)
+
+    save_prefix = get_prefix_for_save(model_path, model_arch_type)
+
+    print("Training over " + str(filter_vis_dataset))
+    if(filter_vis_dataset == "mnist"):
+        inp_channel = 1
+        classes = [str(i) for i in range(0, 10)]
+        num_classes = len(classes)
+
+        mnist_config = DatasetConfig(
+            'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+
+        trainloader, _, testloader = preprocess_dataset_get_data_loader(
+            mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+    elif(filter_vis_dataset == "cifar10"):
+        inp_channel = 3
+        classes = ('plane', 'car', 'bird', 'cat',
+                   'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+        num_classes = len(classes)
+
+        cifar10_config = DatasetConfig(
+            'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size)
+
+        trainloader, _, testloader = preprocess_dataset_get_data_loader(
+            cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+    else:
+        if(filter_vis_dataset == "std_image_preprocessing"):
+            inp_channel = 1
+            reduce_dim_to_single = True
+            transform = T.Compose([
+                T.ToPILImage(),
+                T.Resize([512, 512]),
+                T.ToTensor()])
+            train_ds_path = 'root/Datasets/std_image_preprocessing/train'
+            test_ds_path = 'root/Datasets/std_image_preprocessing/test'
+
+        train_dataset, classes = generate_dataset_from_images_folder(
+            train_ds_path, reduce_dim_to_single, transform)
+        test_dataset, classes = generate_dataset_from_images_folder(
+            test_ds_path, reduce_dim_to_single, transform)
+
+        print("train_dataset len", len(train_dataset))
+        print("test_dataset len", len(test_dataset))
+        print("classes", classes)
+
+        num_classes = len(classes)
+        trainloader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=batch_size, shuffle=False)
+        testloader = torch.utils.data.DataLoader(
+            test_dataset, batch_size=batch_size, shuffle=False)
+
+    train_dataset = generate_dataset_from_loader(trainloader)
+    test_dataset = generate_dataset_from_loader(testloader)
+
+    trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
+                                              shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+    testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
+                                             shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
     if(scheme_type == "RAW_FILTERS_GEN"):
         # IND , DIFF , START
@@ -444,81 +626,12 @@ if __name__ == '__main__':
         # IND , DIFF , START
         sub_scheme_type = 'IND'
 
-        # std_image_preprocessing , mnist
-        # filter_vis_dataset = "std_image_preprocessing"
-        filter_vis_dataset = "mnist"
         num_batches_to_visualize = 1
-        batch_size = 32
-
-        coll_seed_gen = torch.Generator()
-        coll_seed_gen.manual_seed(torch_seed)
-
-        model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
-        model = get_model_from_path(dataset, model_arch_type, model_path)
-
-        save_prefix = get_prefix_for_save(model_path, model_arch_type)
 
         if(sub_scheme_type == "IND"):
 
             list_of_weights, list_of_bias = run_raw_weight_analysis_on_config(model, root_save_prefix=save_prefix, final_postfix_for_save="",
                                                                               is_save_graph_visualizations=True)
-
-        print("Training over " + str(filter_vis_dataset))
-        if(filter_vis_dataset == "mnist"):
-            inp_channel = 1
-            classes = [str(i) for i in range(0, 10)]
-            num_classes = len(classes)
-
-            mnist_config = DatasetConfig(
-                'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
-
-            trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
-        elif(filter_vis_dataset == "cifar10"):
-            inp_channel = 3
-            print("Training over CIFAR 10")
-            classes = ('plane', 'car', 'bird', 'cat',
-                       'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-            num_classes = len(classes)
-
-            cifar10_config = DatasetConfig(
-                'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size)
-
-            trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
-        else:
-            if(filter_vis_dataset == "std_image_preprocessing"):
-                inp_channel = 1
-                reduce_dim_to_single = True
-                transform = T.Compose([
-                    T.ToPILImage(),
-                    T.Resize([512, 512]),
-                    T.ToTensor()])
-                train_ds_path = 'root/Datasets/std_image_preprocessing/train'
-                test_ds_path = 'root/Datasets/std_image_preprocessing/test'
-
-            train_dataset, classes = generate_dataset_from_images_folder(
-                train_ds_path, reduce_dim_to_single, transform)
-            test_dataset, classes = generate_dataset_from_images_folder(
-                test_ds_path, reduce_dim_to_single, transform)
-
-            print("train_dataset len", len(train_dataset))
-            print("test_dataset len", len(test_dataset))
-            print("classes", classes)
-
-            num_classes = len(classes)
-            trainloader = torch.utils.data.DataLoader(
-                train_dataset, batch_size=batch_size, shuffle=False)
-            testloader = torch.utils.data.DataLoader(
-                test_dataset, batch_size=batch_size, shuffle=False)
-
-        train_dataset = generate_dataset_from_loader(trainloader)
-        test_dataset = generate_dataset_from_loader(testloader)
-
-        trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                  shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
-        testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
-                                                 shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
         for is_template_image_on_train in [True, False]:
             if(is_template_image_on_train):
@@ -542,5 +655,30 @@ if __name__ == '__main__':
                 generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                                                   per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
                                                   final_postfix_for_save=final_postfix_for_save)
+    elif(scheme_type == "IMAGE_SEQ_OUTPUTS_PER_FILTER"):
+        num_batches_to_visualize = 1
+
+        for is_template_image_on_train in [True, False]:
+            if(is_template_image_on_train):
+                evalloader = trainloader
+                final_postfix_for_save = 'TRAIN'
+            else:
+                evalloader = testloader
+                final_postfix_for_save = "TEST"
+            class_indx_to_visualize = [i for i in range(len(classes))]
+
+            if(len(class_indx_to_visualize) != 0):
+                input_data_list_per_class = true_segregation(
+                    evalloader, num_classes)
+
+            for c_indx in class_indx_to_visualize:
+                class_label = classes[c_indx]
+                print(
+                    "************************************************************ Class:", class_label)
+                per_class_dataset = PerClassDataset(
+                    input_data_list_per_class[c_indx], c_indx)
+                generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label, c_indx,
+                                                      per_class_dataset, save_prefix, num_batches_to_visualize,
+                                                      final_postfix_for_save=final_postfix_for_save)
 
     print("Finished execution!!!")
