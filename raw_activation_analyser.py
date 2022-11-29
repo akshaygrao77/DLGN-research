@@ -8,7 +8,7 @@ import pickle
 
 
 from utils.visualise_utils import save_image, recreate_image, generate_list_of_plain_images_from_data, generate_list_of_images_from_data, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_image_from_data
-from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader, seed_worker
 from structure.generic_structure import CustomSimpleDataset
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
 from structure.generic_structure import PerClassDataset
@@ -26,12 +26,6 @@ def unroll_print_torch_3D_array(torch_arr):
                 print(torch_arr[i][j][k].item(), end=" ")
             print("")
         print("---------------------")
-
-
-def seed_worker(worker_id):
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_id + worker_seed)
-    random.seed(worker_id - worker_seed)
 
 
 def get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_act_collection_on_train,
@@ -384,11 +378,23 @@ def run_raw_activation_analysis_on_config(dataset, model_arch_type, is_template_
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
 
+    coll_seed_gen = torch.Generator()
+    coll_seed_gen.manual_seed(torch_seed)
+
     if(custom_data_loader is None):
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
     else:
         trainloader, testloader = custom_data_loader
+
+    if(trainloader is not None):
+        train_dataset = generate_dataset_from_loader(trainloader)
+        trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=ret_config.batch_size,
+                                                  shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+    if(testloader is not None):
+        test_dataset = generate_dataset_from_loader(testloader)
+        testloader = torch.utils.data.DataLoader(test_dataset, batch_size=ret_config.batch_size,
+                                                 shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
     print("Preprocessing and dataloader process completed of type:{} for dataset:{}".format(
         model_arch_type, dataset))
@@ -617,7 +623,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
@@ -642,8 +648,8 @@ if __name__ == '__main__':
     scheme_type = "GENERATE_MERGE_AND_SAVE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
-    # OVER_ORIGINAL_VS_ADVERSARIAL
-    merge_scheme_type = "OVER_ORIGINAL_VS_ADVERSARIAL"
+    # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
+    merge_scheme_type = "TWO_CUSTOM_MODELS"
 
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
@@ -722,7 +728,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/fast_adv_attack_type_FGSM/adv_type_PGD/EPS_0.05/batch_size_128/eps_stp_size_0.01/adv_steps_80/adv_model_dir.pt"
+            direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -748,6 +754,37 @@ if __name__ == '__main__':
                     for ind in range(len(list_of_list_of_act_analyser_adv)):
                         list_of_act_analyser1 = list_of_list_of_act_analyser_adv[ind]
                         list_of_act_analyser2 = list_of_list_of_act_analyser_orig[ind]
+
+                        if(merge_type == "DIFF"):
+                            is_save_graph_visualizations = True
+                            list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
+                                                                                          list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
+            elif(merge_scheme_type == "TWO_CUSTOM_MODELS"):
+                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                direct_model_path2 = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+                num_iterations = 1
+                it_start = 1
+                for current_it_start in range(it_start, num_iterations + 1):
+                    # sub_scheme_type = 'OVER_ORIGINAL'
+                    sub_scheme_type = 'OVER_ADVERSARIAL'
+                    is_save_graph_visualizations = False
+
+                    is_save_adv = True
+                    eps = 0.06
+                    adv_attack_type = 'PGD'
+                    number_of_adversarial_optimization_steps = 161
+                    eps_step_size = 0.01
+                    adv_target = None
+
+                    list_of_list_of_act_analyser_m1 = run_generate_scheme(
+                        models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=direct_model_path1)
+
+                    list_of_list_of_act_analyser_m2 = run_generate_scheme(
+                        models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=direct_model_path2)
+
+                    for ind in range(len(list_of_list_of_act_analyser_m2)):
+                        list_of_act_analyser1 = list_of_list_of_act_analyser_m2[ind]
+                        list_of_act_analyser2 = list_of_list_of_act_analyser_m1[ind]
 
                         if(merge_type == "DIFF"):
                             is_save_graph_visualizations = True
