@@ -77,7 +77,7 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
             if not os.path.exists(each_filter_txt_save_folder):
                 os.makedirs(each_filter_txt_save_folder)
             with open(each_filter_txt_save_folder + "/raw_filter_weights.txt", "w") as f:
-                f.write("\n".join(",".join(map(str, x))
+                f.write("\n==============================================\n".join("\n".join(map(str, x))
                         for x in current_filter_weights))
 
         print("Param {} size:{}".format(
@@ -193,9 +193,8 @@ def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None
             dataset, model_arch_type, torch_seed)
 
         if(each_model_path is not None):
-            custom_temp_model = torch.load(
-                each_model_path, map_location=device)
-            custom_model.load_state_dict(custom_temp_model.state_dict())
+            custom_model = get_model_from_path(
+                dataset, model_arch_type, each_model_path)
 
         print(" #*#*#*#*#*#*#*# Generating weights analysis for model path:{} with save prefix :{} and postfix:{}".format(
             each_model_path, each_save_prefix, each_save_postfix))
@@ -514,12 +513,12 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
 
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER
-    scheme_type = "IMAGE_SEQ_OUTPUTS_PER_FILTER"
+    scheme_type = "RAW_FILTERS_GEN"
 
     # std_image_preprocessing , mnist
     # filter_vis_dataset = "std_image_preprocessing"
@@ -530,10 +529,11 @@ if __name__ == '__main__':
     coll_seed_gen = torch.Generator()
     coll_seed_gen.manual_seed(torch_seed)
 
-    model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.1/batch_size_128/eps_stp_size_0.1/adv_steps_80/adv_model_dir.pt"
-    model = get_model_from_path(dataset, model_arch_type, model_path)
+    if(scheme_type != "RAW_FILTERS_GEN"):
+        model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.1/batch_size_128/eps_stp_size_0.1/adv_steps_80/adv_model_dir.pt"
+        model = get_model_from_path(dataset, model_arch_type, model_path)
 
-    save_prefix = get_prefix_for_save(model_path, model_arch_type)
+        save_prefix = get_prefix_for_save(model_path, model_arch_type)
 
     print("Training over " + str(filter_vis_dataset))
     if(filter_vis_dataset == "mnist"):
@@ -593,14 +593,14 @@ if __name__ == '__main__':
 
     if(scheme_type == "RAW_FILTERS_GEN"):
         # IND , DIFF , START
-        sub_scheme_type = 'START'
+        sub_scheme_type = 'IND'
 
         if(sub_scheme_type == 'IND'):
             list_of_model_paths = []
             models_base_path = None
             # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.93/"
             list_of_model_paths = [
-                "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_n16_small_dir.pt"]
+                "root/model/save/mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_n16_small_dir.pt"]
             # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
             # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
 
