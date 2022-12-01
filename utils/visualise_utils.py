@@ -104,7 +104,7 @@ def save_images_from_dataloader(dataloader, classes, postfix_folder_for_save='/'
             save_image(ac_images, save_im_path)
 
 
-def recreate_image(im_as_var, unnormalize=True):
+def recreate_image(im_as_var, unnormalize=True, is_standarize_to_01=True):
     """
         Recreates images from a torch variable, sort of reverse preprocessing
     Args:
@@ -114,11 +114,14 @@ def recreate_image(im_as_var, unnormalize=True):
     """
     reverse_mean = [0.4914, 0.4822, 0.4465]
     reverse_std = [1/0.2023, 1/0.1994, 1/0.2010]
-
-    recreated_im = copy.copy(im_as_var.cpu().clone().detach().numpy()[0])
-    arr_max = np.amax(recreated_im)
-    arr_min = np.amin(recreated_im)
-    recreated_im = (recreated_im-arr_min)/(arr_max-arr_min)
+    if(isinstance(im_as_var, torch.Tensor)):
+        recreated_im = copy.copy(im_as_var.cpu().clone().detach().numpy()[0])
+    else:
+        recreated_im = im_as_var[0]
+    if(is_standarize_to_01):
+        arr_max = np.amax(recreated_im)
+        arr_min = np.amin(recreated_im)
+        recreated_im = (recreated_im-arr_min)/(arr_max-arr_min)
 
     if(unnormalize):
         for c in range(3):
@@ -236,7 +239,7 @@ def gallery(array, nrows, ncols):
         return result
 
 
-def recreate_np_image(recreated_im, unnormalize=False):
+def recreate_np_image(recreated_im, unnormalize=False, is_standarize_01=True):
     """
         Recreates images from a torch variable, sort of reverse preprocessing
     Args:
@@ -246,10 +249,10 @@ def recreate_np_image(recreated_im, unnormalize=False):
     """
     reverse_mean = [0.4914, 0.4822, 0.4465]
     reverse_std = [1/0.2023, 1/0.1994, 1/0.2010]
-
-    arr_max = np.amax(recreated_im)
-    arr_min = np.amin(recreated_im)
-    recreated_im = (recreated_im-arr_min)/(arr_max-arr_min)
+    if(is_standarize_01):
+        arr_max = np.amax(recreated_im)
+        arr_min = np.amin(recreated_im)
+        recreated_im = (recreated_im-arr_min)/(arr_max-arr_min)
 
     if(unnormalize):
         for c in range(3):
@@ -280,6 +283,8 @@ def generate_plain_3DImage(image_data, save_path, is_standarize=True):
 
 
 def generate_plain_image_data(image_data):
+    if(isinstance(image_data, torch.Tensor)):
+        image_data = copy.copy(image_data.cpu().clone().detach().numpy())
     if(len(image_data.shape) == 3):
         row, col = determine_row_col_from_features(image_data.shape[0])
     elif(len(image_data.shape) == 4):
@@ -291,13 +296,14 @@ def generate_plain_image_data(image_data):
     return reshaped_data
 
 
-def generate_plain_image(image_data, save_path, is_standarize=True):
+def generate_plain_image(image_data, save_path, is_standarize=True, is_standarize_01=True):
     # print("image_data", image_data.shape)
     # print("image_data len", len(image_data.shape))
 
     reshaped_data = generate_plain_image_data(image_data)
 
-    reshaped_data = recreate_np_image(reshaped_data, is_standarize)
+    reshaped_data = recreate_np_image(
+        reshaped_data, is_standarize, is_standarize_01)
     save_image(reshaped_data, save_path)
 
 
@@ -314,14 +320,15 @@ def generate_list_of_plain_images_from_data(full_heatmap_data, start=None, end=N
         os.makedirs(sfolder)
 
     for i in range(num_frames):
-        if(i % 50 == 0):
-            print("Writing image:", i)
-        if(save_each_img_path is not None):
-            temp_each_img_path = save_each_img_path.replace(
-                "*", str(start+i))
-            feature_maps = full_heatmap_data[i]
-            generate_plain_image(
-                feature_maps, temp_each_img_path, is_standarize=is_standarize)
+        if(i % 2 == 0):
+            if(i % 50 == 0):
+                print("Writing image:", i)
+            if(save_each_img_path is not None):
+                temp_each_img_path = save_each_img_path.replace(
+                    "*", str(start+i))
+                feature_maps = full_heatmap_data[i]
+                generate_plain_image(
+                    feature_maps, temp_each_img_path, is_standarize=is_standarize)
 
 
 def generate_list_of_images_from_data(full_heatmap_data, start, end, title, save_each_img_path=None, cmap='binary'):
