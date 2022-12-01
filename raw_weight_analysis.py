@@ -269,6 +269,10 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
 
+    grid_save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
+        str(final_postfix_for_save) + \
+        "/GRID_SEQ_FILTER_OUTS/C_"+str(class_label)+"/"
+
     per_class_data_loader = torch.utils.data.DataLoader(
         per_class_dataset, batch_size=batch_size, shuffle=False)
 
@@ -308,6 +312,7 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                     hard_relu_active_percentage[layer_num] += (
                         current_active_pixel/total_pixel_points)
 
+                    current_channel_conv_norm_outs = None
                     for channel_ind in range(len(current_batch_conv_output)):
                         current_channel_conv_output = current_batch_conv_output[channel_ind]
                         current_channel_HRelu_output = current_batch_HRelu_output[channel_ind]
@@ -331,8 +336,17 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                         std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
                         raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
 
+                        std01_conv_out_image = normalize_in_range_01(
+                            current_channel_conv_output)
+                        if(current_channel_conv_norm_outs is None):
+                            current_channel_conv_norm_outs = torch.from_numpy(
+                                std01_conv_out_image)
+                        else:
+                            current_channel_conv_norm_outs = torch.vstack(
+                                (current_channel_conv_norm_outs, torch.from_numpy(std01_conv_out_image)))
+
                         std_filter_out_image = recreate_image(
-                            current_channel_conv_output, unnormalize=False)
+                            std01_conv_out_image, unnormalize=False, is_standarize_to_01=False)
                         save_image(std_filter_out_image,
                                    current_filt_channel_save_path)
 
@@ -361,6 +375,31 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                         save_image(std_diff_fil_channel,
                                    current_diff_save_path)
 
+                    gr_batch_save_folder = grid_save_folder + \
+                        "/BTCH_IND_" + str(each_batch_indx)
+                    gr_current_save_folder = str(gr_batch_save_folder) + "/LAY_NUM_" + \
+                        str(layer_num)
+                    if not os.path.exists(gr_current_save_folder):
+                        os.makedirs(gr_current_save_folder)
+
+                    gr_current_b_fout_save_path = gr_current_save_folder + \
+                        "/sq_lay_lev_ind_std_gridded_filter_output.jpg"
+
+                    current_channel_conv_norm_outs = torch.squeeze(
+                        current_channel_conv_norm_outs)
+                    # print("current_channel_conv_norm_outs size:",
+                    #       current_channel_conv_norm_outs.size())
+                    # print("current_batch_conv_output size:",
+                    #       current_batch_conv_output.size())
+                    generate_plain_image(
+                        current_channel_conv_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+                    gr_current_b_fout_save_path = gr_current_save_folder + \
+                        "/sq_layer_level_std_gridded_filter_output.jpg"
+                    generate_plain_image(
+                        current_batch_conv_output, gr_current_b_fout_save_path, is_standarize=False)
+                    # print("gr_current_b_fout_save_path",
+                    #       gr_current_b_fout_save_path)
             hard_relu_active_percentage = hard_relu_active_percentage / \
                 c_inputs.size()[0]
         overall_indx_count += c_inputs.size()[0]
@@ -601,7 +640,7 @@ if __name__ == '__main__':
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER
-    scheme_type = "IMAGE_OUTPUTS_PER_FILTER"
+    scheme_type = "IMAGE_SEQ_OUTPUTS_PER_FILTER"
 
     # std_image_preprocessing , mnist
     filter_vis_dataset = "std_image_preprocessing"
@@ -613,7 +652,7 @@ if __name__ == '__main__':
     coll_seed_gen.manual_seed(torch_seed)
 
     if(scheme_type != "RAW_FILTERS_GEN"):
-        model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+        model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
         model = get_model_from_path(dataset, model_arch_type, model_path)
 
         save_prefix = get_prefix_for_save(model_path, model_arch_type)
