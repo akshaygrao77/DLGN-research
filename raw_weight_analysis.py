@@ -263,11 +263,15 @@ def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
 
 def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label, c_indx,
                                           per_class_dataset, save_prefix, num_batches_to_visualize, final_postfix_for_save):
+    is_vis_ind_conv_filter_out = False
+    is_vis_ind_hard_relu_filter_out = False
+    is_print_ind_raw_filter_out = False
+    is_print_ind_std_filter_out = False
+    is_vis_ind_conv_out_orig_diff = False
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
         str(final_postfix_for_save)+"/SEQ_FILTER_OUTS/C_"+str(class_label)+"/"
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
 
     grid_save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
         str(final_postfix_for_save) + \
@@ -315,26 +319,13 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                     current_channel_conv_norm_outs = None
                     for channel_ind in range(len(current_batch_conv_output)):
                         current_channel_conv_output = current_batch_conv_output[channel_ind]
-                        current_channel_HRelu_output = current_batch_HRelu_output[channel_ind]
 
                         batch_save_folder = save_folder + \
                             "/BTCH_IND_" + str(each_batch_indx)
                         current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + \
                             str(layer_num)+"/"
 
-                        if not os.path.exists(current_save_folder):
-                            os.makedirs(current_save_folder)
-
                         current_channel_conv_output = current_channel_conv_output[None, :]
-                        current_channel_HRelu_output = current_channel_HRelu_output[None, :]
-                        current_filt_channel_save_path = current_save_folder + \
-                            "filter_out_channel_" + \
-                            str(channel_ind)+".jpg"
-                        current_filt_HRelu_channel_save_path = current_save_folder + \
-                            "HRelu_filter_out_channel_" + \
-                            str(channel_ind)+".jpg"
-                        std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
-                        raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
 
                         std01_conv_out_image = normalize_in_range_01(
                             current_channel_conv_output)
@@ -344,36 +335,64 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                         else:
                             current_channel_conv_norm_outs = torch.vstack(
                                 (current_channel_conv_norm_outs, torch.from_numpy(std01_conv_out_image)))
+                        std_filter_out_image = None
+                        if(is_vis_ind_conv_filter_out):
+                            if not os.path.exists(current_save_folder):
+                                os.makedirs(current_save_folder)
+                            current_filt_channel_save_path = current_save_folder + \
+                                "filter_out_channel_" + \
+                                str(channel_ind)+".jpg"
+                            std_filter_out_image = recreate_image(
+                                std01_conv_out_image, unnormalize=False, is_standarize_to_01=False)
+                            save_image(std_filter_out_image,
+                                       current_filt_channel_save_path)
 
-                        std_filter_out_image = recreate_image(
-                            std01_conv_out_image, unnormalize=False, is_standarize_to_01=False)
-                        save_image(std_filter_out_image,
-                                   current_filt_channel_save_path)
+                        if(is_vis_ind_hard_relu_filter_out):
+                            if not os.path.exists(current_save_folder):
+                                os.makedirs(current_save_folder)
+                            current_channel_HRelu_output = current_batch_HRelu_output[channel_ind]
+                            current_channel_HRelu_output = current_channel_HRelu_output[None, :]
+                            current_filt_HRelu_channel_save_path = current_save_folder + \
+                                "HRelu_filter_out_channel_" + \
+                                str(channel_ind)+".jpg"
+                            std_HRelu_filter_out_image = recreate_image(
+                                current_channel_HRelu_output, unnormalize=False)
+                            save_image(std_HRelu_filter_out_image,
+                                       current_filt_HRelu_channel_save_path)
 
-                        std_HRelu_filter_out_image = recreate_image(
-                            current_channel_HRelu_output, unnormalize=False)
-                        save_image(std_HRelu_filter_out_image,
-                                   current_filt_HRelu_channel_save_path)
+                        if(is_print_ind_raw_filter_out):
+                            if not os.path.exists(current_save_folder):
+                                os.makedirs(current_save_folder)
+                            raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
+                            with open(raw_txt_save_folder, "w") as f:
+                                f.write("\n".join(
+                                    ",".join(map(str, x)) for x in current_channel_conv_output))
+                        if(is_print_ind_std_filter_out):
+                            if not os.path.exists(current_save_folder):
+                                os.makedirs(current_save_folder)
+                            if(std_filter_out_image is None):
+                                std_filter_out_image = recreate_image(
+                                    std01_conv_out_image, unnormalize=False, is_standarize_to_01=False)
+                            std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
+                            with open(std_txt_save_folder, "w") as f:
+                                f.write("\n".join(
+                                    ",".join(map(str, x)) for x in std_filter_out_image))
 
-                        # with open(std_txt_save_folder, "w") as f:
-                        #     f.write("\n".join(
-                        #         ",".join(map(str, x)) for x in std_filter_out_image))
-                        # with open(raw_txt_save_folder, "w") as f:
-                        #     f.write("\n".join(
-                        #         ",".join(map(str, x)) for x in current_channel_conv_output))
+                        if(is_vis_ind_conv_out_orig_diff):
+                            if not os.path.exists(current_save_folder):
+                                os.makedirs(current_save_folder)
+                            orig_image = c_inputs[each_batch_indx]
+                            orig_image = orig_image[None, :]
 
-                        orig_image = c_inputs[each_batch_indx]
-                        orig_image = orig_image[None, :]
+                            diff_fil_channel = current_channel_conv_output - orig_image
+                            current_diff_save_path = current_save_folder + \
+                                "filter_diff_" + \
+                                str(channel_ind)+".jpg"
 
-                        diff_fil_channel = current_channel_conv_output - orig_image
-                        current_diff_save_path = current_save_folder + \
-                            "filter_diff_" + \
-                            str(channel_ind)+".jpg"
-
-                        std_diff_fil_channel = recreate_image(
-                            diff_fil_channel, unnormalize=False)
-                        save_image(std_diff_fil_channel,
-                                   current_diff_save_path)
+                            std_diff_fil_channel = recreate_image(
+                                diff_fil_channel, unnormalize=False)
+                            save_image(std_diff_fil_channel,
+                                       current_diff_save_path)
 
                     gr_batch_save_folder = grid_save_folder + \
                         "/BTCH_IND_" + str(each_batch_indx)
@@ -440,11 +459,14 @@ def normalize_in_range_01(img_data):
 
 def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                                       per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize, final_postfix_for_save):
+    is_vis_ind_original = False
+    is_vis_ind_filter_out = False
+    is_print_ind_std_filter_out = False
+    is_print_ind_raw_filter_out = False
+    is_vis_ind_filter_out_diff_orig = False
 
     save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
         str(final_postfix_for_save)+"/FILTER_OUTS/C_"+str(class_label)+"/"
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
 
     grid_save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
         str(final_postfix_for_save)+"/GRID_FILTER_OUTS/C_"+str(class_label)+"/"
@@ -486,26 +508,22 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                     current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + \
                         str(layer_num)+"/FILT_IND_"+str(filter_ind) + "/"
 
-                    if not os.path.exists(current_save_folder):
-                        os.makedirs(current_save_folder)
-
-                    current_original_save_path = batch_save_folder+"/original_img.jpg"
                     orig_image = c_inputs[fil_ind]
                     orig_image = orig_image[None, :]
-                    std_orig_image = recreate_image(
-                        orig_image, unnormalize=False)
 
-                    save_image(std_orig_image, current_original_save_path)
+                    if(is_vis_ind_original):
+                        if not os.path.exists(batch_save_folder):
+                            os.makedirs(batch_save_folder)
+                        current_original_save_path = batch_save_folder+"/original_img.jpg"
+                        std_orig_image = recreate_image(
+                            orig_image, unnormalize=False)
+
+                        save_image(std_orig_image, current_original_save_path)
 
                     current_f_channel_norm_outs = None
                     for each_fil_channel_indx in range(len(each_filter_outs)):
                         each_fil_channel = each_filter_outs[each_fil_channel_indx]
                         each_fil_channel = each_fil_channel[None, :]
-                        current_filt_channel_save_path = current_save_folder + \
-                            "filter_out_channel_" + \
-                            str(each_fil_channel_indx)+".jpg"
-                        std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
-                        raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
 
                         std01_filter_out_image = normalize_in_range_01(
                             each_fil_channel)
@@ -516,27 +534,49 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                             current_f_channel_norm_outs = torch.vstack(
                                 (current_f_channel_norm_outs, torch.from_numpy(std01_filter_out_image)))
 
-                        std_filter_out_image = recreate_image(
-                            std01_filter_out_image, unnormalize=False, is_standarize_to_01=False)
-                        save_image(std_filter_out_image,
-                                   current_filt_channel_save_path)
+                        std_filter_out_image = None
+                        if(is_vis_ind_filter_out):
+                            if not os.path.exists(current_save_folder):
+                                os.makedirs(current_save_folder)
+                            current_filt_channel_save_path = current_save_folder + \
+                                "filter_out_channel_" + \
+                                str(each_fil_channel_indx)+".jpg"
+                            std_filter_out_image = recreate_image(
+                                std01_filter_out_image, unnormalize=False, is_standarize_to_01=False)
+                            save_image(std_filter_out_image,
+                                       current_filt_channel_save_path)
 
-                        # with open(std_txt_save_folder, "w") as f:
-                        #     f.write("\n".join(
-                        #         ",".join(map(str, x)) for x in std_filter_out_image))
-                        # with open(raw_txt_save_folder, "w") as f:
-                        #     f.write("\n".join(
-                        #         ",".join(map(str, x)) for x in each_fil_channel))
+                        if(is_print_ind_std_filter_out):
+                            if not os.path.exists(current_save_folder):
+                                os.makedirs(current_save_folder)
+                            std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
+                            if(std_filter_out_image is None):
+                                std_filter_out_image = recreate_image(
+                                    std01_filter_out_image, unnormalize=False, is_standarize_to_01=False)
+                            with open(std_txt_save_folder, "w") as f:
+                                f.write("\n".join(
+                                    ",".join(map(str, x)) for x in std_filter_out_image))
 
-                        diff_fil_channel = each_fil_channel - orig_image
-                        current_diff_save_path = current_save_folder + \
-                            "filter_diff_" + \
-                            str(each_fil_channel_indx)+".jpg"
+                        if(is_print_ind_raw_filter_out):
+                            if not os.path.exists(current_save_folder):
+                                os.makedirs(current_save_folder)
+                            raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
+                            with open(raw_txt_save_folder, "w") as f:
+                                f.write("\n".join(
+                                    ",".join(map(str, x)) for x in each_fil_channel))
 
-                        std_diff_fil_channel = recreate_image(
-                            diff_fil_channel, unnormalize=False)
-                        save_image(std_diff_fil_channel,
-                                   current_diff_save_path)
+                        if(is_vis_ind_filter_out_diff_orig):
+                            if not os.path.exists(current_save_folder):
+                                os.makedirs(current_save_folder)
+                            diff_fil_channel = each_fil_channel - orig_image
+                            current_diff_save_path = current_save_folder + \
+                                "filter_diff_" + \
+                                str(each_fil_channel_indx)+".jpg"
+
+                            std_diff_fil_channel = recreate_image(
+                                diff_fil_channel, unnormalize=False)
+                            save_image(std_diff_fil_channel,
+                                       current_diff_save_path)
 
                     if(current_f_outs_norm is None):
                         current_f_outs_norm = torch.unsqueeze(
@@ -576,8 +616,8 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                 #       current_batch_layer_out.size())
                 # print("gr_current_b_fout_save_path",
                 #       gr_current_b_fout_save_path)
-                # generate_plain_image(
-                #     current_batch_layer_out, gr_current_b_fout_save_path, is_standarize=False)
+                generate_plain_image(
+                    current_batch_layer_out, gr_current_b_fout_save_path, is_standarize=False)
 
                 current_batch_layer_norm_out = current_layer_norm_outputs[each_b_indx]
                 current_batch_layer_norm_out = torch.squeeze(
@@ -640,7 +680,7 @@ if __name__ == '__main__':
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER
-    scheme_type = "IMAGE_SEQ_OUTPUTS_PER_FILTER"
+    scheme_type = "IMAGE_OUTPUTS_PER_FILTER"
 
     # std_image_preprocessing , mnist
     filter_vis_dataset = "std_image_preprocessing"
