@@ -470,6 +470,8 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
     is_print_ind_raw_filter_out = False
     is_vis_ind_filter_out_diff_orig = False
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
         str(final_postfix_for_save)+"/FILTER_OUTS/C_"+str(class_label)+"/"
 
@@ -600,6 +602,8 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                 current_layer_outputs, 0, 1)
             current_layer_norm_outputs = torch.transpose(
                 current_layer_norm_outputs, 0, 1)
+
+            current_layer_HRelu_outputs = HardRelu()(current_layer_outputs.to(device))
             # print("current_layer_outputs size:", current_layer_outputs.size())
             # print("current_layer_norm_outputs size:",
             #       current_layer_norm_outputs.size())
@@ -633,6 +637,16 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
 
                 generate_plain_image(
                     current_batch_layer_norm_out, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+                current_batch_layer_HRelu_outputs = current_layer_HRelu_outputs[each_b_indx]
+                current_batch_layer_HRelu_outputs = torch.squeeze(
+                    current_batch_layer_HRelu_outputs)
+
+                gr_current_b_fout_save_path = gr_current_save_folder + \
+                    "/lay_lev_HRelu_gridded_output.jpg"
+
+                generate_plain_image(
+                    current_batch_layer_HRelu_outputs, gr_current_b_fout_save_path, is_standarize=False)
 
         overall_indx_count += c_inputs.size()[0]
         if(not(num_batches_to_visualize is None) and batch_idx == num_batches_to_visualize - 1):
@@ -685,7 +699,7 @@ if __name__ == '__main__':
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER
-    scheme_type = "IMAGE_SEQ_OUTPUTS_PER_FILTER"
+    scheme_type = "IMAGE_OUTPUTS_PER_FILTER"
 
     # std_image_preprocessing , mnist
     filter_vis_dataset = "std_image_preprocessing"
