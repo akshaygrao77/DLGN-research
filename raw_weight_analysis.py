@@ -13,6 +13,7 @@ from PIL import Image
 import torchvision.transforms as T
 import cv2
 from configs.dlgn_conv_config import HardRelu
+import copy
 
 
 def convert_list_tensor_to_numpy(list_of_tensors):
@@ -389,6 +390,15 @@ def generate_per_batch_filter_outs(inp_channel, filter_weights, batch_inputs):
     return filter_out
 
 
+def normalize_in_range_01(img_data):
+    if(isinstance(img_data, torch.Tensor)):
+        img_data = copy.copy(img_data.cpu().clone().detach().numpy())
+    arr_max = np.amax(img_data)
+    arr_min = np.amin(img_data)
+    norm_im = (img_data-arr_min)/(arr_max-arr_min)
+    return norm_im
+
+
 def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                                       per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize, final_postfix_for_save):
 
@@ -396,6 +406,9 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
         str(final_postfix_for_save)+"/FILTER_OUTS/C_"+str(class_label)+"/"
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
+
+    grid_save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
+        str(final_postfix_for_save)+"/GRID_FILTER_OUTS/C_"+str(class_label)+"/"
 
     per_class_data_loader = torch.utils.data.DataLoader(
         per_class_dataset, batch_size=batch_size, shuffle=False)
@@ -409,6 +422,8 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
         for layer_num in range(len(list_of_weights)):
             current_layer_weights = list_of_weights[layer_num]
 
+            current_layer_outputs = None
+            current_layer_norm_outputs = None
             for filter_ind in range(len(current_layer_weights)):
                 current_filter_weights = current_layer_weights[filter_ind]
 
@@ -418,6 +433,13 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                 f_outs = generate_per_batch_filter_outs(
                     inp_channel, current_filter_weights, c_inputs)
 
+                if(current_layer_outputs is None):
+                    current_layer_outputs = torch.unsqueeze(f_outs, 0)
+                else:
+                    current_layer_outputs = torch.vstack(
+                        (current_layer_outputs, torch.unsqueeze(f_outs, 0)))
+
+                current_f_outs_norm = None
                 for fil_ind in range(len(f_outs)):
                     each_filter_outs = f_outs[fil_ind]
                     batch_save_folder = save_folder + \
@@ -436,6 +458,7 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
 
                     save_image(std_orig_image, current_original_save_path)
 
+                    current_f_channel_norm_outs = None
                     for each_fil_channel_indx in range(len(each_filter_outs)):
                         each_fil_channel = each_filter_outs[each_fil_channel_indx]
                         each_fil_channel = each_fil_channel[None, :]
@@ -445,8 +468,17 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                         std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
                         raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
 
+                        std01_filter_out_image = normalize_in_range_01(
+                            each_fil_channel)
+                        if(current_f_channel_norm_outs is None):
+                            current_f_channel_norm_outs = torch.from_numpy(
+                                std01_filter_out_image)
+                        else:
+                            current_f_channel_norm_outs = torch.vstack(
+                                (current_f_channel_norm_outs, torch.from_numpy(std01_filter_out_image)))
+
                         std_filter_out_image = recreate_image(
-                            each_fil_channel, unnormalize=False)
+                            std01_filter_out_image, unnormalize=False, is_standarize_to_01=False)
                         save_image(std_filter_out_image,
                                    current_filt_channel_save_path)
 
@@ -466,6 +498,57 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                             diff_fil_channel, unnormalize=False)
                         save_image(std_diff_fil_channel,
                                    current_diff_save_path)
+
+                    if(current_f_outs_norm is None):
+                        current_f_outs_norm = torch.unsqueeze(
+                            current_f_channel_norm_outs, 0)
+                    else:
+                        current_f_outs_norm = torch.vstack(
+                            (current_f_outs_norm, torch.unsqueeze(current_f_channel_norm_outs, 0)))
+
+                if(current_layer_norm_outputs is None):
+                    current_layer_norm_outputs = torch.unsqueeze(
+                        current_f_outs_norm, 0)
+                else:
+                    current_layer_norm_outputs = torch.vstack(
+                        (current_layer_norm_outputs, torch.unsqueeze(current_f_outs_norm, 0)))
+            current_layer_outputs = torch.transpose(
+                current_layer_outputs, 0, 1)
+            current_layer_norm_outputs = torch.transpose(
+                current_layer_norm_outputs, 0, 1)
+            # print("current_layer_outputs size:", current_layer_outputs.size())
+            # print("current_layer_norm_outputs size:",
+            #       current_layer_norm_outputs.size())
+            for each_b_indx in range(len(current_layer_outputs)):
+                gr_batch_save_folder = grid_save_folder + \
+                    "/BTCH_IND_" + str(each_b_indx)
+                gr_current_save_folder = str(gr_batch_save_folder) + "/LAY_NUM_" + \
+                    str(layer_num)
+                if not os.path.exists(gr_current_save_folder):
+                    os.makedirs(gr_current_save_folder)
+
+                gr_current_b_fout_save_path = gr_current_save_folder + \
+                    "/layer_level_std_gridded_filter_output.jpg"
+
+                current_batch_layer_out = current_layer_outputs[each_b_indx]
+                current_batch_layer_out = torch.squeeze(
+                    current_batch_layer_out)
+                # print("current_batch_layer_out size:",
+                #       current_batch_layer_out.size())
+                # print("gr_current_b_fout_save_path",
+                #       gr_current_b_fout_save_path)
+                # generate_plain_image(
+                #     current_batch_layer_out, gr_current_b_fout_save_path, is_standarize=False)
+
+                current_batch_layer_norm_out = current_layer_norm_outputs[each_b_indx]
+                current_batch_layer_norm_out = torch.squeeze(
+                    current_batch_layer_norm_out)
+
+                gr_current_b_fout_save_path = gr_current_save_folder + \
+                    "/lay_lev_individual_std_gridded_filter_output.jpg"
+
+                generate_plain_image(
+                    current_batch_layer_norm_out, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
 
         overall_indx_count += c_inputs.size()[0]
         if(not(num_batches_to_visualize is None) and batch_idx == num_batches_to_visualize - 1):
@@ -513,24 +596,24 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
 
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER
-    scheme_type = "RAW_FILTERS_GEN"
+    scheme_type = "IMAGE_OUTPUTS_PER_FILTER"
 
     # std_image_preprocessing , mnist
-    # filter_vis_dataset = "std_image_preprocessing"
-    filter_vis_dataset = "mnist"
+    filter_vis_dataset = "std_image_preprocessing"
+    # filter_vis_dataset = "mnist"
 
-    batch_size = 16
+    batch_size = 14
 
     coll_seed_gen = torch.Generator()
     coll_seed_gen.manual_seed(torch_seed)
 
     if(scheme_type != "RAW_FILTERS_GEN"):
-        model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.1/batch_size_128/eps_stp_size_0.1/adv_steps_80/adv_model_dir.pt"
+        model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
         model = get_model_from_path(dataset, model_arch_type, model_path)
 
         save_prefix = get_prefix_for_save(model_path, model_arch_type)
