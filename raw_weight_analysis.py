@@ -319,13 +319,12 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                     current_channel_conv_norm_outs = None
                     for channel_ind in range(len(current_batch_conv_output)):
                         current_channel_conv_output = current_batch_conv_output[channel_ind]
+                        current_channel_conv_output = current_channel_conv_output[None, :]
 
                         batch_save_folder = save_folder + \
                             "/BTCH_IND_" + str(each_batch_indx)
                         current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + \
                             str(layer_num)+"/"
-
-                        current_channel_conv_output = current_channel_conv_output[None, :]
 
                         std01_conv_out_image = normalize_in_range_01(
                             current_channel_conv_output)
@@ -350,6 +349,7 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                         if(is_vis_ind_hard_relu_filter_out):
                             if not os.path.exists(current_save_folder):
                                 os.makedirs(current_save_folder)
+
                             current_channel_HRelu_output = current_batch_HRelu_output[channel_ind]
                             current_channel_HRelu_output = current_channel_HRelu_output[None, :]
                             current_filt_HRelu_channel_save_path = current_save_folder + \
@@ -417,6 +417,11 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                         "/sq_layer_level_std_gridded_filter_output.jpg"
                     generate_plain_image(
                         current_batch_conv_output, gr_current_b_fout_save_path, is_standarize=False)
+
+                    gr_current_b_fout_save_path = gr_current_save_folder + \
+                        "/sq_HRelu_gridded_filter_output.jpg"
+                    generate_plain_image(
+                        current_batch_HRelu_output, gr_current_b_fout_save_path, is_standarize=False)
                     # print("gr_current_b_fout_save_path",
                     #       gr_current_b_fout_save_path)
             hard_relu_active_percentage = hard_relu_active_percentage / \
@@ -680,7 +685,7 @@ if __name__ == '__main__':
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER
-    scheme_type = "IMAGE_OUTPUTS_PER_FILTER"
+    scheme_type = "IMAGE_SEQ_OUTPUTS_PER_FILTER"
 
     # std_image_preprocessing , mnist
     filter_vis_dataset = "std_image_preprocessing"
