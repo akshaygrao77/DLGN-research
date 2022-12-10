@@ -532,8 +532,12 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
     else:
         list_of_model_paths = [direct_model_path]
         models_base_path = direct_model_path[0:direct_model_path.rfind("/")+1]
+        temp_base_path = models_base_path
+        if("CLEAN_TRAINING" in direct_model_path or 'epoch' in direct_model_path):
+            temp_base_path = direct_model_path[0:direct_model_path.rfind(
+                ".pt")]+"/"
         list_of_save_prefixes.append(
-            str(models_base_path)+"/RAW_ACT_ANALYSIS/"+str(sub_scheme_type))
+            str(temp_base_path)+"/RAW_ACT_ANALYSIS/"+str(sub_scheme_type))
         list_of_save_postfixes.append("")
 
     for ind in range(len(list_of_model_paths)):
@@ -623,7 +627,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
-    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
@@ -649,7 +653,7 @@ if __name__ == '__main__':
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
-    merge_scheme_type = "TWO_CUSTOM_MODELS"
+    merge_scheme_type = "OVER_ORIGINAL_VS_ADVERSARIAL"
 
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
@@ -760,8 +764,8 @@ if __name__ == '__main__':
                             list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                                           list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
             elif(merge_scheme_type == "TWO_CUSTOM_MODELS"):
-                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
-                direct_model_path2 = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir_epoch_5.pt"
+                direct_model_path2 = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_n16_small_dir.pt"
                 num_iterations = 1
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
