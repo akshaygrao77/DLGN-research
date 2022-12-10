@@ -100,7 +100,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         if(is_log_wandb):
             wandb.log({"live_train_acc": live_train_acc,
                       "current_epoch": epoch, "test_acc": test_acc})
-        if(epoch % 5 == 0):
+        if(epoch % 2 == 0):
             per_epoch_save_model_path = model_save_path.replace(
                 ".pt", '_epoch_{}.pt'.format(epoch))
             torch.save(model, per_epoch_save_model_path)
@@ -127,7 +127,7 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # scheme_type = ''
     # batch_size = 128
     # wand_project_name = "fast_adv_training_and_visualisation"
@@ -198,8 +198,9 @@ if __name__ == '__main__':
         net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
         start_net_path = None
 
-        # start_net_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/aug_conv4_dlgn_iter_3_dir.pt"
-        # net = torch.load(start_net_path)
+        start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+        custom_temp_model = torch.load(start_net_path)
+        net.load_state_dict(custom_temp_model.state_dict())
 
         net.to(device)
 
@@ -223,7 +224,7 @@ if __name__ == '__main__':
                         str(model_arch_type)
                     if(start_net_path is not None):
                         init_prefix = start_net_path[0:start_net_path.rfind(
-                            "/")+1]
+                            ".pt")]
                         root_save_prefix = init_prefix+"/ADVER_RECONS_SAVE/"
                     model_save_prefix = str(
                         init_prefix)+"_ET_ADV_TRAINING/"

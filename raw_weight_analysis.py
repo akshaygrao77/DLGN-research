@@ -100,9 +100,16 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
 
         # generate_plain_image(current_weight_np, current_full_img_save_path)
 
-    with open(txt_save_folder+"raw_params.txt", "w") as f:
-        f.write("\n ************************************ Next Layer *********************************** \n".join(
-            "\n -------------------- Next Filter ----------- \n".join(map(str, x)) for x in list_of_weights))
+    with open(txt_save_folder+"raw_params.txt", "w") as myfile:
+        for l_ind in range(len(list_of_weights)):
+            curr_layer = list_of_weights[l_ind]
+            myfile.write(
+                "\n ************************************ Next Layer:{} *********************************** \n".format(l_ind))
+            for f_ind in range(len(curr_layer)):
+                myfile.write(
+                    "\n -------------------- Lay:{} Next Filter:{} ------------------- \n".format(l_ind, f_ind))
+                curr_filter = curr_layer[f_ind]
+                myfile.write("%s" % curr_filter)
 
     with open(txt_save_folder+"formatted_raw_params.txt", "w") as f:
         f.write("\n ************************************ Next Layer *********************************** \n".join(
@@ -217,10 +224,16 @@ def get_model_from_path(dataset, model_arch_type, model_path):
 
 
 def get_prefix_for_save(model_path, model_arch_type):
-    base_path = model_path[0:model_path.rfind("/")+1]
-
-    save_prefix = str(base_path)+"/"+str(model_arch_type) + \
-        "/RAW_WEIGHT_ANALYSIS/"
+    if('epoch' in model_path):
+        temp = model_path.rfind("/")+1
+        base_path = model_path[0:temp]
+        epoch_prefix = model_path[temp:model_path.rfind(".pt")]
+        save_prefix = str(base_path)+"/"+str(model_arch_type)+"/"+str(epoch_prefix) + \
+            "/RAW_WEIGHT_ANALYSIS/"
+    else:
+        base_path = model_path[0:model_path.rfind("/")+1]
+        save_prefix = str(base_path)+"/"+str(model_arch_type) + \
+            "/RAW_WEIGHT_ANALYSIS/"
     return save_prefix
 
 
@@ -324,7 +337,8 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                         batch_save_folder = save_folder + \
                             "/BTCH_IND_" + str(each_batch_indx)
                         current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + \
-                            str(layer_num)+"/"
+                            str(layer_num)+"/"+"/FILT_IND_" + \
+                            str(channel_ind) + "/"
 
                         std01_conv_out_image = normalize_in_range_01(
                             current_channel_conv_output)
@@ -442,7 +456,7 @@ def generate_per_batch_filter_outs(inp_channel, filter_weights, batch_inputs):
     filter_weights = torch.from_numpy(filter_weights)
     # print("filter_weights size", filter_weights.size())
     conv_obj = torch.nn.Conv2d(inp_channel, filter_weights.size()[
-        0], filter_weights.size()[-1], padding=1)
+        0], filter_weights.size()[-1], padding=int(filter_weights.size()[-1]//2))
     # print("conv_obj.weight size", conv_obj.weight.size())
     conv_obj.weight = torch.nn.Parameter(filter_weights)
     # print("filter_weights", filter_weights)
@@ -463,7 +477,7 @@ def normalize_in_range_01(img_data):
 
 
 def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
-                                      per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize, final_postfix_for_save):
+                                      per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize, final_postfix_for_save, scheme_type_tag="FILTER_OUTS"):
     is_vis_ind_original = False
     is_vis_ind_filter_out = False
     is_print_ind_std_filter_out = False
@@ -473,10 +487,12 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
-        str(final_postfix_for_save)+"/FILTER_OUTS/C_"+str(class_label)+"/"
+        str(final_postfix_for_save)+"/" + \
+        str(scheme_type_tag)+"/C_"+str(class_label)+"/"
 
     grid_save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
-        str(final_postfix_for_save)+"/GRID_FILTER_OUTS/C_"+str(class_label)+"/"
+        str(final_postfix_for_save)+"/GRID_" + \
+        str(scheme_type_tag)+"/C_"+str(class_label)+"/"
 
     per_class_data_loader = torch.utils.data.DataLoader(
         per_class_dataset, batch_size=batch_size, shuffle=False)
@@ -689,26 +705,85 @@ def generate_dataset_from_images_folder(img_fold, reduce_dim_to_single, transfor
     return dataset, list_of_classes
 
 
+def merge_conv_kernels(k1, k2):
+    """
+    :input k1: A tensor of shape ``(out1, in1, s1, s1)``
+    :input k1: A tensor of shape ``(out2, in2, s2, s2)``
+    :returns: A tensor of shape ``(out2, in1, s1+s2-1, s1+s2-1)``
+      so that convolving with it equals convolving with k1 and
+      then with k2.
+    """
+    if isinstance(k1, np.ndarray):
+        k1 = torch.from_numpy(k1)
+    if isinstance(k2, np.ndarray):
+        k2 = torch.from_numpy(k2)
+    padding = k2.shape[-1] - 1
+    # Flip because this is actually correlation, and permute to adapt to BHCW
+    k3 = torch.conv2d(k1.permute(1, 0, 2, 3), k2.flip(-1, -2),
+                      padding=padding).permute(1, 0, 2, 3)
+    return k3
+
+
+def perform_sanity_check_over_merged_conv_filter(merged_conv, list_of_convs):
+    b, c, h, w = 1, 1, 28, 28
+    inp = torch.rand(b, c, h, w, dtype=torch.float32) * 10
+
+    temp_seq_inp = inp.clone()
+    for each_conv in list_of_convs:
+        temp_seq_inp = torch.conv2d(
+            temp_seq_inp, torch.from_numpy(each_conv), padding=each_conv.shape[-1]-1)
+
+    seq_conv_out = temp_seq_inp
+
+    temp_merged_inp = inp.clone()
+    # merged_conv_out = torch.conv2d(
+    #     temp_merged_inp, torch.from_numpy(merged_conv), padding=int(merged_conv.shape[-1]//2))
+    merged_conv_out = torch.conv2d(
+        temp_merged_inp, torch.from_numpy(merged_conv), padding=merged_conv.shape[-1]-1)
+
+    print("merged_conv_out shape", merged_conv_out.size())
+    print("seq_conv_out shape", seq_conv_out.size())
+    print("seq_conv_out::::", seq_conv_out)
+    print("merged_conv_out::::", merged_conv_out)
+
+
+def generate_merged_convolution_weights_at_each_layer(list_of_weights):
+    """
+    f_hat(Current_layer,current_output_channel,current_input_channel) = Sum[(ou' from 0 to number of out-channels in current_layer)f_hat(current_layer-1,ou,current_input_channel) conv filt(current_layer , current_output_channel,ou)]
+    """
+    c_hat_sanity = [None] * len(list_of_weights)
+    c_hat = [None]*len(list_of_weights)
+    c_hat[0] = list_of_weights[0]
+    c_hat_sanity[0] = list_of_weights[0]
+    for current_lay in range(1, len(list_of_weights)):
+        sanity_check_merged_conv = merge_conv_kernels(
+            c_hat_sanity[current_lay-1], list_of_weights[current_lay]).numpy()
+        c_hat_sanity[current_lay] = sanity_check_merged_conv
+        print("Layer:{} , shape:{} \n, sanity_check_merged_conv :{}".format(
+            current_lay, sanity_check_merged_conv.shape, sanity_check_merged_conv))
+        perform_sanity_check_over_merged_conv_filter(
+            sanity_check_merged_conv, list_of_weights[0:current_lay+1])
+
+    return c_hat_sanity
+
+
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
 
     torch_seed = 2022
 
-    # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER
+    # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
     list_of_scheme_type = [
-        "IMAGE_SEQ_OUTPUTS_PER_FILTER", "IMAGE_OUTPUTS_PER_FILTER"]
+        "IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist
-    list_of_filter_vis_dataset = ["std_image_preprocessing", "mnist"]
+    list_of_filter_vis_dataset = ["std_image_preprocessing"]
 
     batch_size = 14
-
-    coll_seed_gen = torch.Generator()
-    coll_seed_gen.manual_seed(torch_seed)
 
     for filter_vis_dataset in list_of_filter_vis_dataset:
         print("Visualizing over " + str(filter_vis_dataset))
@@ -764,14 +839,17 @@ if __name__ == '__main__':
         train_dataset = generate_dataset_from_loader(trainloader)
         test_dataset = generate_dataset_from_loader(testloader)
 
-        trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                  shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
-        testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
-                                                 shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
-
         for scheme_type in list_of_scheme_type:
+            print("Running scheme", scheme_type)
+            coll_seed_gen = torch.Generator()
+            coll_seed_gen.manual_seed(torch_seed)
+            trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
+                                                      shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+            testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
+                                                     shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path)
 
@@ -867,5 +945,42 @@ if __name__ == '__main__':
                         generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label, c_indx,
                                                               per_class_dataset, save_prefix, num_batches_to_visualize,
                                                               final_postfix_for_save=final_postfix_for_save)
+            elif(scheme_type == "IMAGE_OUT_PER_RES_FILTER"):
+                sub_scheme_type = 'IND'
+
+                num_batches_to_visualize = 1
+
+                if(sub_scheme_type == "IND"):
+                    list_of_weights, list_of_bias = run_raw_weight_analysis_on_config(model, root_save_prefix=save_prefix, final_postfix_for_save="",
+                                                                                      is_save_graph_visualizations=True)
+
+                list_of_weights = generate_merged_convolution_weights_at_each_layer(
+                    list_of_weights)
+
+                output_params(list_of_weights, root_save_prefix=save_prefix,
+                              final_postfix_for_save="MERGED_WEIGHTS")
+
+                for is_template_image_on_train in [True, False]:
+                    if(is_template_image_on_train):
+                        evalloader = trainloader
+                        final_postfix_for_save = 'TRAIN'
+                    else:
+                        evalloader = testloader
+                        final_postfix_for_save = "TEST"
+                    class_indx_to_visualize = [i for i in range(len(classes))]
+
+                    if(len(class_indx_to_visualize) != 0):
+                        input_data_list_per_class = true_segregation(
+                            evalloader, num_classes)
+
+                    for c_indx in class_indx_to_visualize:
+                        class_label = classes[c_indx]
+                        print(
+                            "************************************************************ Class:", class_label)
+                        per_class_dataset = PerClassDataset(
+                            input_data_list_per_class[c_indx], c_indx)
+                        generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
+                                                          per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
+                                                          final_postfix_for_save=final_postfix_for_save, scheme_type_tag="RES_FILT_OUTS")
 
     print("Finished execution!!!")
