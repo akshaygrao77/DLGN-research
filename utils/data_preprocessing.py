@@ -9,7 +9,7 @@ from keras.datasets import mnist
 from algos.dlgn_conv_preprocess import add_channel_to_image
 from sklearn.model_selection import train_test_split
 import torchvision.transforms as transforms
-from structure.generic_structure import CustomSimpleDataset
+from structure.generic_structure import CustomSimpleDataset, CustomMergedDataset
 import random
 
 
@@ -30,6 +30,40 @@ def get_data_loader(x_data, labels, bs, orig_labels=None):
     dataloader = torch.utils.data.DataLoader(
         merged_data, shuffle=False, batch_size=bs)
     return dataloader
+
+
+def unwrap_dataloader(data_loader):
+    data_loader = tqdm(data_loader, desc='Unwrapping dataloader')
+    list_of_x = []
+    list_of_y = []
+    for _, inp_data in enumerate(data_loader):
+        x, y = inp_data
+        for each_x in x:
+            list_of_x.append(each_x)
+        for each_y in y:
+            list_of_y.append(each_y)
+
+    return list_of_x, list_of_y
+
+
+def equalize_two_lists(list1, list2):
+    if(len(list1) < len(list2)):
+        list2 = list2[0:len(list1)]
+    elif(len(list1) > len(list2)):
+        list1 = list1[0:len(list2)]
+    return list1, list2
+
+
+def generate_merged_dataset_from_two_loader(data_loader1, data_loader2):
+    list_of_x1, list_of_y1 = unwrap_dataloader(data_loader1)
+    list_of_x2, list_of_y2 = unwrap_dataloader(data_loader2)
+
+    list_of_x1, list_of_x2 = equalize_two_lists(list_of_x1, list_of_x2)
+    list_of_y1, list_of_y2 = equalize_two_lists(list_of_y1, list_of_y2)
+
+    dataset = CustomMergedDataset(
+        list_of_x1, list_of_x2, list_of_y1, list_of_y2)
+    return dataset
 
 
 def generate_dataset_from_loader(data_loader):

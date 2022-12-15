@@ -10,6 +10,7 @@ from structure.generic_structure import PerClassDataset, CustomSimpleDataset
 from structure.dlgn_conv_config_structure import DatasetConfig
 from tqdm import tqdm
 from PIL import Image
+from adversarial_attacks_tester import load_or_generate_adv_examples, generate_adversarial_perturbation_from_adv_orig
 import torchvision.transforms as T
 import cv2
 from configs.dlgn_conv_config import HardRelu
@@ -450,6 +451,7 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
 
 
 def generate_per_batch_filter_outs(inp_channel, filter_weights, batch_inputs):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # print("filter_weights before size", filter_weights.shape)
     filter_weights = np.expand_dims(filter_weights, axis=1)
     # print("filter_weights after size", filter_weights.shape)
@@ -459,6 +461,7 @@ def generate_per_batch_filter_outs(inp_channel, filter_weights, batch_inputs):
         0], filter_weights.size()[-1], padding=int(filter_weights.size()[-1]//2))
     # print("conv_obj.weight size", conv_obj.weight.size())
     conv_obj.weight = torch.nn.Parameter(filter_weights)
+    conv_obj = conv_obj.to(device)
     # print("filter_weights", filter_weights)
     # print("conv_obj.weight size", conv_obj.weight.size())
     # print("conv_obj.weight", conv_obj.weight)
@@ -478,7 +481,7 @@ def normalize_in_range_01(img_data):
 
 def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                                       per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize, final_postfix_for_save, scheme_type_tag="FILTER_OUTS"):
-    is_vis_ind_original = False
+    is_vis_ind_original = True
     is_vis_ind_filter_out = False
     is_print_ind_std_filter_out = False
     is_print_ind_raw_filter_out = False
@@ -502,6 +505,7 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
     overall_indx_count = 0
     for batch_idx, per_class_per_batch_data in enumerate(per_class_data_loader):
         c_inputs, _ = per_class_per_batch_data
+        c_inputs = c_inputs.to(device)
 
         for layer_num in range(len(list_of_weights)):
             current_layer_weights = list_of_weights[layer_num]
@@ -778,12 +782,24 @@ if __name__ == '__main__':
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
     list_of_scheme_type = [
-        "IMAGE_OUT_PER_RES_FILTER"]
+        "IMAGE_OUTPUTS_PER_FILTER", "IMAGE_SEQ_OUTPUTS_PER_FILTER"]
 
     # std_image_preprocessing , mnist
     list_of_filter_vis_dataset = ["std_image_preprocessing"]
 
     batch_size = 14
+
+    eps = 0.06
+    adv_attack_type = 'PGD'
+    number_of_adversarial_optimization_steps = 161
+    eps_step_size = 0.01
+    adv_target = None
+    is_save_adv = True
+
+    num_batches_to_visualize = 1
+
+    # ORIGINAL, ADVERSARIAL , ADVERSARIAL_PERTURB
+    analyse_on = "ADVERSARIAL"
 
     for filter_vis_dataset in list_of_filter_vis_dataset:
         print("Visualizing over " + str(filter_vis_dataset))
@@ -843,17 +859,63 @@ if __name__ == '__main__':
             print("Running scheme", scheme_type)
             coll_seed_gen = torch.Generator()
             coll_seed_gen.manual_seed(torch_seed)
-            trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                      shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
-            testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
-                                                     shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+            orig_trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
+                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+            orig_testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
+                                                          shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path)
 
                 save_prefix = get_prefix_for_save(model_path, model_arch_type)
+
+                models_base_path = model_path[0:model_path.rfind(".pt")]
+
+                if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
+                    is_act_collection_on_train = True
+                    train_adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                        adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, "")
+                    train_adv_save_path = models_base_path + "/RAW_ADV_SAVES/" + \
+                        train_adv_postfix_for_save+"/adv_dataset.npy"
+                    train_adv_dataset = load_or_generate_adv_examples(orig_trainloader, batch_size, models_base_path, is_act_collection_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
+                                                                      eps_step_size, adv_target, number_of_batch_to_collect=num_batches_to_visualize, is_save_adv=is_save_adv, save_path=train_adv_save_path)
+                    trainloader = torch.utils.data.DataLoader(
+                        train_adv_dataset, batch_size=batch_size, shuffle=False)
+                    analyse_on_train_postfix = train_adv_postfix_for_save
+
+                    is_act_collection_on_train = False
+                    test_adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                        adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, "")
+                    test_adv_save_path = models_base_path + "/RAW_ADV_SAVES/" + \
+                        test_adv_postfix_for_save+"/adv_dataset.npy"
+                    test_adv_dataset = load_or_generate_adv_examples(orig_testloader, batch_size, models_base_path, is_act_collection_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
+                                                                     eps_step_size, adv_target, number_of_batch_to_collect=num_batches_to_visualize, is_save_adv=is_save_adv, save_path=test_adv_save_path)
+                    testloader = torch.utils.data.DataLoader(
+                        test_adv_dataset, batch_size=batch_size, shuffle=False)
+                    analyse_on_test_postfix = test_adv_postfix_for_save
+
+                    if(analyse_on == "ADVERSARIAL_PERTURB"):
+                        coll_seed_gen = torch.Generator()
+                        coll_seed_gen.manual_seed(torch_seed)
+                        orig_trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
+                                                                       shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+                        orig_testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
+                                                                      shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+
+                        train_advperturb_dataset = generate_adversarial_perturbation_from_adv_orig(
+                            orig_trainloader, trainloader)
+                        trainloader = torch.utils.data.DataLoader(
+                            train_advperturb_dataset, batch_size=batch_size, shuffle=False)
+                        test_advperturb_dataset = generate_adversarial_perturbation_from_adv_orig(
+                            orig_testloader, testloader)
+                        testloader = torch.utils.data.DataLoader(
+                            test_advperturb_dataset, batch_size=batch_size, shuffle=False)
+                elif(analyse_on == "ORIGINAL"):
+                    analyse_on_train_postfix = analyse_on_test_postfix = ""
+                    trainloader = orig_trainloader
+                    testloader = orig_testloader
 
             if(scheme_type == "RAW_FILTERS_GEN"):
                 # IND , DIFF , START
@@ -891,8 +953,6 @@ if __name__ == '__main__':
                 # IND , DIFF , START
                 sub_scheme_type = 'IND'
 
-                num_batches_to_visualize = 1
-
                 if(sub_scheme_type == "IND"):
 
                     list_of_weights, list_of_bias = run_raw_weight_analysis_on_config(model, root_save_prefix=save_prefix, final_postfix_for_save="",
@@ -901,10 +961,10 @@ if __name__ == '__main__':
                 for is_template_image_on_train in [True, False]:
                     if(is_template_image_on_train):
                         evalloader = trainloader
-                        final_postfix_for_save = 'TRAIN'
+                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"+analyse_on_train_postfix
                     else:
                         evalloader = testloader
-                        final_postfix_for_save = "TEST"
+                        final_postfix_for_save = "TEST/"+analyse_on+"/"+analyse_on_test_postfix
                     class_indx_to_visualize = [i for i in range(len(classes))]
 
                     if(len(class_indx_to_visualize) != 0):
@@ -919,17 +979,16 @@ if __name__ == '__main__':
                             input_data_list_per_class[c_indx], c_indx)
                         generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                                                           per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
-                                                          final_postfix_for_save=final_postfix_for_save)
+                                                          final_postfix_for_save=final_postfix_for_save, scheme_type_tag="FILTER_OUTS")
             elif(scheme_type == "IMAGE_SEQ_OUTPUTS_PER_FILTER"):
-                num_batches_to_visualize = 1
 
                 for is_template_image_on_train in [True, False]:
                     if(is_template_image_on_train):
                         evalloader = trainloader
-                        final_postfix_for_save = 'TRAIN'
+                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"+analyse_on_train_postfix
                     else:
                         evalloader = testloader
-                        final_postfix_for_save = "TEST"
+                        final_postfix_for_save = "TEST/"+analyse_on+"/"+analyse_on_test_postfix
                     class_indx_to_visualize = [i for i in range(len(classes))]
 
                     if(len(class_indx_to_visualize) != 0):
@@ -948,8 +1007,6 @@ if __name__ == '__main__':
             elif(scheme_type == "IMAGE_OUT_PER_RES_FILTER"):
                 sub_scheme_type = 'IND'
 
-                num_batches_to_visualize = 1
-
                 if(sub_scheme_type == "IND"):
                     list_of_weights, list_of_bias = run_raw_weight_analysis_on_config(model, root_save_prefix=save_prefix, final_postfix_for_save="",
                                                                                       is_save_graph_visualizations=True)
@@ -963,10 +1020,10 @@ if __name__ == '__main__':
                 for is_template_image_on_train in [True, False]:
                     if(is_template_image_on_train):
                         evalloader = trainloader
-                        final_postfix_for_save = 'TRAIN'
+                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"+analyse_on_train_postfix
                     else:
                         evalloader = testloader
-                        final_postfix_for_save = "TEST"
+                        final_postfix_for_save = "TEST/"+analyse_on+"/"+analyse_on_test_postfix
                     class_indx_to_visualize = [i for i in range(len(classes))]
 
                     if(len(class_indx_to_visualize) != 0):

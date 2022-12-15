@@ -28,3 +28,23 @@ class CustomSimpleDataset(torch.utils.data.Dataset):
         y = self.list_of_y[idx]
 
         return x, y
+
+class CustomMergedDataset(torch.utils.data.Dataset):
+    def __init__(self, list_of_x1, list_of_x2, list_of_y1, list_of_y2):
+        self.list_of_x1 = list_of_x1
+        self.list_of_y1 = list_of_y1
+        self.list_of_x2 = list_of_x2
+        self.list_of_y2 = list_of_y2
+
+    def __len__(self):
+        return len(self.list_of_x1)
+
+    def __getitem__(self, idx):
+        x1 = self.list_of_x1[idx]
+        y1 = self.list_of_y1[idx]
+        x2 = self.list_of_x2[idx]
+        y2 = self.list_of_y2[idx]
+
+        return x1, x2, y1, y2
+
+

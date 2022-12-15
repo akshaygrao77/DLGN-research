@@ -10,7 +10,7 @@ import wandb
 import torch.backends.cudnn as cudnn
 
 from external_utils import format_time
-from utils.data_preprocessing import preprocess_dataset_get_data_loader
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_merged_dataset_from_two_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
 from visualization import recreate_image, save_image,  PerClassDataset, TemplateImageGenerator, seed_worker, quick_visualization_on_config
@@ -282,6 +282,56 @@ def evaluate_model_via_reconstructed(net, dataloader, classes, eps, adv_attack_t
     return acc
 
 
+def load_or_generate_adv_examples(to_be_analysed_dataloader, batch_size, models_base_path, is_act_collection_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=False, save_path=None, each_save_postfix=""):
+    if(save_path is None):
+        final_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+            adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, each_save_postfix)
+        adv_save_path = models_base_path + final_postfix_for_save+"/adv_dataset.npy"
+    else:
+        adv_save_path = save_path
+
+    is_current_adv_aug_available = os.path.exists(adv_save_path)
+    if(is_current_adv_aug_available):
+        with open(adv_save_path, 'rb') as file:
+            npzfile = np.load(adv_save_path)
+            list_of_adv_images = npzfile['x']
+            list_of_labels = npzfile['y']
+            num_examples = batch_size * number_of_batch_to_collect
+
+            adv_dataset = CustomSimpleDataset(
+                list_of_adv_images, list_of_labels)
+            print("Loading adversarial examples from path:",
+                  adv_save_path)
+    else:
+        adv_dataset = generate_adv_examples(
+            to_be_analysed_dataloader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=adv_save_path)
+    return adv_dataset
+
+
+def generate_adversarial_perturbation_from_adv_orig(orig_dataloader, adv_dataloader):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    merged_dataset = generate_merged_dataset_from_two_loader(
+        orig_dataloader, adv_dataloader)
+    merged_data_loader = torch.utils.data.DataLoader(
+        merged_dataset, batch_size=128, shuffle=False)
+    # merged_data_loader = tqdm(
+    #     merged_data_loader, desc='Generating adversarial perturbation')
+    list_of_x = []
+    list_of_y = []
+    for _, inp_data in enumerate(merged_data_loader):
+        x1, x2, y1, y2 = inp_data
+        x1, x2, y1, y2 = x1.to(device), x2.to(
+            device), y1.to(device), y2.to(device)
+        for ind in range(len(x1)):
+            list_of_x.append(x2[ind] - x1[ind])
+        for each_y in y1:
+            list_of_y.append(each_y)
+
+    perturb_dataset = CustomSimpleDataset(
+        list_of_x, list_of_y)
+    return perturb_dataset
+
+
 def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=False, save_path=None):
     cpudevice = torch.device("cpu")
     is_targetted = adv_target is not None
@@ -517,8 +567,8 @@ def extract_common_activation_patterns_between_reconst_and_original(true_input_d
 
 if __name__ == '__main__':
     dataset = 'mnist'
-    # conv4_dlgn , plain_pure_conv4_dnn
-    model_arch_type = 'conv4_dlgn'
+    # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net
+    model_arch_type = 'plain_pure_conv4_dnn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -567,14 +617,15 @@ if __name__ == '__main__':
         is_adv_attack_on_train = True
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_64/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.94/"
+        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
 
         number_of_augment_iterations = 3
 
         is_targetted = adv_target is not None
         is_log_wandb = not(wand_project_name is None)
 
-        eps_list = [0.02, 0.03, 0.04, 0.05, 0.06]
+        eps_list = [0.02, 0.03, 0.04, 0.05, 0.06, 0.1]
+        # eps_list = [0.06]
         if(exp_type == "ACT_COMPARE_RECONST_ORIGINAL"):
             eps_list = [0]
 
@@ -766,6 +817,7 @@ if __name__ == '__main__':
                     wandb_config["torch_seed"] = torch_seed
                     wandb_config["aug_iter_num"] = current_aug_iter_num
                     wandb_config["on_train"] = is_adv_attack_on_train
+                    wandb_config["model_attacked_path"] = model_save_path
 
                     true_input_data_list_per_class = true_segregation(
                         eval_loader, num_classes)
