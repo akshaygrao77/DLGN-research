@@ -282,7 +282,7 @@ def evaluate_model_via_reconstructed(net, dataloader, classes, eps, adv_attack_t
     return acc
 
 
-def load_or_generate_adv_examples(to_be_analysed_dataloader, batch_size, models_base_path, is_act_collection_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=False, save_path=None, each_save_postfix=""):
+def load_or_generate_adv_examples(to_be_analysed_dataloader, models_base_path, is_act_collection_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=False, save_path=None, each_save_postfix=""):
     if(save_path is None):
         final_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
             adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, each_save_postfix)
@@ -296,7 +296,6 @@ def load_or_generate_adv_examples(to_be_analysed_dataloader, batch_size, models_
             npzfile = np.load(adv_save_path)
             list_of_adv_images = npzfile['x']
             list_of_labels = npzfile['y']
-            num_examples = batch_size * number_of_batch_to_collect
 
             adv_dataset = CustomSimpleDataset(
                 list_of_adv_images, list_of_labels)

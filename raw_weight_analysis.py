@@ -771,6 +771,28 @@ def generate_merged_convolution_weights_at_each_layer(list_of_weights):
     return c_hat_sanity
 
 
+def get_modified_dataset(analyse_on, dataloader, adv_postfix_for_save, filter_vis_dataset, eval_dataset, batch_size, models_base_path, is_template_image_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
+                         eps_step_size, adv_target, num_batches_to_visualize, is_save_adv):
+    if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
+        adv_save_path = models_base_path + "/RAW_ADV_SAVES/" + \
+            filter_vis_dataset+"/" + adv_postfix_for_save+"/adv_dataset.npy"
+        adv_dataset = load_or_generate_adv_examples(dataloader, models_base_path, is_template_image_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
+                                                    eps_step_size, adv_target, number_of_batch_to_collect=num_batches_to_visualize, is_save_adv=is_save_adv, save_path=adv_save_path)
+        adv_loader = torch.utils.data.DataLoader(
+            adv_dataset, batch_size=batch_size, shuffle=False)
+
+        if(analyse_on == "ADVERSARIAL_PERTURB"):
+            coll_seed_gen = torch.Generator()
+            coll_seed_gen.manual_seed(torch_seed)
+            eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=batch_size,
+                                                      shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+
+            adv_dataset = generate_adversarial_perturbation_from_adv_orig(
+                eval_loader, adv_loader)
+
+    return adv_dataset
+
+
 if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
@@ -782,10 +804,10 @@ if __name__ == '__main__':
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
     list_of_scheme_type = [
-        "IMAGE_OUTPUTS_PER_FILTER", "IMAGE_SEQ_OUTPUTS_PER_FILTER"]
+        "IMAGE_OUTPUTS_PER_FILTER", "IMAGE_SEQ_OUTPUTS_PER_FILTER", "IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist
-    list_of_filter_vis_dataset = ["std_image_preprocessing"]
+    list_of_filter_vis_dataset = ["std_image_preprocessing", "mnist"]
 
     batch_size = 14
 
@@ -865,57 +887,13 @@ if __name__ == '__main__':
                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+                model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path)
 
                 save_prefix = get_prefix_for_save(model_path, model_arch_type)
 
                 models_base_path = model_path[0:model_path.rfind(".pt")]
-
-                if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
-                    is_act_collection_on_train = True
-                    train_adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                        adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, "")
-                    train_adv_save_path = models_base_path + "/RAW_ADV_SAVES/" + \
-                        train_adv_postfix_for_save+"/adv_dataset.npy"
-                    train_adv_dataset = load_or_generate_adv_examples(orig_trainloader, batch_size, models_base_path, is_act_collection_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
-                                                                      eps_step_size, adv_target, number_of_batch_to_collect=num_batches_to_visualize, is_save_adv=is_save_adv, save_path=train_adv_save_path)
-                    trainloader = torch.utils.data.DataLoader(
-                        train_adv_dataset, batch_size=batch_size, shuffle=False)
-                    analyse_on_train_postfix = train_adv_postfix_for_save
-
-                    is_act_collection_on_train = False
-                    test_adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                        adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, "")
-                    test_adv_save_path = models_base_path + "/RAW_ADV_SAVES/" + \
-                        test_adv_postfix_for_save+"/adv_dataset.npy"
-                    test_adv_dataset = load_or_generate_adv_examples(orig_testloader, batch_size, models_base_path, is_act_collection_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
-                                                                     eps_step_size, adv_target, number_of_batch_to_collect=num_batches_to_visualize, is_save_adv=is_save_adv, save_path=test_adv_save_path)
-                    testloader = torch.utils.data.DataLoader(
-                        test_adv_dataset, batch_size=batch_size, shuffle=False)
-                    analyse_on_test_postfix = test_adv_postfix_for_save
-
-                    if(analyse_on == "ADVERSARIAL_PERTURB"):
-                        coll_seed_gen = torch.Generator()
-                        coll_seed_gen.manual_seed(torch_seed)
-                        orig_trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                                       shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
-                        orig_testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
-                                                                      shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
-
-                        train_advperturb_dataset = generate_adversarial_perturbation_from_adv_orig(
-                            orig_trainloader, trainloader)
-                        trainloader = torch.utils.data.DataLoader(
-                            train_advperturb_dataset, batch_size=batch_size, shuffle=False)
-                        test_advperturb_dataset = generate_adversarial_perturbation_from_adv_orig(
-                            orig_testloader, testloader)
-                        testloader = torch.utils.data.DataLoader(
-                            test_advperturb_dataset, batch_size=batch_size, shuffle=False)
-                elif(analyse_on == "ORIGINAL"):
-                    analyse_on_train_postfix = analyse_on_test_postfix = ""
-                    trainloader = orig_trainloader
-                    testloader = orig_testloader
 
             if(scheme_type == "RAW_FILTERS_GEN"):
                 # IND , DIFF , START
@@ -961,10 +939,11 @@ if __name__ == '__main__':
                 for is_template_image_on_train in [True, False]:
                     if(is_template_image_on_train):
                         evalloader = trainloader
-                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"+analyse_on_train_postfix
+                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"
                     else:
                         evalloader = testloader
-                        final_postfix_for_save = "TEST/"+analyse_on+"/"+analyse_on_test_postfix
+                        final_postfix_for_save = "TEST/"+analyse_on+"/"
+                    postfix_for_save = final_postfix_for_save
                     class_indx_to_visualize = [i for i in range(len(classes))]
 
                     if(len(class_indx_to_visualize) != 0):
@@ -977,18 +956,31 @@ if __name__ == '__main__':
                             "************************************************************ Class:", class_label)
                         per_class_dataset = PerClassDataset(
                             input_data_list_per_class[c_indx], c_indx)
+                        if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
+                            adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_template_image_on_train, "")
+                            postfix_for_save = final_postfix_for_save + adv_postfix_for_save
+
+                            adv_postfix_for_save += "C_"+class_label+"/"
+                            per_class_data_loader = torch.utils.data.DataLoader(
+                                per_class_dataset, batch_size=batch_size, shuffle=False)
+
+                            per_class_dataset = get_modified_dataset(analyse_on, per_class_data_loader, adv_postfix_for_save, filter_vis_dataset, per_class_dataset, batch_size, models_base_path, is_template_image_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
+                                                                     eps_step_size, adv_target, num_batches_to_visualize, is_save_adv)
+
                         generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                                                           per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
-                                                          final_postfix_for_save=final_postfix_for_save, scheme_type_tag="FILTER_OUTS")
+                                                          final_postfix_for_save=postfix_for_save, scheme_type_tag="FILTER_OUTS")
             elif(scheme_type == "IMAGE_SEQ_OUTPUTS_PER_FILTER"):
 
                 for is_template_image_on_train in [True, False]:
                     if(is_template_image_on_train):
                         evalloader = trainloader
-                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"+analyse_on_train_postfix
+                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"
                     else:
                         evalloader = testloader
-                        final_postfix_for_save = "TEST/"+analyse_on+"/"+analyse_on_test_postfix
+                        final_postfix_for_save = "TEST/"+analyse_on+"/"
+                    postfix_for_save = final_postfix_for_save
                     class_indx_to_visualize = [i for i in range(len(classes))]
 
                     if(len(class_indx_to_visualize) != 0):
@@ -1001,9 +993,22 @@ if __name__ == '__main__':
                             "************************************************************ Class:", class_label)
                         per_class_dataset = PerClassDataset(
                             input_data_list_per_class[c_indx], c_indx)
+
+                        if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
+                            adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_template_image_on_train, "")
+                            postfix_for_save = final_postfix_for_save + adv_postfix_for_save
+
+                            adv_postfix_for_save += "C_"+class_label+"/"
+                            per_class_data_loader = torch.utils.data.DataLoader(
+                                per_class_dataset, batch_size=batch_size, shuffle=False)
+
+                            per_class_dataset = get_modified_dataset(analyse_on, per_class_data_loader, adv_postfix_for_save, filter_vis_dataset, per_class_dataset, batch_size, models_base_path, is_template_image_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
+                                                                     eps_step_size, adv_target, num_batches_to_visualize, is_save_adv)
+
                         generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label, c_indx,
                                                               per_class_dataset, save_prefix, num_batches_to_visualize,
-                                                              final_postfix_for_save=final_postfix_for_save)
+                                                              final_postfix_for_save=postfix_for_save)
             elif(scheme_type == "IMAGE_OUT_PER_RES_FILTER"):
                 sub_scheme_type = 'IND'
 
@@ -1020,10 +1025,11 @@ if __name__ == '__main__':
                 for is_template_image_on_train in [True, False]:
                     if(is_template_image_on_train):
                         evalloader = trainloader
-                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"+analyse_on_train_postfix
+                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"
                     else:
                         evalloader = testloader
-                        final_postfix_for_save = "TEST/"+analyse_on+"/"+analyse_on_test_postfix
+                        final_postfix_for_save = "TEST/"+analyse_on+"/"
+                    postfix_for_save = final_postfix_for_save
                     class_indx_to_visualize = [i for i in range(len(classes))]
 
                     if(len(class_indx_to_visualize) != 0):
@@ -1036,8 +1042,20 @@ if __name__ == '__main__':
                             "************************************************************ Class:", class_label)
                         per_class_dataset = PerClassDataset(
                             input_data_list_per_class[c_indx], c_indx)
+                        if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
+                            adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_template_image_on_train, "")
+                            postfix_for_save = final_postfix_for_save + adv_postfix_for_save
+
+                            adv_postfix_for_save += "C_"+class_label+"/"
+                            per_class_data_loader = torch.utils.data.DataLoader(
+                                per_class_dataset, batch_size=batch_size, shuffle=False)
+
+                            per_class_dataset = get_modified_dataset(analyse_on, per_class_data_loader, adv_postfix_for_save, filter_vis_dataset, per_class_dataset, batch_size, models_base_path, is_template_image_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
+                                                                     eps_step_size, adv_target, num_batches_to_visualize, is_save_adv)
+
                         generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                                                           per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
-                                                          final_postfix_for_save=final_postfix_for_save, scheme_type_tag="RES_FILT_OUTS")
+                                                          final_postfix_for_save=postfix_for_save, scheme_type_tag="RES_FILT_OUTS")
 
     print("Finished execution!!!")
