@@ -68,9 +68,14 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
     if not os.path.exists(txt_save_folder):
         os.makedirs(txt_save_folder)
 
+    f_outs_DFT_norms = []
     for layer_num in range(len(list_of_weights)):
         current_layer_weights = list_of_weights[layer_num]
 
+        print("Param {} size:{}".format(
+            final_postfix_for_save, current_layer_weights.shape))
+
+        current_f_outs_DFT_norm = None
         for filter_ind in range(len(current_layer_weights)):
             current_filter_weights = current_layer_weights[filter_ind]
             each_filter_txt_save_folder = txt_save_folder + "/LAY_NUM_" + \
@@ -81,9 +86,31 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
             with open(each_filter_txt_save_folder + "/raw_filter_weights.txt", "w") as f:
                 f.write("\n==============================================\n".join("\n".join(map(str, x))
                         for x in current_filter_weights))
+            current_f_channel_norm_dft_outs = None
+            for ch_ind in range(len(current_filter_weights)):
+                current_filter_chnl_weights = current_filter_weights[ch_ind]
+                raw_dft_out = generate_centralized_DFT(
+                    current_filter_chnl_weights)
+                for_vis_dft_out = np.log(1+np.abs(raw_dft_out))
+                std01_vis_dft_out = normalize_in_range_01(
+                    for_vis_dft_out)
+                std01_vis_dft_out = std01_vis_dft_out[None, :]
 
-        print("Param {} size:{}".format(
-            final_postfix_for_save, current_layer_weights.shape))
+                if(current_f_channel_norm_dft_outs is None):
+                    current_f_channel_norm_dft_outs = torch.from_numpy(
+                        std01_vis_dft_out)
+                else:
+                    current_f_channel_norm_dft_outs = torch.vstack(
+                        (current_f_channel_norm_dft_outs, torch.from_numpy(std01_vis_dft_out)))
+
+            if(current_f_outs_DFT_norm is None):
+                current_f_outs_DFT_norm = torch.unsqueeze(
+                    current_f_channel_norm_dft_outs, 0)
+            else:
+                current_f_outs_DFT_norm = torch.vstack(
+                    (current_f_outs_DFT_norm, torch.unsqueeze(current_f_channel_norm_dft_outs, 0)))
+
+        f_outs_DFT_norms.append(current_f_outs_DFT_norm)
 
     for i in range(len(list_of_weights)):
         # current_full_img_save_path = save_folder + \
@@ -117,7 +144,7 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
             "\n".join(map(str, generate_plain_image_data(np.squeeze(x)))) for x in list_of_weights))
 
     for i in range(len(list_of_weights)):
-
+        current_layer_DFT = f_outs_DFT_norms[i]
         current_weight_np = list_of_weights[i]
         current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"/" + \
             "filter_params_*.jpg"
@@ -129,8 +156,15 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
         # print("rs_data shape:", rs_data.shape)
         generate_list_of_plain_images_from_data(
             current_weight_np, save_each_img_path=current_full_img_save_path, is_standarize=False)
+
+        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"/" + \
+            "DFT_filter_params_*.jpg"
+        generate_list_of_plain_images_from_data(
+            current_layer_DFT, save_each_img_path=current_full_img_save_path, is_standarize=False)
         generate_plain_image(
             current_weight_np, save_folder+"layer_num_"+str(i)+".jpg", is_standarize=False)
+        generate_plain_image(
+            current_layer_DFT, save_folder+"DFT_lay_num_"+str(i)+".jpg", is_standarize=False)
 
 
 def run_raw_weight_analysis_on_config(model, root_save_prefix='root/RAW_WEIGHT_ANALYSIS', final_postfix_for_save="",
@@ -876,10 +910,10 @@ def generate_merged_convolution_weights_at_each_layer(list_of_weights):
         sanity_check_merged_conv = merge_conv_kernels(
             c_hat_sanity[current_lay-1], list_of_weights[current_lay]).numpy()
         c_hat_sanity[current_lay] = sanity_check_merged_conv
-        print("Layer:{} , shape:{} \n, sanity_check_merged_conv :{}".format(
-            current_lay, sanity_check_merged_conv.shape, sanity_check_merged_conv))
-        perform_sanity_check_over_merged_conv_filter(
-            sanity_check_merged_conv, list_of_weights[0:current_lay+1])
+        # print("Layer:{} , shape:{} \n, sanity_check_merged_conv :{}".format(
+        #     current_lay, sanity_check_merged_conv.shape, sanity_check_merged_conv))
+        # perform_sanity_check_over_merged_conv_filter(
+        # sanity_check_merged_conv, list_of_weights[0:current_lay+1])
 
     return c_hat_sanity
 
@@ -917,7 +951,7 @@ if __name__ == '__main__':
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
     list_of_scheme_type = [
-        "IMAGE_SEQ_OUTPUTS_PER_FILTER", "IMAGE_OUT_PER_RES_FILTER", "IMAGE_OUTPUTS_PER_FILTER"]
+        "RAW_FILTERS_GEN"]
 
     # std_image_preprocessing , mnist
     list_of_filter_vis_dataset = ["std_image_preprocessing"]
@@ -934,7 +968,7 @@ if __name__ == '__main__':
     num_batches_to_visualize = 1
 
     # ORIGINAL, ADVERSARIAL , ADVERSARIAL_PERTURB
-    analyse_on = "ADVERSARIAL_PERTURB"
+    analyse_on = "ORIGINAL"
 
     for filter_vis_dataset in list_of_filter_vis_dataset:
         print("Visualizing over " + str(filter_vis_dataset))
@@ -1017,7 +1051,7 @@ if __name__ == '__main__':
                     models_base_path = None
                     # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.93/"
                     list_of_model_paths = [
-                        "root/model/save/mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_n16_small_dir.pt"]
+                        "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt", "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"]
                     # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
                     # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
 
