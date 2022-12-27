@@ -89,8 +89,18 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
             current_f_channel_norm_dft_outs = None
             for ch_ind in range(len(current_filter_weights)):
                 current_filter_chnl_weights = current_filter_weights[ch_ind]
-                raw_dft_out = generate_centralized_DFT(
-                    current_filter_chnl_weights)
+                # raw_dft_out = generate_centralized_DFT(
+                #     current_filter_chnl_weights)
+
+                if(isinstance(current_filter_chnl_weights, torch.Tensor)):
+                    current_filter_chnl_weights = copy.copy(
+                        current_filter_chnl_weights.cpu().clone().detach().numpy())
+                pad_factor = 21
+                current_filter_chnl_weights = np.pad(current_filter_chnl_weights, (pad_factor*current_filter_chnl_weights.shape[
+                                                     0], pad_factor*current_filter_chnl_weights.shape[1]), 'constant', constant_values=(0))
+                img_c2 = np.fft.fft2(current_filter_chnl_weights)
+                raw_dft_out = np.fft.fftshift(img_c2)
+
                 for_vis_dft_out = np.log(1+np.abs(raw_dft_out))
                 std01_vis_dft_out = normalize_in_range_01(
                     for_vis_dft_out)
@@ -951,7 +961,7 @@ if __name__ == '__main__':
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
     list_of_scheme_type = [
-        "RAW_FILTERS_GEN"]
+        "IMAGE_SEQ_OUTPUTS_PER_FILTER","IMAGE_OUTPUTS_PER_FILTER","IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist
     list_of_filter_vis_dataset = ["std_image_preprocessing"]
@@ -1034,7 +1044,7 @@ if __name__ == '__main__':
                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path)
 
