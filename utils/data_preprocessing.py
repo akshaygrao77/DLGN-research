@@ -5,7 +5,7 @@ import math
 import numpy as np
 from tqdm import tqdm
 
-from keras.datasets import mnist
+from keras.datasets import mnist, fashion_mnist
 from algos.dlgn_conv_preprocess import add_channel_to_image
 from sklearn.model_selection import train_test_split
 import torchvision.transforms as transforms
@@ -307,8 +307,11 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
                                                  shuffle=False, num_workers=2)
 
         return trainloader, validloader, testloader
-    elif(dataset_config.name == 'mnist'):
-        (X_train, y_train), (X_test, y_test) = mnist.load_data()
+    elif(dataset_config.name == 'mnist' or dataset_config.name == 'fashion_mnist'):
+        if(dataset_config.name == 'mnist'):
+            (X_train, y_train), (X_test, y_test) = mnist.load_data()
+        elif(dataset_config.name == 'fashion_mnist'):
+            (X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()
         X_train = X_train.astype(np.float32)
         X_test = X_test.astype(np.float32)
 

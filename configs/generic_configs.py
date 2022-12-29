@@ -18,4 +18,12 @@ def get_preprocessing_and_other_configs(dataset, valid_split_size, batch_size=12
         ret_config = DatasetConfig(
             'mnist', is_normalize_data=True, valid_split_size=valid_split_size, batch_size=batch_size)
 
+    elif(dataset == "fashion_mnist"):
+        classes = ('T-shirt', 'Trouser', 'Pullover', 'Dress', 'Coat',
+                   'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle-boot')
+        num_classes = len(classes)
+
+        ret_config = DatasetConfig(
+            'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+
     return classes, num_classes, ret_config

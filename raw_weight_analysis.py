@@ -156,6 +156,7 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
     for i in range(len(list_of_weights)):
         current_layer_DFT = f_outs_DFT_norms[i]
         current_weight_np = list_of_weights[i]
+
         current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"/" + \
             "filter_params_*.jpg"
 
@@ -171,8 +172,10 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
             "DFT_filter_params_*.jpg"
         generate_list_of_plain_images_from_data(
             current_layer_DFT, save_each_img_path=current_full_img_save_path, is_standarize=False)
+        current_weight_np = np.squeeze(current_weight_np)
         generate_plain_image(
             current_weight_np, save_folder+"layer_num_"+str(i)+".jpg", is_standarize=False)
+        current_layer_DFT = np.squeeze(current_layer_DFT)
         generate_plain_image(
             current_layer_DFT, save_folder+"DFT_lay_num_"+str(i)+".jpg", is_standarize=False)
 
@@ -951,6 +954,7 @@ def get_modified_dataset(analyse_on, dataloader, adv_postfix_for_save, filter_vi
 
 
 if __name__ == '__main__':
+    # fashion_mnist , mnist , cifar10
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
@@ -960,8 +964,9 @@ if __name__ == '__main__':
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
-    list_of_scheme_type = [
-        "IMAGE_SEQ_OUTPUTS_PER_FILTER","IMAGE_OUTPUTS_PER_FILTER","IMAGE_OUT_PER_RES_FILTER"]
+    list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
+    # list_of_scheme_type = [
+    # "IMAGE_SEQ_OUTPUTS_PER_FILTER","IMAGE_OUTPUTS_PER_FILTER","IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist
     list_of_filter_vis_dataset = ["std_image_preprocessing"]
@@ -1004,6 +1009,17 @@ if __name__ == '__main__':
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+        elif(dataset == "fashion_mnist"):
+            inp_channel = 1
+            classes = ('T-shirt', 'Trouser', 'Pullover', 'Dress', 'Coat',
+                       'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle-boot')
+            num_classes = len(classes)
+
+            fashion_mnist_config = DatasetConfig(
+                'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+
+            trainloader, _, testloader = preprocess_dataset_get_data_loader(
+                fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
         else:
             if(filter_vis_dataset == "std_image_preprocessing"):
                 batch_size = 14
@@ -1044,7 +1060,7 @@ if __name__ == '__main__':
                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path)
 

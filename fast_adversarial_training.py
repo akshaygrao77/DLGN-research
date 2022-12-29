@@ -123,11 +123,12 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 
 if __name__ == '__main__':
-    dataset = 'mnist'
+    # fashion_mnist , mnist
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'conv4_deep_gated_net_n16_small'
     # scheme_type = ''
     # batch_size = 128
     # wand_project_name = "fast_adv_training_and_visualisation"
@@ -170,7 +171,6 @@ if __name__ == '__main__':
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
             inp_channel = 3
-            print("Training over CIFAR 10")
             classes = ('plane', 'car', 'bird', 'cat',
                        'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
             num_classes = len(classes)
@@ -183,7 +183,6 @@ if __name__ == '__main__':
 
         elif(dataset == "mnist"):
             inp_channel = 1
-            print("Training over MNIST")
             classes = [str(i) for i in range(0, 10)]
             num_classes = len(classes)
 
@@ -193,14 +192,27 @@ if __name__ == '__main__':
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
+        elif(dataset == "fashion_mnist"):
+            inp_channel = 1
+            classes = ('T-shirt', 'Trouser', 'Pullover', 'Dress', 'Coat',
+                       'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle-boot')
+            num_classes = len(classes)
+
+            fashion_mnist_config = DatasetConfig(
+                'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+
+            trainloader, _, testloader = preprocess_dataset_get_data_loader(
+                fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+
+        print("Training over "+dataset)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
         start_net_path = None
 
-        start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
-        custom_temp_model = torch.load(start_net_path)
-        net.load_state_dict(custom_temp_model.state_dict())
+        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+        # custom_temp_model = torch.load(start_net_path)
+        # net.load_state_dict(custom_temp_model.state_dict())
 
         net.to(device)
 

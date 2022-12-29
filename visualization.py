@@ -19,6 +19,7 @@ from configs.dlgn_conv_config import HardRelu
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
 from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
+from conv4_models import get_model_instance
 
 from external_utils import format_time
 
@@ -1223,7 +1224,7 @@ class TemplateImageGenerator():
                 for step_iter in pbar:
                     begin_time = time.time()
                     pbar.set_description(f"Iteration {step_iter+1}")
-                    print("self.initial_image grad", self.initial_image.grad)
+                    # print("self.initial_image grad", self.initial_image.grad)
                     # self.initial_image.grad = None
 
                     # conv = torch.nn.Conv2d(
@@ -1254,12 +1255,12 @@ class TemplateImageGenerator():
                     loss.backward()
 
                     unnorm_gradients = self.initial_image.grad
-                    print("Original self.initial_image gradients",
-                          unnorm_gradients)
+                    # print("Original self.initial_image gradients",
+                    #       unnorm_gradients)
 
                     gradients = unnorm_gradients / \
                         torch.std(unnorm_gradients) + 1e-8
-                    print("After normalize self.initial_image gradients", gradients)
+                    # print("After normalize self.initial_image gradients", gradients)
 
                     with torch.no_grad():
                         self.initial_image = self.initial_image - gradients*step_size
@@ -1398,7 +1399,7 @@ def get_initial_image(dataset, template_initial_image_type, size=None):
             return torch.from_numpy(np.uint8(np.random.uniform(100, 180, (3, size, size)))/255)
         elif(template_initial_image_type == 'gaussian_init_image'):
             return torch.from_numpy(np.uint8(np.random.random((3, size, size)) * 20 + 128.)/255)
-    elif(dataset == "mnist"):
+    elif(dataset == "mnist" or dataset == "fashion_mnist"):
         if(size is None):
             size = 28
         if(template_initial_image_type == 'zero_init_image'):
@@ -1518,8 +1519,8 @@ if __name__ == '__main__':
     # If it gives out of memory error or locks the computer
     # Try it with a smaller image
     print("Start")
-    # mnist , cifar10
-    dataset = 'mnist'
+    # mnist , cifar10 , fashion_mnist
+    dataset = 'fashion_mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -1536,21 +1537,22 @@ if __name__ == '__main__':
     is_class_segregation_on_ground_truth = True
     # uniform_init_image , zero_init_image , gaussian_init_image
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 32
+    template_image_calculation_batch_size = 1
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
-    template_loss_type = "TANH_TEMP_LOSS"
-    number_of_batch_to_collect = None
-    # wand_project_name = "cifar10_all_images_based_template_visualizations"
+    template_loss_type = "TEMP_LOSS"
+    number_of_batch_to_collect = 10
+    wand_project_name = "test_template_visualisation_augmentation"
     # wand_project_name = "template_images_visualization-test"
-    wand_project_name = None
-    wandb_group_name = "all_image_template_mnist_plain_pure_conv4_dnn"
+    # wand_project_name = None
+    wandb_group_name = "TP_"+str(template_loss_type) + \
+        "_DS_"+str(dataset)+"_MT_"+str(model_arch_type)
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
     number_of_image_optimization_steps = 161
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES
-    exp_type = "GENERATE_TEMPLATE_IMAGES"
+    exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
     collect_threshold = 0.95
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
@@ -1581,12 +1583,31 @@ if __name__ == '__main__':
     #                                                         template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
     #                                                         valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on)
 
-    custom_model = None
-    custom_model = torch.load("root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/aug_conv4_dlgn_iter_1_dir.pt")
+    wandb_config = dict()
+    custom_model_path = None
+
+    custom_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
+
+    if(custom_model_path is not None):
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        inp_channel = 1
+
+        if(dataset == "cifar10"):
+            inp_channel = 3
+
+        wandb_config["custom_model_path"] = custom_model_path
+        temp_model = torch.load(custom_model_path)
+        custom_model = get_model_instance(
+            model_arch_type, inp_channel, seed=torch_seed)
+        custom_model.load_state_dict(temp_model.state_dict())
+
+        custom_model = custom_model.to(device)
+    else:
+        custom_model = None
 
     run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size,
-                                number_of_batches_to_calculate_entropy_on, custom_model=custom_model)
+                                number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config)
 
     print("Execution completed")

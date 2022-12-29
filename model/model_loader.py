@@ -99,6 +99,32 @@ def get_model_from_loader(model_arch_type, dataset):
                 print("Parallelizing model")
                 model = torch.nn.DataParallel(model)
             cudnn.benchmark = True
+    elif(dataset == "fashion_mnist"):
+        if(model_arch_type == 'conv4_dlgn'):
+            model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
+            model = torch.load(model_path)
+        elif(model_arch_type == "conv4_dlgn_n16_small"):
+            model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+            model = torch.load(model_path)
+        elif(model_arch_type == "plain_pure_conv4_dnn_n16_small"):
+            model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_n16_small_dir.pt"
+            model = torch.load(model_path)
+        elif(model_arch_type == "plain_pure_conv4_dnn"):
+            model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_dir.pt"
+            model = torch.load(model_path)
+        elif(model_arch_type == "conv4_deep_gated_net"):
+            model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_dir.pt"
+            model = torch.load(model_path)
+        elif(model_arch_type == "conv4_deep_gated_net_n16_small"):
+            model_path = "root/model/save/mnist/conv4_deep_gated_net_n16_small_dir.pt"
+            model = torch.load(model_path)
+
+        device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
+        if device_str == 'cuda':
+            if(torch.cuda.device_count() > 1):
+                print("Parallelizing model")
+                model = torch.nn.DataParallel(model)
+            cudnn.benchmark = True
 
     model.to(device)
     print("Model loaded of type:{} for dataset:{}".format(model_arch_type, dataset))

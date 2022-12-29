@@ -565,6 +565,7 @@ def extract_common_activation_patterns_between_reconst_and_original(true_input_d
 
 
 if __name__ == '__main__':
+    # fashion_mnist , mnist
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net
     model_arch_type = 'plain_pure_conv4_dnn'
@@ -596,6 +597,18 @@ if __name__ == '__main__':
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+
+    elif(dataset == "fashion_mnist"):
+        inp_channel = 1
+        classes = ('T-shirt', 'Trouser', 'Pullover', 'Dress', 'Coat',
+                   'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle-boot')
+        num_classes = len(classes)
+
+        fashion_mnist_config = DatasetConfig(
+            'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+
+        trainloader, _, testloader = preprocess_dataset_get_data_loader(
+            fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
