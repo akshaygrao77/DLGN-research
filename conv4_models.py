@@ -701,6 +701,8 @@ def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022):
         inp_channel = 3
     elif(dataset == "mnist"):
         inp_channel = 1
+    elif(dataset == "fashion_mnist"):
+        inp_channel = 1
 
     return get_model_instance(model_arch_type, inp_channel, seed=seed)
 

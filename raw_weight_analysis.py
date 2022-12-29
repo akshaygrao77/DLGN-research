@@ -955,7 +955,7 @@ def get_modified_dataset(analyse_on, dataloader, adv_postfix_for_save, filter_vi
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
@@ -964,11 +964,11 @@ if __name__ == '__main__':
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
-    list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
-    # list_of_scheme_type = [
-    # "IMAGE_SEQ_OUTPUTS_PER_FILTER","IMAGE_OUTPUTS_PER_FILTER","IMAGE_OUT_PER_RES_FILTER"]
+    # list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
+    list_of_scheme_type = [
+        "IMAGE_SEQ_OUTPUTS_PER_FILTER", "IMAGE_OUTPUTS_PER_FILTER", "IMAGE_OUT_PER_RES_FILTER"]
 
-    # std_image_preprocessing , mnist
+    # std_image_preprocessing , mnist , fashion_mnist
     list_of_filter_vis_dataset = ["std_image_preprocessing"]
 
     batch_size = 14
@@ -1009,7 +1009,8 @@ if __name__ == '__main__':
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
-        elif(dataset == "fashion_mnist"):
+        elif(filter_vis_dataset == "fashion_mnist"):
+            batch_size = 4
             inp_channel = 1
             classes = ('T-shirt', 'Trouser', 'Pullover', 'Dress', 'Coat',
                        'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle-boot')
@@ -1060,7 +1061,7 @@ if __name__ == '__main__':
                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+                model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path)
 
