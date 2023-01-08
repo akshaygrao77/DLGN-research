@@ -124,18 +124,18 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    model_arch_type = 'conv4_deep_gated_net'
     # scheme_type = ''
     # batch_size = 128
-    # wand_project_name = "fast_adv_training_and_visualisation"
-    wand_project_name = "common_model_init_exps"
+    wand_project_name = "fast_adv_tr_visualisation"
+    # wand_project_name = "common_model_init_exps"
     # wand_project_name = None
-    # ADV_TRAINING ,  RECONST_VIS_ADV_TRAINED_MODEL
-    exp_type = "ADV_TRAINING"
+    # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL
+    exp_type = "VIS_ADV_TRAINED_MODEL"
 
     epochs = 32
     adv_attack_type = "PGD"
@@ -157,7 +157,7 @@ if __name__ == '__main__':
         torch_seed_str = "/ST_"+str(torch_seed)+"/"
 
     number_of_image_optimization_steps = 171
-    collect_threshold = 0.95
+    collect_threshold = 0.73
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
@@ -214,14 +214,14 @@ if __name__ == '__main__':
         # custom_temp_model = torch.load(start_net_path)
         # net.load_state_dict(custom_temp_model.state_dict())
 
-        net.to(device)
+        net = net.to(device)
 
-        # eps_list = [0.03, 0.06, 0.1]
+        eps_list = [0.03, 0.06, 0.1]
         fast_adv_attack_type_list = ['PGD']
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         number_of_adversarial_optimization_steps_list = [80]
 
-        eps_list = [0.06]
+        # eps_list = [0.06]
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         # number_of_adversarial_optimization_steps_list = [80]
 
@@ -283,8 +283,7 @@ if __name__ == '__main__':
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc})
                             wandb.finish()
-
-                    elif(exp_type == "RECONST_VIS_ADV_TRAINED_MODEL"):
+                    elif(exp_type == "RECONST_EVAL_ADV_TRAINED_MODEL"):
                         final_postfix_for_save = prefix2
                         final_postfix_for_overall_save = prefix2 + "overall_template/"
 
@@ -320,12 +319,35 @@ if __name__ == '__main__':
                                 group=f"{wandb_group_name}",
                                 config=wandb_config,
                             )
-                            acc_with_orig_via_reconst = evaluate_model_via_reconstructed(net, testloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
+                            acc_with_orig_via_reconst = evaluate_model_via_reconstructed(model_arch_type, net, testloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
                                                                                          template_loss_type, number_of_adversarial_optimization_steps=number_of_adversarial_optimization_steps, eps_step_size=eps_step_size, adv_target=None, save_adv_image_prefix=model_save_prefix)
 
                             wandb.log(
                                 {"adv_tr_test_acc_via_reconst": acc_with_orig_via_reconst})
                             wandb.finish()
+                    elif(exp_type == "VIS_ADV_TRAINED_MODEL"):
+                        final_postfix_for_save = prefix2
+                        final_postfix_for_overall_save = prefix2 + "overall_template/"
+
+                        print("Loading model from:", model_save_path)
+                        best_model = torch.load(model_save_path)
+                        print("Loaded model from:", model_save_path)
+
+                        if(is_log_wandb):
+                            wandb_run_name = str(
+                                model_arch_type)+prefix2.replace(
+                                "/", "_")
+                            wandb_config = dict()
+                            wandb_config["adv_attack_type"] = adv_attack_type
+                            wandb_config["model_arch_type"] = model_arch_type
+                            wandb_config["dataset"] = dataset
+                            wandb_config["eps"] = eps
+                            wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
+                            wandb_config["epochs"] = epochs
+                            wandb_config["batch_size"] = batch_size
+                            wandb_config["fast_adv_attack_type"] = fast_adv_attack_type
+                            wandb_config["eps_step_size"] = eps_step_size
+                            wandb_config["model_save_path"] = model_save_path
 
                         for is_template_image_on_train in [True]:
                             wandb_config["is_template_image_on_train"] = is_template_image_on_train

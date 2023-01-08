@@ -153,7 +153,7 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
     return acc
 
 
-def plain_evaluate_model_via_reconstructed(net, dataloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, save_image_prefix=None, postfix_folder_for_save="/"):
+def plain_evaluate_model_via_reconstructed(model_arch_type,net, dataloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, save_image_prefix=None, postfix_folder_for_save="/"):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
@@ -172,7 +172,7 @@ def plain_evaluate_model_via_reconstructed(net, dataloader, classes, dataset, te
             device), labels.to(device)
 
         reconst_adv_images = quick_visualization_on_config(
-            net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
+            model_arch_type,net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
             images_to_collect_upon=images, number_of_image_optimization_steps=number_of_image_optimization_steps, template_loss_type=template_loss_type)
 
         # calculate outputs by running images through the network
@@ -206,7 +206,7 @@ def plain_evaluate_model_via_reconstructed(net, dataloader, classes, dataset, te
     return acc
 
 
-def evaluate_model_via_reconstructed(net, dataloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
+def evaluate_model_via_reconstructed(model_arch_type,net, dataloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
@@ -228,7 +228,7 @@ def evaluate_model_via_reconstructed(net, dataloader, classes, eps, adv_attack_t
             images, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted)
 
         reconst_adv_images = quick_visualization_on_config(
-            net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
+            model_arch_type,net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
             images_to_collect_upon=adv_images, number_of_image_optimization_steps=number_of_image_optimization_steps, template_loss_type=template_loss_type)
 
         # calculate outputs by running images through the network

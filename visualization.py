@@ -791,9 +791,9 @@ class TemplateImageGenerator():
         max_percent_active_pixels = 0.
         min_percent_active_pixels = 100.
 
-        if(vis_version == 'V2'):
+        if(vis_version == 'V2' or vis_version == 'V3'):
             if('conv4_deep_gated_net' in model_arch_type):
-                number_of_image_optimization_steps = 500
+                number_of_image_optimization_steps = 301
             else:
                 number_of_image_optimization_steps = 161
 
@@ -836,7 +836,7 @@ class TemplateImageGenerator():
                                                  is_class_segregation_on_ground_truth, template_initial_image_type,
                                                  template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
                                                  plot_iteration_interval, collect_threshold=collect_threshold)
-            if(vis_version == 'V2'):
+            if(vis_version == 'V2' or vis_version == 'V3'):
                 wandb_config["vis_version"] = vis_version
                 wandb_config["start_sigma"] = start_sigma
                 wandb_config["end_sigma"] = end_sigma
@@ -885,7 +885,7 @@ class TemplateImageGenerator():
             self.initial_image.requires_grad_()
 
             step_size = 0.01
-            if(vis_version == 'V2'):
+            if(vis_version == 'V2' or vis_version == 'V3'):
                 with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for current batch V2") as pbar:
                     for step_iter in pbar:
                         pbar.set_description(f"Iteration {step_iter+1}")
@@ -921,7 +921,7 @@ class TemplateImageGenerator():
                                     "Percent_active_pixels": percent_active_pixels, "final_postfix_for_save": final_postfix_for_save
                                 }, step=(batch_indx+1))
 
-                        print("{} Loss: {}".format(template_loss_type, loss))
+                        # print("{} Loss: {}".format(template_loss_type, loss))
 
                         # Backward
                         loss.backward()
@@ -929,8 +929,8 @@ class TemplateImageGenerator():
                         unnorm_gradients = self.initial_image.grad
                         # std_unnorm_grad = torch.std(unnorm_gradients)
                         norm_grad = torch.norm(unnorm_gradients)
-                        print("torch.norm(unnorm_gradients):",
-                              norm_grad)
+                        # print("torch.norm(unnorm_gradients):",
+                        #       norm_grad)
                         # print("std_unnorm_grad:", std_unnorm_grad)
                         # print("Original self.initial_image gradients", gradients)
 
@@ -938,8 +938,8 @@ class TemplateImageGenerator():
                         gradients = unnorm_gradients / \
                             norm_grad + 1e-8
 
-                        print("torch.norm(gradients):",
-                              torch.norm(gradients))
+                        # print("torch.norm(gradients):",
+                        #       torch.norm(gradients))
 
                         with torch.no_grad():
                             # self.initial_image = self.initial_image - gradients*step_size
@@ -959,9 +959,10 @@ class TemplateImageGenerator():
                             self.initial_image = torch.from_numpy(
                                 self.initial_image[None])
                             pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
-                                self.initial_image).item())
+                                self.initial_image).item(), norm_grad=torch.norm(gradients).item(), norm_raw_grad=norm_grad.item())
 
-                            self.initial_image = self.initial_image.to(device)
+                            self.initial_image = self.initial_image.to(
+                                self.device)
                             if(not(plot_iteration_interval is None) and step_iter % plot_iteration_interval == 0):
                                 update_indx = step_iter // plot_iteration_interval
                                 _, outputs_logits, outputs_final, correct = self.get_prediction(
@@ -1224,7 +1225,7 @@ class TemplateImageGenerator():
               self.image_save_prefix_folder)
         return list_of_reconst_images
 
-    def generate_template_image_over_given_image(self, image_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version='V2'):
+    def generate_template_image_over_given_image(self, model_arch_type, image_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version='V2'):
         self.initial_image = preprocess_image(
             self.original_image.cpu().clone().detach().numpy(), normalize=False)
         self.initial_image = self.initial_image.to(self.device)
@@ -1240,8 +1241,79 @@ class TemplateImageGenerator():
         self.update_overall_y_maps(collect_threshold=0.95)
 
         step_size = 0.01
-        if(vis_version == "V2"):
-            pass
+        if(vis_version == "V2" or vis_version == 'V3'):
+            if('conv4_deep_gated_net' in model_arch_type):
+                number_of_image_optimization_steps = 301
+            else:
+                number_of_image_optimization_steps = 161
+
+            start_sigma = 0.75
+            end_sigma = 0.1
+            if('conv4_deep_gated_net' in model_arch_type):
+                start_step_size = 1
+                end_step_size = 0.5
+            else:
+                start_step_size = 0.1
+                end_step_size = 0.05
+
+            with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for given image V2") as pbar:
+                for step_iter in pbar:
+                    pbar.set_description(f"Iteration {step_iter+1}")
+
+                    step_size = start_step_size + \
+                        ((end_step_size - start_step_size) * step_iter) / \
+                        number_of_image_optimization_steps
+                    # optimizer = torch.optim.SGD([img_var], lr=step_size)
+                    sigma = start_sigma + \
+                        ((end_sigma - start_sigma) * step_iter) / \
+                        number_of_image_optimization_steps
+
+                    outputs = self.model(self.initial_image)
+
+                    verbose = 1
+                    loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
+                        template_loss_type, class_indx, outputs, class_image, alpha, verbose)
+
+                    # print("{} Loss: {}".format(template_loss_type, loss))
+                    if(step_iter == 0 and "TEMP" in template_loss_type):
+                        percent_active_pixels = float((
+                            active_pixel_points/total_pixel_points)*100)
+                        print("active_pixel_points", active_pixel_points)
+                        print("total_pixel_points", total_pixel_points)
+                        print("Percentage of active pixels:",
+                              percent_active_pixels)
+
+                    # Backward
+                    loss.backward()
+
+                    unnorm_gradients = self.initial_image.grad
+                    # std_unnorm_grad = torch.std(unnorm_gradients)
+                    norm_grad = torch.norm(unnorm_gradients)
+
+                    # gradients = unnorm_gradients / first_norm
+                    gradients = unnorm_gradients / \
+                        norm_grad + 1e-8
+
+                    with torch.no_grad():
+                        # self.initial_image = self.initial_image - gradients*step_size
+                        blurred_grad = gradients.cpu().detach().numpy()[0]
+                        blurred_grad = blur_img(
+                            blurred_grad, sigma)
+                        self.initial_image = self.initial_image.cpu().detach().numpy()[
+                            0]
+                        self.initial_image -= step_size / \
+                            np.abs(blurred_grad).mean() * blurred_grad
+
+                        self.initial_image = blur_img(
+                            self.initial_image, sigma)
+                        self.initial_image = torch.from_numpy(
+                            self.initial_image[None])
+
+                    self.initial_image = self.initial_image.to(self.device)
+                    self.initial_image.requires_grad_()
+
+                    pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
+                        self.initial_image).item(), norm_grad=torch.norm(gradients).item(), norm_raw_grad=norm_grad.item())
         else:
             with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for given image") as pbar:
                 for step_iter in pbar:
@@ -1326,9 +1398,9 @@ class TemplateImageGenerator():
 
         class_image, _ = next(iter(per_class_data_loader))
         class_image = class_image.to(self.device, non_blocking=True)
-        if(vis_version == 'V2'):
+        if(vis_version == 'V2' or vis_version == 'V3'):
             if('conv4_deep_gated_net' in model_arch_type):
-                number_of_image_optimization_steps = 500
+                number_of_image_optimization_steps = 301
             else:
                 number_of_image_optimization_steps = 161
 
@@ -1369,7 +1441,7 @@ class TemplateImageGenerator():
                                                      is_class_segregation_on_ground_truth, template_initial_image_type,
                                                      template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
                                                      number_of_batch_to_collect=number_of_batch_to_collect, collect_threshold=collect_threshold)
-                if(vis_version == 'V2'):
+                if(vis_version == 'V2' or vis_version == 'V3'):
                     wandb_config["vis_version"] = vis_version
                     wandb_config["start_sigma"] = start_sigma
                     wandb_config["end_sigma"] = end_sigma
@@ -1394,7 +1466,7 @@ class TemplateImageGenerator():
             self.initial_image.requires_grad_()
 
             step_size = 0.01
-            if(vis_version == 'V2'):
+            if(vis_version == 'V2' or vis_version == 'V3'):
                 with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image V2") as pbar:
                     for step_iter in pbar:
                         begin_time = time.time()
@@ -1464,7 +1536,7 @@ class TemplateImageGenerator():
                             self.initial_image = torch.from_numpy(
                                 self.initial_image[None])
 
-                        self.initial_image = self.initial_image.to(device)
+                        self.initial_image = self.initial_image.to(self.device)
                         self.initial_image.requires_grad_()
 
                         if(plot_iteration_interval is not None and step_iter % plot_iteration_interval == 0):
@@ -1704,17 +1776,17 @@ def get_initial_image(dataset, template_initial_image_type, size=None):
             return torch.from_numpy(np.random.normal(128, 8, (1, 28, 28)).astype('float32')/255)
 
 
-def quick_visualization_on_config(model, dataset, exp_type, template_initial_image_type, images_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version='V2'):
+def quick_visualization_on_config(model_arch_type, model, dataset, exp_type, template_initial_image_type, images_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version='V2'):
     tmp_gen = TemplateImageGenerator(
         model, get_initial_image(dataset, template_initial_image_type))
     if(exp_type == "GENERATE_TEMPLATE_GIVEN_IMAGE"):
         return tmp_gen.generate_template_image_over_given_image(
-            images_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version)
+            model_arch_type, images_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version)
     elif(exp_type == "GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES"):
         list_of_reconst_images = None
         for each_image_to_collect_upon in images_to_collect_upon:
             current_reconst_image = tmp_gen.generate_template_image_over_given_image(
-                each_image_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version)
+                model_arch_type, each_image_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version)
             if(list_of_reconst_images is None):
                 list_of_reconst_images = current_reconst_image
             else:
@@ -1822,7 +1894,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn
-    model_arch_type = 'conv4_deep_gated_net'
+    model_arch_type = 'conv4_dlgn'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
@@ -1878,7 +1950,7 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_dir.pt"
+    custom_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -1888,10 +1960,10 @@ if __name__ == '__main__':
             inp_channel = 3
 
         wandb_config["custom_model_path"] = custom_model_path
-        custom_model = torch.load(custom_model_path)
-        # custom_model = get_model_instance(
-        #     model_arch_type, inp_channel, seed=torch_seed)
-        # custom_model.load_state_dict(temp_model.state_dict())
+        temp_model = torch.load(custom_model_path)
+        custom_model = get_model_instance(
+            model_arch_type, inp_channel, seed=torch_seed)
+        custom_model.load_state_dict(temp_model.state_dict())
 
         custom_model = custom_model.to(device)
     else:

@@ -86,7 +86,7 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
         if not os.path.exists(per_epoch_model_save_path):
             os.makedirs(per_epoch_model_save_path)
         per_epoch_model_save_path += "/epoch_{}_dir.pt".format(epoch)
-        if(epoch % 5 == 0):
+        if(epoch % 7 == 0):
             torch.save(net, per_epoch_model_save_path)
         if(test_acc >= best_test_acc):
             best_test_acc = test_acc
@@ -144,9 +144,9 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    model_arch_type = 'conv4_deep_gated_net'
     # iterative_augmenting , nil
-    scheme_type = 'nil'
+    scheme_type = 'iterative_augmenting'
     # scheme_type = ''
     batch_size = 32
 
@@ -154,7 +154,8 @@ if __name__ == '__main__':
     torch_seed = 2022
 
     # wand_project_name = None
-    wand_project_name = "common_model_init_exps"
+    # wand_project_name = "common_model_init_exps"
+    wand_project_name = "V2_template_visualisation_augmentation"
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -213,8 +214,6 @@ if __name__ == '__main__':
     epochs = 32
 
     if(scheme_type == 'iterative_augmenting'):
-        # fashion_mnist , mnist
-        dataset = 'fashion_mnist'
         # If False, then on test
         is_template_image_on_train = True
         # If False, then segregation is over model prediction
@@ -227,7 +226,7 @@ if __name__ == '__main__':
         number_of_batch_to_collect = 1
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "template_images_visualization-test"
-        wand_project_name = "test_template_visualisation_augmentation"
+        wand_project_name = "V2_template_visualisation_augmentation"
         # wand_project_name = None
         wandb_group_name = "DS_"+str(dataset) + \
             "_template_vis_aug_"+str(model_arch_type)
@@ -241,6 +240,7 @@ if __name__ == '__main__':
         collect_threshold = 0.73
         entropy_calculation_batch_size = 64
         number_of_batches_to_calculate_entropy_on = None
+        visualization_version = "V2"
 
         tmp_image_over_what_str = 'test'
         if(is_template_image_on_train):
@@ -250,9 +250,10 @@ if __name__ == '__main__':
         if(is_class_segregation_on_ground_truth):
             seg_over_what_str = 'GT'
 
-        root_save_prefix = "root/AUG_RECONS_SAVE/"
+        root_save_prefix = "root/" + \
+            str(visualization_version)+"AUG_RECONS_SAVE/"
         model_and_data_save_prefix = "root/model/save/" + \
-            str(dataset)+"/iterative_augmenting/DS_"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+            str(dataset)+"/"+str(visualization_version)+"_iterative_augmenting/DS_"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
                 seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"
 
         number_of_augment_iterations = 5
@@ -383,7 +384,7 @@ if __name__ == '__main__':
                                                                    template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                                                    valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
                                                                    entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix, final_postfix_for_save,
-                                                                   custom_model=net, custom_data_loader=(trainloader, testloader), class_indx_to_visualize=current_class_indx_to_visualize)
+                                                                   custom_model=net, custom_data_loader=(trainloader, testloader), class_indx_to_visualize=current_class_indx_to_visualize, vis_version=visualization_version)
                 # TO get one template image per class
                 run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                             template_image_calculation_batch_size=32, template_loss_type=template_loss_type, number_of_batch_to_collect=None,
@@ -392,7 +393,7 @@ if __name__ == '__main__':
                                             exp_type="GENERATE_TEMPLATE_IMAGES", collect_threshold=collect_threshold, entropy_calculation_batch_size=entropy_calculation_batch_size,
                                             number_of_batches_to_calculate_entropy_on=number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix,
                                             final_postfix_for_save=final_postfix_for_overall_save, custom_model=net,
-                                            custom_data_loader=(trainloader, testloader), class_indx_to_visualize=current_class_indx_to_visualize)
+                                            custom_data_loader=(trainloader, testloader), class_indx_to_visualize=current_class_indx_to_visualize, vis_version=visualization_version)
 
                 class_label = classes[current_c_indx]
                 each_class_output_template_list = output_template_list[current_c_indx]
