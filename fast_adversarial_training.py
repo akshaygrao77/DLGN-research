@@ -10,7 +10,7 @@ import wandb
 
 from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader
-from adversarial_attacks_tester import evaluate_model, evaluate_model_via_reconstructed
+from adversarial_attacks_tester import evaluate_model, evaluate_model_via_reconstructed, plain_evaluate_model_via_reconstructed
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
 from configs.generic_configs import get_preprocessing_and_other_configs
@@ -124,7 +124,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net
@@ -135,7 +135,7 @@ if __name__ == '__main__':
     # wand_project_name = "common_model_init_exps"
     # wand_project_name = None
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL
-    exp_type = "VIS_ADV_TRAINED_MODEL"
+    exp_type = "RECONST_EVAL_ADV_TRAINED_MODEL"
 
     epochs = 32
     adv_attack_type = "PGD"
@@ -216,12 +216,12 @@ if __name__ == '__main__':
 
         net = net.to(device)
 
-        eps_list = [0.03, 0.06, 0.1]
+        # eps_list = [0.03, 0.06, 0.1]
         fast_adv_attack_type_list = ['PGD']
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         number_of_adversarial_optimization_steps_list = [80]
 
-        # eps_list = [0.06]
+        eps_list = [0.06]
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         # number_of_adversarial_optimization_steps_list = [80]
 
@@ -319,11 +319,13 @@ if __name__ == '__main__':
                                 group=f"{wandb_group_name}",
                                 config=wandb_config,
                             )
-                            acc_with_orig_via_reconst = evaluate_model_via_reconstructed(model_arch_type, net, testloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
-                                                                                         template_loss_type, number_of_adversarial_optimization_steps=number_of_adversarial_optimization_steps, eps_step_size=eps_step_size, adv_target=None, save_adv_image_prefix=model_save_prefix)
+                            acc_over_orig_via_reconst = plain_evaluate_model_via_reconstructed(
+                                model_arch_type, net, testloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, adv_target)
+                            acc_over_adv_via_reconst = evaluate_model_via_reconstructed(model_arch_type, net, testloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
+                                                                                        template_loss_type, number_of_adversarial_optimization_steps=number_of_adversarial_optimization_steps, eps_step_size=eps_step_size, adv_target=None, save_adv_image_prefix=model_save_prefix)
 
                             wandb.log(
-                                {"adv_tr_test_acc_via_reconst": acc_with_orig_via_reconst})
+                                {"adv_tr_ad_test_acc_via_reconst": acc_over_adv_via_reconst, "adv_tr_orig_test_acc_via_reconst": acc_over_orig_via_reconst})
                             wandb.finish()
                     elif(exp_type == "VIS_ADV_TRAINED_MODEL"):
                         final_postfix_for_save = prefix2

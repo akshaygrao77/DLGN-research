@@ -153,7 +153,7 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
     return acc
 
 
-def plain_evaluate_model_via_reconstructed(model_arch_type,net, dataloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, save_image_prefix=None, postfix_folder_for_save="/"):
+def plain_evaluate_model_via_reconstructed(model_arch_type, net, dataloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type,adv_target, save_image_prefix=None, postfix_folder_for_save="/"):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
@@ -172,7 +172,7 @@ def plain_evaluate_model_via_reconstructed(model_arch_type,net, dataloader, clas
             device), labels.to(device)
 
         reconst_adv_images = quick_visualization_on_config(
-            model_arch_type,net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
+            model_arch_type, net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
             images_to_collect_upon=images, number_of_image_optimization_steps=number_of_image_optimization_steps, template_loss_type=template_loss_type)
 
         # calculate outputs by running images through the network
@@ -206,7 +206,7 @@ def plain_evaluate_model_via_reconstructed(model_arch_type,net, dataloader, clas
     return acc
 
 
-def evaluate_model_via_reconstructed(model_arch_type,net, dataloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
+def evaluate_model_via_reconstructed(model_arch_type, net, dataloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
@@ -228,7 +228,7 @@ def evaluate_model_via_reconstructed(model_arch_type,net, dataloader, classes, e
             images, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted)
 
         reconst_adv_images = quick_visualization_on_config(
-            model_arch_type,net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
+            model_arch_type, net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
             images_to_collect_upon=adv_images, number_of_image_optimization_steps=number_of_image_optimization_steps, template_loss_type=template_loss_type)
 
         # calculate outputs by running images through the network
@@ -625,18 +625,18 @@ if __name__ == '__main__':
         adv_attack_type = "PGD"
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST
-        exp_type = "ADV_ATTACK"
+        exp_type = "ADV_ATTACK_EVAL_VIA_RECONST"
         is_adv_attack_on_train = True
         eps_step_size = 0.01
 
         model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
 
-        number_of_augment_iterations = 3
+        number_of_augment_iterations = 1
 
         is_targetted = adv_target is not None
         is_log_wandb = not(wand_project_name is None)
 
-        eps_list = [0.02, 0.03, 0.04, 0.05, 0.06, 0.1]
+        eps_list = [0.03, 0.05, 0.06, 0.1]
         # eps_list = [0.06]
         if(exp_type == "ACT_COMPARE_RECONST_ORIGINAL"):
             eps_list = [0]
@@ -775,9 +775,9 @@ if __name__ == '__main__':
                         adv_dataset, shuffle=False, batch_size=128)
 
                     eval_orig_via_reconst_acc = plain_evaluate_model_via_reconstructed(
-                        net, eval_loader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type)
+                        model_arch_type,net, eval_loader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type,adv_target)
                     eval_adv_via_reconst_acc = plain_evaluate_model_via_reconstructed(
-                        net, to_be_analysed_adversarial_dataloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, save_image_prefix=save_folder, postfix_folder_for_save="/recons_adver/")
+                        model_arch_type,net, to_be_analysed_adversarial_dataloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type,adv_target, save_image_prefix=save_folder, postfix_folder_for_save="/recons_adver/")
 
                     if(is_log_wandb):
                         wandb.log({"eval_orig_via_reconst_acc": eval_orig_via_reconst_acc,
