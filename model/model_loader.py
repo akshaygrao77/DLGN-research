@@ -116,7 +116,7 @@ def get_model_from_loader(model_arch_type, dataset):
             model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_dir.pt"
             model = torch.load(model_path)
         elif(model_arch_type == "conv4_deep_gated_net_n16_small"):
-            model_path = "root/model/save/mnist/conv4_deep_gated_net_n16_small_dir.pt"
+            model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_n16_small_dir.pt"
             model = torch.load(model_path)
 
         device_str = 'cuda' if torch.cuda.is_available() else 'cpu'

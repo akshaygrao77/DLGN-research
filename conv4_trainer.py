@@ -140,11 +140,11 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'conv4_deep_gated_net'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn
+    model_arch_type = 'conv4_dlgn'
     # iterative_augmenting , nil
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
@@ -196,8 +196,13 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
+    model_arch_type_str = model_arch_type
+    if(model_arch_type == "masked_conv4_dlgn"):
+        mask_percentage = 40
+        model_arch_type_str = model_arch_type_str + \
+            "_PRC_"+str(mask_percentage)
     final_model_save_path = get_model_save_path(
-        model_arch_type, dataset, torch_seed)
+        model_arch_type_str, dataset, torch_seed)
 
     # list_of_weights, list_of_bias = get_gating_layer_weights(net)
 
@@ -229,7 +234,7 @@ if __name__ == '__main__':
         wand_project_name = "V2_template_visualisation_augmentation"
         # wand_project_name = None
         wandb_group_name = "DS_"+str(dataset) + \
-            "_template_vis_aug_"+str(model_arch_type)
+            "_template_vis_aug_"+str(model_arch_type_str)
         is_split_validation = False
         valid_split_size = 0.1
 
@@ -253,7 +258,7 @@ if __name__ == '__main__':
         root_save_prefix = "root/" + \
             str(visualization_version)+"AUG_RECONS_SAVE/"
         model_and_data_save_prefix = "root/model/save/" + \
-            str(dataset)+"/"+str(visualization_version)+"_iterative_augmenting/DS_"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+            str(dataset)+"/"+str(visualization_version)+"_iterative_augmenting/DS_"+str(dataset)+"/MT_"+str(model_arch_type_str)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
                 seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"
 
         number_of_augment_iterations = 5
@@ -316,9 +321,9 @@ if __name__ == '__main__':
                 print("net", net)
                 if(is_log_wandb):
                     wandb_run_name = str(
-                        model_arch_type)+"_aug_iteration_"+str(current_aug_iter_num)
+                        model_arch_type_str)+"_aug_iteration_"+str(current_aug_iter_num)
                     experiment_type = 'TRAIN'+str(exp_type)
-                    wandb_config = get_wandb_config(experiment_type, classes, model_arch_type, dataset, is_template_image_on_train,
+                    wandb_config = get_wandb_config(experiment_type, classes, model_arch_type_str, dataset, is_template_image_on_train,
                                                     is_class_segregation_on_ground_truth, template_initial_image_type,
                                                     template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
                                                     collect_threshold=collect_threshold, number_of_batch_to_collect=number_of_batch_to_collect)
@@ -380,13 +385,13 @@ if __name__ == '__main__':
             print("class_indx_to_visualize", class_indx_to_visualize)
             for current_c_indx in class_indx_to_visualize:
                 current_class_indx_to_visualize = [current_c_indx]
-                output_template_list = run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                output_template_list = run_visualization_on_config(dataset, model_arch_type_str, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                    template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                                                    valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
                                                                    entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix, final_postfix_for_save,
                                                                    custom_model=net, custom_data_loader=(trainloader, testloader), class_indx_to_visualize=current_class_indx_to_visualize, vis_version=visualization_version)
                 # TO get one template image per class
-                run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                run_visualization_on_config(dataset, model_arch_type_str, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                             template_image_calculation_batch_size=32, template_loss_type=template_loss_type, number_of_batch_to_collect=None,
                                             wand_project_name=wand_project_name, is_split_validation=is_split_validation, valid_split_size=valid_split_size,
                                             torch_seed=torch_seed, number_of_image_optimization_steps=number_of_image_optimization_steps, wandb_group_name=wandb_group_name,
@@ -452,9 +457,9 @@ if __name__ == '__main__':
         is_log_wandb = not(wand_project_name is None)
         if(is_log_wandb):
             wandb_group_name = "DS_"+str(dataset) + \
-                "_MT_"+str(model_arch_type)+"_SEED_"+str(torch_seed)
+                "_MT_"+str(model_arch_type_str)+"_SEED_"+str(torch_seed)
             wandb_run_name = "MT_" + \
-                str(model_arch_type)+"/SEED_"+str(torch_seed)+"/EP_"+str(epochs)+"/LR_" + \
+                str(model_arch_type_str)+"/SEED_"+str(torch_seed)+"/EP_"+str(epochs)+"/LR_" + \
                 str(lr)+"/OPT_"+str(optimizer)+"/LOSS_TYPE_" + \
                 str(criterion)+"/BS_"+str(batch_size) + \
                 "/SCH_TYP_"+str(scheme_type)
@@ -462,7 +467,7 @@ if __name__ == '__main__':
 
             wandb_config = dict()
             wandb_config["dataset"] = dataset
-            wandb_config["model_arch_type"] = model_arch_type
+            wandb_config["model_arch_type"] = model_arch_type_str
             wandb_config["torch_seed"] = torch_seed
             wandb_config["scheme_type"] = scheme_type
             wandb_config["final_model_save_path"] = final_model_save_path
