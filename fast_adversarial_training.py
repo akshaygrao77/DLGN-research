@@ -127,15 +127,15 @@ if __name__ == '__main__':
     dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'conv4_deep_gated_net'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn
+    model_arch_type = 'masked_conv4_dlgn'
     # scheme_type = ''
     # batch_size = 128
     wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "common_model_init_exps"
     # wand_project_name = None
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL
-    exp_type = "RECONST_EVAL_ADV_TRAINED_MODEL"
+    exp_type = "ADV_TRAINING"
 
     epochs = 32
     adv_attack_type = "PGD"
@@ -208,6 +208,13 @@ if __name__ == '__main__':
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
+        model_arch_type_str = model_arch_type
+        if(model_arch_type == "masked_conv4_dlgn"):
+            mask_percentage = 90
+            model_arch_type_str = model_arch_type_str + \
+                "_PRC_"+str(mask_percentage)
+            net = get_model_instance(
+                model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed)
         start_net_path = None
 
         # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
@@ -233,7 +240,7 @@ if __name__ == '__main__':
                     root_save_prefix = "root/ADVER_RECONS_SAVE/"
                     init_prefix = "root/model/save/" + \
                         str(dataset)+"/adversarial_training/MT_" + \
-                        str(model_arch_type)
+                        str(model_arch_type_str)
                     if(start_net_path is not None):
                         init_prefix = start_net_path[0:start_net_path.rfind(
                             ".pt")]
@@ -243,7 +250,7 @@ if __name__ == '__main__':
                     prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/".format(
                         fast_adv_attack_type, adv_attack_type, eps, batch_size, eps_step_size, number_of_adversarial_optimization_steps)
                     wandb_group_name = "DS_"+str(dataset) + "_EXP_"+str(exp_type) +\
-                        "_fast_adv_training_TYP_"+str(model_arch_type)
+                        "_fast_adv_training_TYP_"+str(model_arch_type_str)
                     model_save_prefix += prefix2
                     model_save_path = model_save_prefix + "adv_model_dir.pt"
 
@@ -254,12 +261,12 @@ if __name__ == '__main__':
                     if(exp_type == "ADV_TRAINING"):
                         if(is_log_wandb):
                             wandb_run_name = str(
-                                model_arch_type)+prefix2.replace(
+                                model_arch_type_str)+prefix2.replace(
                                 "/", "_")
                             wandb_config = dict()
                             wandb_config["exp_type"] = exp_type
                             wandb_config["adv_attack_type"] = adv_attack_type
-                            wandb_config["model_arch_type"] = model_arch_type
+                            wandb_config["model_arch_type"] = model_arch_type_str
                             wandb_config["dataset"] = dataset
                             wandb_config["eps"] = eps
                             wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
@@ -293,12 +300,12 @@ if __name__ == '__main__':
 
                         if(is_log_wandb):
                             wandb_run_name = str(
-                                model_arch_type)+prefix2.replace(
+                                model_arch_type_str)+prefix2.replace(
                                 "/", "_")
                             wandb_config = dict()
                             wandb_config["exp_type"] = "EVAL_VIA_RECONST"
                             wandb_config["adv_attack_type"] = adv_attack_type
-                            wandb_config["model_arch_type"] = model_arch_type
+                            wandb_config["model_arch_type"] = model_arch_type_str
                             wandb_config["dataset"] = dataset
                             wandb_config["eps"] = eps
                             wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
@@ -310,7 +317,7 @@ if __name__ == '__main__':
 
                         if(is_log_wandb):
                             wandb_run_name = str(
-                                model_arch_type)+prefix2.replace(
+                                model_arch_type_str)+prefix2.replace(
                                 "/", "_")
 
                             wandb.init(
@@ -320,8 +327,8 @@ if __name__ == '__main__':
                                 config=wandb_config,
                             )
                             acc_over_orig_via_reconst = plain_evaluate_model_via_reconstructed(
-                                model_arch_type, net, testloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, adv_target)
-                            acc_over_adv_via_reconst = evaluate_model_via_reconstructed(model_arch_type, net, testloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
+                                model_arch_type_str, net, testloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, adv_target)
+                            acc_over_adv_via_reconst = evaluate_model_via_reconstructed(model_arch_type_str, net, testloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps,
                                                                                         template_loss_type, number_of_adversarial_optimization_steps=number_of_adversarial_optimization_steps, eps_step_size=eps_step_size, adv_target=None, save_adv_image_prefix=model_save_prefix)
 
                             wandb.log(
@@ -337,11 +344,11 @@ if __name__ == '__main__':
 
                         if(is_log_wandb):
                             wandb_run_name = str(
-                                model_arch_type)+prefix2.replace(
+                                model_arch_type_str)+prefix2.replace(
                                 "/", "_")
                             wandb_config = dict()
                             wandb_config["adv_attack_type"] = adv_attack_type
-                            wandb_config["model_arch_type"] = model_arch_type
+                            wandb_config["model_arch_type"] = model_arch_type_str
                             wandb_config["dataset"] = dataset
                             wandb_config["eps"] = eps
                             wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
@@ -353,7 +360,7 @@ if __name__ == '__main__':
 
                         for is_template_image_on_train in [True]:
                             wandb_config["is_template_image_on_train"] = is_template_image_on_train
-                            output_template_list = run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                            output_template_list = run_visualization_on_config(dataset, model_arch_type_str, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                                template_image_calculation_batch_size=1, template_loss_type=template_loss_type,
                                                                                number_of_batch_to_collect=1, wand_project_name=wand_project_name, is_split_validation=False,
                                                                                valid_split_size=None, torch_seed=torch_seed, number_of_image_optimization_steps=number_of_image_optimization_steps,
@@ -362,7 +369,7 @@ if __name__ == '__main__':
                                                                                root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save,
                                                                                custom_model=best_model, custom_data_loader=(trainloader, testloader), wandb_config_additional_dict=wandb_config)
                             # TO get one template image per class
-                            run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
+                            run_visualization_on_config(dataset, model_arch_type_str, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                                         template_image_calculation_batch_size=32, template_loss_type=template_loss_type, number_of_batch_to_collect=None,
                                                         wand_project_name=wand_project_name, is_split_validation=is_split_validation, valid_split_size=valid_split_size,
                                                         torch_seed=torch_seed, number_of_image_optimization_steps=number_of_image_optimization_steps, wandb_group_name=wandb_group_name,
