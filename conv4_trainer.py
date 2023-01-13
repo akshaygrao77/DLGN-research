@@ -140,11 +140,11 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'masked_conv4_dlgn'
     # iterative_augmenting , nil
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
@@ -198,9 +198,11 @@ if __name__ == '__main__':
     net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
     model_arch_type_str = model_arch_type
     if(model_arch_type == "masked_conv4_dlgn"):
-        mask_percentage = 40
+        mask_percentage = 10
         model_arch_type_str = model_arch_type_str + \
             "_PRC_"+str(mask_percentage)
+        net = get_model_instance(
+            model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed)
     final_model_save_path = get_model_save_path(
         model_arch_type_str, dataset, torch_seed)
 
@@ -261,11 +263,11 @@ if __name__ == '__main__':
             str(dataset)+"/"+str(visualization_version)+"_iterative_augmenting/DS_"+str(dataset)+"/MT_"+str(model_arch_type_str)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
                 seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"
 
-        number_of_augment_iterations = 5
-        epochs_in_each_augment_iteration = [32, 10, 10, 10, 5]
+        # number_of_augment_iterations = 5
+        # epochs_in_each_augment_iteration = [32, 10, 10, 10, 5]
 
-        # number_of_augment_iterations = 2
-        # epochs_in_each_augment_iteration = [32, 10]
+        number_of_augment_iterations = 2
+        epochs_in_each_augment_iteration = [32, 10]
 
         current_augmented_x_train = None
         current_augmented_y_train = None
