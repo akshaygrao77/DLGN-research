@@ -48,12 +48,20 @@ class Mask_Conv4_DLGN_Net(nn.Module):
         all_ones_np = np.ones(shape=inp.size()).astype(np.float32)
         mask_1 = replace_percent_of_values_with_exact_percentages(
             all_ones_np, 0, self.random_inp_percent)
+        mask_1 = torch.from_numpy(mask_1)
+        mask_1 = mask_1.to(device)
         mask_2 = replace_percent_of_values_with_exact_percentages(
             all_ones_np, 0, self.random_inp_percent)
+        mask_2 = torch.from_numpy(mask_2)
+        mask_2 = mask_2.to(device)
         mask_3 = replace_percent_of_values_with_exact_percentages(
             all_ones_np, 0, self.random_inp_percent)
+        mask_3 = torch.from_numpy(mask_3)
+        mask_3 = mask_3.to(device)
         mask_4 = replace_percent_of_values_with_exact_percentages(
             all_ones_np, 0, self.random_inp_percent)
+        mask_4 = torch.from_numpy(mask_4)
+        mask_4 = mask_4.to(device)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
