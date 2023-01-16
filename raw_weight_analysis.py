@@ -226,7 +226,7 @@ def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None
         if(len(list_of_model_paths) == 0):
             list_of_model_paths = [None]
             list_of_save_prefixes = [
-                "root/RAW_WEIGHT_ANALYSIS/MT_"+str(model_arch_type)+"/"]
+                "root/RAW_WEIGHT_ANALYSIS/MT_"+str(model_arch_type_str)+"/"]
             list_of_save_postfixes = [None]
         else:
             list_of_save_prefixes = []
@@ -234,7 +234,7 @@ def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None
             for each_model_path in list_of_model_paths:
                 base_path = each_model_path[0:each_model_path.rfind("/")+1]
                 list_of_save_prefixes.append(
-                    str(base_path)+"/"+str(model_arch_type)+"/RAW_WEIGHT_ANALYSIS/")
+                    str(base_path)+"/"+str(model_arch_type_str)+"/RAW_WEIGHT_ANALYSIS/")
                 list_of_save_postfixes.append("")
 
     for ind in range(len(list_of_model_paths)):
@@ -247,10 +247,16 @@ def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None
 
         custom_model = get_model_instance_from_dataset(
             dataset, model_arch_type, torch_seed)
+        if("masked" in model_arch_type):
+            custom_model = get_model_instance_from_dataset(
+                dataset, model_arch_type, torch_seed, mask_percentage=mask_percentage)
 
         if(each_model_path is not None):
             custom_model = get_model_from_path(
                 dataset, model_arch_type, each_model_path)
+            if("masked" in model_arch_type):
+                custom_model = get_model_from_path(
+                    dataset, model_arch_type, each_model_path, mask_percentage=mask_percentage)
 
         print(" #*#*#*#*#*#*#*# Generating weights analysis for model path:{} with save prefix :{} and postfix:{}".format(
             each_model_path, each_save_prefix, each_save_postfix))
@@ -259,10 +265,13 @@ def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None
                                               is_save_graph_visualizations=True)
 
 
-def get_model_from_path(dataset, model_arch_type, model_path):
+def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     custom_model = get_model_instance_from_dataset(
         dataset, model_arch_type)
+    if("masked" in model_arch_type):
+        custom_model = get_model_instance_from_dataset(
+            dataset, model_arch_type, mask_percentage=mask_percentage)
 
     custom_temp_model = torch.load(
         model_path, map_location=device)
@@ -291,8 +300,8 @@ def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
 
     custom2_model = get_model_from_path(dataset, model_arch_type, model2_path)
 
-    save1_prefix = get_prefix_for_save(model1_path, model_arch_type)
-    save2_prefix = get_prefix_for_save(model2_path, model_arch_type)
+    save1_prefix = get_prefix_for_save(model1_path, model_arch_type_str)
+    save2_prefix = get_prefix_for_save(model2_path, model_arch_type_str)
 
     list_of_weights_diff = []
     list_of_bias_diff = []
@@ -958,15 +967,15 @@ if __name__ == '__main__':
     dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net
-    model_arch_type = 'conv4_dlgn_n16_small'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
+    model_arch_type = 'masked_conv4_dlgn'
 
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
     # list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
     list_of_scheme_type = [
-        "IMAGE_SEQ_OUTPUTS_PER_FILTER", "IMAGE_OUTPUTS_PER_FILTER", "IMAGE_OUT_PER_RES_FILTER"]
+        "IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist , fashion_mnist
     list_of_filter_vis_dataset = ["std_image_preprocessing"]
@@ -984,6 +993,13 @@ if __name__ == '__main__':
 
     # ORIGINAL, ADVERSARIAL , ADVERSARIAL_PERTURB
     analyse_on = "ORIGINAL"
+
+    model_arch_type_str = model_arch_type
+    mask_percentage = 0
+    if("masked" in model_arch_type):
+        mask_percentage = 10
+        model_arch_type_str = model_arch_type_str + \
+            "_PRC_"+str(mask_percentage)
 
     for filter_vis_dataset in list_of_filter_vis_dataset:
         print("Visualizing over " + str(filter_vis_dataset))
@@ -1061,11 +1077,12 @@ if __name__ == '__main__':
                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+                model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_masked_conv4_dlgn_PRC_10_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
                 model = get_model_from_path(
-                    dataset, model_arch_type, model_path)
+                    dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 
-                save_prefix = get_prefix_for_save(model_path, model_arch_type)
+                save_prefix = get_prefix_for_save(
+                    model_path, model_arch_type_str)
 
                 models_base_path = model_path[0:model_path.rfind(".pt")]
 

@@ -143,8 +143,8 @@ if __name__ == '__main__':
     dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn
-    model_arch_type = 'masked_conv4_dlgn'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
+    model_arch_type = 'masked_conv4_dlgn_n16_small'
     # iterative_augmenting , nil
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''
@@ -197,8 +197,8 @@ if __name__ == '__main__':
 
     net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
     model_arch_type_str = model_arch_type
-    if(model_arch_type == "masked_conv4_dlgn"):
-        mask_percentage = 10
+    if("masked" in model_arch_type):
+        mask_percentage = 90
         model_arch_type_str = model_arch_type_str + \
             "_PRC_"+str(mask_percentage)
         net = get_model_instance(
