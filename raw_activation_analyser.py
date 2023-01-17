@@ -7,7 +7,7 @@ import numpy as np
 import pickle
 
 
-from utils.visualise_utils import save_image, recreate_image, generate_list_of_plain_images_from_data, generate_list_of_images_from_data, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_image_from_data
+from utils.visualise_utils import save_image, recreate_image, generate_list_of_plain_images_from_data, generate_plain_image, generate_list_of_images_from_data, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_image_from_data
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader, seed_worker
 from structure.generic_structure import CustomSimpleDataset
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
@@ -104,6 +104,12 @@ class RawActivationAnalyser():
         with torch.no_grad():
             merged_act_analyser.post_activation_values_all_batches = self.post_activation_values_all_batches - \
                 other_activation_state.post_activation_values_all_batches
+            temp1 = torch.from_numpy(
+                merged_act_analyser.post_activation_values_all_batches)
+            pos_diff = HardRelu()(temp1)
+            neg_diff = HardRelu()(-temp1)
+            merged_act_analyser.diff_counts_post_activation_values_all_layers = torch.sum(
+                pos_diff, dim=0)+torch.sum(neg_diff, dim=0)
 
         merged_act_analyser.root_save_prefix = root_save_prefix
         merged_act_analyser.final_postfix_for_save = final_postfix_for_save
@@ -147,10 +153,32 @@ class RawActivationAnalyser():
 
         print("current_full_img_save_path:", current_full_img_save_path)
 
+        if hasattr(self, 'diff_counts_post_activation_values_all_layers'):
+            current_full_txt_save_path = base_save_folder + "/PlainImages/HardRelu/" + \
+                "diff_counts.txt"
+            sfolder = current_full_txt_save_path[0:current_full_txt_save_path.rfind(
+                "/")+1]
+            if not os.path.exists(sfolder):
+                os.makedirs(sfolder)
+            # print("self.diff_counts_post_activation_values_all_layers",
+            #       self.diff_counts_post_activation_values_all_layers.size())
+            with open(current_full_txt_save_path, "w") as myfile:
+                for f_ind in range(self.diff_counts_post_activation_values_all_layers.size()[0]):
+                    curr_filter = self.diff_counts_post_activation_values_all_layers[f_ind]
+                    # print("curr_filter size", curr_filter.size())
+                    sum_curr_filter = torch.sum(curr_filter)
+                    myfile.write(
+                        "\n ************************************ Next Filter:{} = {} *********************************** \n".format(f_ind, sum_curr_filter))
+                    myfile.write("%s" % curr_filter)
+            current_full_diff_img_save_path = base_save_folder + "/PlainImages/HardRelu/" + \
+                "diff_counts_image.jpg"
+            generate_plain_image(self.diff_counts_post_activation_values_all_layers,
+                                 current_full_diff_img_save_path, is_standarize=False, is_standarize_01=True)
+
         # generate_list_of_images_from_data(current_post_activation_values, 200, 300,
         #                                   "Hard relu Raw post activation video", save_each_img_path=current_full_img_save_path, cmap='binary')
         generate_list_of_plain_images_from_data(
-            current_post_activation_values, save_each_img_path=current_full_img_save_path)
+            current_post_activation_values, save_each_img_path=current_full_img_save_path, is_standarize=False)
         # generate_video_of_image_from_data(
         #     current_post_activation_values, 200, 300, "Hard relu Raw post activation video", save_path=current_full_save_path, save_each_img_path=current_full_img_save_path, cmap='binary')
 
@@ -533,7 +561,7 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
         list_of_model_paths = [direct_model_path]
         models_base_path = direct_model_path[0:direct_model_path.rfind("/")+1]
         temp_base_path = models_base_path
-        if("CLEAN_TRAINING" in direct_model_path or 'epoch' in direct_model_path):
+        if("CLEAN_TRAINING" in direct_model_path or 'epoch' in direct_model_path or 'aug' in direct_model_path):
             temp_base_path = direct_model_path[0:direct_model_path.rfind(
                 ".pt")]+"/"
         list_of_save_prefixes.append(
@@ -732,7 +760,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1

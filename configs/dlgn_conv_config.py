@@ -14,8 +14,7 @@ class HardReLU_F(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inputs):
         ctx.save_for_backward(inputs)  # save input for backward pass
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        values = torch.tensor([0], dtype=inputs.dtype, device=device)
+        values = torch.tensor([0], dtype=inputs.dtype, device=inputs.device)
         retval = torch.heaviside(inputs, values)
         return retval
 

@@ -226,13 +226,15 @@ class TemplateImageGenerator():
                 each_conv_output = conv_outs[indx]
                 positives = HardRelu()(each_conv_output)
                 # [B,C,W,H]
-                red_pos = add_lower_dimension_vectors_within_itself(
-                    positives)
+                # red_pos = add_lower_dimension_vectors_within_itself(
+                #   positives)
+                red_pos = torch.sum(positives,dim=0)
                 self.y_plus_list[indx] += red_pos
 
                 negatives = HardRelu()(-each_conv_output)
-                red_neg = add_lower_dimension_vectors_within_itself(
-                    negatives)
+                # red_neg = add_lower_dimension_vectors_within_itself(
+                #     negatives)
+                red_neg = torch.sum(negatives,dim=0)
                 self.y_minus_list[indx] += red_neg
 
             self.total_tcollect_img_count += conv_outs[0].size()[0]
