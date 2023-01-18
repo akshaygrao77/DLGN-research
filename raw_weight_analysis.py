@@ -15,6 +15,7 @@ import torchvision.transforms as T
 import cv2
 from configs.dlgn_conv_config import HardRelu
 import copy
+import cv2
 
 
 def convert_list_tensor_to_numpy(list_of_tensors):
@@ -153,6 +154,46 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
         f.write("\n ************************************ Next Layer *********************************** \n".join(
             "\n".join(map(str, generate_plain_image_data(np.squeeze(x)))) for x in list_of_weights))
 
+    is_all_3D_DFTs = True
+    ind = 0
+    max_row = 0
+    max_col = 0
+    while(is_all_3D_DFTs and ind < len(f_outs_DFT_norms)):
+        temp = np.squeeze(f_outs_DFT_norms[ind].numpy())
+        is_all_3D_DFTs = is_all_3D_DFTs and (len(temp.shape) == 3)
+        if(temp.shape[-2] > max_row):
+            max_row = temp.shape[-2]
+        if(temp.shape[-1] > max_col):
+            max_col = temp.shape[-1]
+        ind = ind + 1
+
+    if(is_all_3D_DFTs):
+        # print("max_row", max_row)
+        # print("max_col", max_col)
+        merged_padded_fouts = None
+        for i in range(len(f_outs_DFT_norms)):
+            current_layer_DFT = np.squeeze(f_outs_DFT_norms[i].numpy())
+            # print("current_layer_DFT shape", current_layer_DFT.shape)
+            # print("min_current_layer_DFT", np.min(current_layer_DFT))
+            current_layer_DFT_padded = []
+            for each_DFT_padded in current_layer_DFT:
+                current_filter_layer_DFT_padded = cv2.resize(
+                    each_DFT_padded, (max_row, max_row), interpolation=cv2.INTER_CUBIC)
+                current_layer_DFT_padded.append(
+                    current_filter_layer_DFT_padded)
+            current_layer_DFT_padded = np.array(current_layer_DFT_padded)
+            # print("current_layer_DFT_padded shape", current_layer_DFT_padded.shape)
+            # current_layer_DFT_padded = np.pad(current_layer_DFT, ((0, 0), (0, max_row - current_layer_DFT.shape[
+            #     -2]), (0, max_col - current_layer_DFT.shape[-1])), 'constant', constant_values=(0))
+            if(merged_padded_fouts is None):
+                merged_padded_fouts = torch.from_numpy(
+                    current_layer_DFT_padded)
+            else:
+                merged_padded_fouts = torch.vstack(
+                    (merged_padded_fouts, torch.from_numpy(current_layer_DFT_padded)))
+
+        print("merged_padded_fouts shape", merged_padded_fouts.size())
+
     for i in range(len(list_of_weights)):
         current_layer_DFT = f_outs_DFT_norms[i]
         current_weight_np = list_of_weights[i]
@@ -178,6 +219,9 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
         current_layer_DFT = np.squeeze(current_layer_DFT)
         generate_plain_image(
             current_layer_DFT, save_folder+"DFT_lay_num_"+str(i)+".jpg", is_standarize=False)
+        if(is_all_3D_DFTs):
+            generate_plain_image(
+                merged_padded_fouts, save_folder+"merged_DFTs.jpg", is_standarize=False)
 
 
 def run_raw_weight_analysis_on_config(model, root_save_prefix='root/RAW_WEIGHT_ANALYSIS', final_postfix_for_save="",
@@ -281,7 +325,7 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
 
 
 def get_prefix_for_save(model_path, model_arch_type):
-    if('epoch' in model_path):
+    if('epoch' in model_path or 'aug' in model_path):
         temp = model_path.rfind("/")+1
         base_path = model_path[0:temp]
         epoch_prefix = model_path[temp:model_path.rfind(".pt")]
@@ -964,11 +1008,11 @@ def get_modified_dataset(analyse_on, dataloader, adv_postfix_for_save, filter_vi
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
-    model_arch_type = 'masked_conv4_dlgn'
+    model_arch_type = 'conv4_dlgn_n16_small'
 
     torch_seed = 2022
 
@@ -1077,7 +1121,7 @@ if __name__ == '__main__':
                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_masked_conv4_dlgn_PRC_10_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+                model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 
@@ -1213,40 +1257,40 @@ if __name__ == '__main__':
                 output_params(list_of_weights, root_save_prefix=save_prefix,
                               final_postfix_for_save="MERGED_WEIGHTS")
 
-                for is_template_image_on_train in [True, False]:
-                    if(is_template_image_on_train):
-                        evalloader = trainloader
-                        final_postfix_for_save = 'TRAIN/'+analyse_on+"/"
-                    else:
-                        evalloader = testloader
-                        final_postfix_for_save = "TEST/"+analyse_on+"/"
-                    postfix_for_save = final_postfix_for_save
-                    class_indx_to_visualize = [i for i in range(len(classes))]
+                # for is_template_image_on_train in [True, False]:
+                #     if(is_template_image_on_train):
+                #         evalloader = trainloader
+                #         final_postfix_for_save = 'TRAIN/'+analyse_on+"/"
+                #     else:
+                #         evalloader = testloader
+                #         final_postfix_for_save = "TEST/"+analyse_on+"/"
+                #     postfix_for_save = final_postfix_for_save
+                #     class_indx_to_visualize = [i for i in range(len(classes))]
 
-                    if(len(class_indx_to_visualize) != 0):
-                        input_data_list_per_class = true_segregation(
-                            evalloader, num_classes)
+                #     if(len(class_indx_to_visualize) != 0):
+                #         input_data_list_per_class = true_segregation(
+                #             evalloader, num_classes)
 
-                    for c_indx in class_indx_to_visualize:
-                        class_label = classes[c_indx]
-                        print(
-                            "************************************************************ Class:", class_label)
-                        per_class_dataset = PerClassDataset(
-                            input_data_list_per_class[c_indx], c_indx)
-                        if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
-                            adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_template_image_on_train, "")
-                            postfix_for_save = final_postfix_for_save + adv_postfix_for_save
+                #     for c_indx in class_indx_to_visualize:
+                #         class_label = classes[c_indx]
+                #         print(
+                #             "************************************************************ Class:", class_label)
+                #         per_class_dataset = PerClassDataset(
+                #             input_data_list_per_class[c_indx], c_indx)
+                #         if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
+                #             adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                #                 adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_template_image_on_train, "")
+                #             postfix_for_save = final_postfix_for_save + adv_postfix_for_save
 
-                            adv_postfix_for_save += "C_"+class_label+"/"
-                            per_class_data_loader = torch.utils.data.DataLoader(
-                                per_class_dataset, batch_size=batch_size, shuffle=False)
+                #             adv_postfix_for_save += "C_"+class_label+"/"
+                #             per_class_data_loader = torch.utils.data.DataLoader(
+                #                 per_class_dataset, batch_size=batch_size, shuffle=False)
 
-                            per_class_dataset = get_modified_dataset(analyse_on, per_class_data_loader, adv_postfix_for_save, filter_vis_dataset, per_class_dataset, batch_size, models_base_path, is_template_image_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
-                                                                     eps_step_size, adv_target, num_batches_to_visualize, is_save_adv)
+                #             per_class_dataset = get_modified_dataset(analyse_on, per_class_data_loader, adv_postfix_for_save, filter_vis_dataset, per_class_dataset, batch_size, models_base_path, is_template_image_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
+                #                                                      eps_step_size, adv_target, num_batches_to_visualize, is_save_adv)
 
-                        generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
-                                                          per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
-                                                          final_postfix_for_save=postfix_for_save, scheme_type_tag="RES_FILT_OUTS")
+                #         generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
+                #                                           per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
+                #                                           final_postfix_for_save=postfix_for_save, scheme_type_tag="RES_FILT_OUTS")
 
     print("Finished execution!!!")
