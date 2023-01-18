@@ -71,6 +71,9 @@ class RawActivationAnalyser():
         # Count based states
         # Size: [Num of points(batch dim, Num filters aggregated over layer, W , H]
         self.post_activation_values_all_batches = None
+        self.post_activation_values_positive_hrelu_counts = None
+        self.post_activation_values_negative_hrelu_counts = None
+        self.post_activation_values_positive_negative_hrelu_count_diff = None
 
     def diff_merge_with_another_activation(self, other_activation_state, root_save_prefix, final_postfix_for_save, wandb_group_name, wand_project_name=None, is_save_graph_visualizations=True):
         merged_act_analyser = RawActivationAnalyser(None)
@@ -102,14 +105,20 @@ class RawActivationAnalyser():
                                              "_2"] = other_activation_state.wandb_config[each_key]
 
         with torch.no_grad():
-            merged_act_analyser.post_activation_values_all_batches = self.post_activation_values_all_batches - \
-                other_activation_state.post_activation_values_all_batches
-            temp1 = torch.from_numpy(
-                merged_act_analyser.post_activation_values_all_batches)
+            merged_act_analyser.post_activation_values_all_batches = HardRelu()(torch.from_numpy(self.post_activation_values_all_batches)) - \
+                HardRelu()(torch.from_numpy(other_activation_state.post_activation_values_all_batches))
+            merged_act_analyser.post_activation_values_positive_hrelu_counts = self.post_activation_values_positive_hrelu_counts - \
+                other_activation_state.post_activation_values_positive_hrelu_counts
+            merged_act_analyser.post_activation_values_negative_hrelu_counts = self.post_activation_values_negative_hrelu_counts - \
+                other_activation_state.post_activation_values_negative_hrelu_counts
+            merged_act_analyser.post_activation_values_positive_negative_hrelu_count_diff = self.post_activation_values_positive_negative_hrelu_count_diff - \
+                other_activation_state.post_activation_values_positive_negative_hrelu_count_diff
+
+            temp1 = merged_act_analyser.post_activation_values_all_batches
             pos_diff = HardRelu()(temp1)
             neg_diff = HardRelu()(-temp1)
             merged_act_analyser.diff_counts_post_activation_values_all_layers = torch.sum(
-                pos_diff, dim=0)+torch.sum(neg_diff, dim=0)
+                pos_diff, dim=0) + torch.sum(neg_diff, dim=0)
 
         merged_act_analyser.root_save_prefix = root_save_prefix
         merged_act_analyser.final_postfix_for_save = final_postfix_for_save
@@ -133,35 +142,35 @@ class RawActivationAnalyser():
         return merged_act_analyser
 
     def save_raw_recorded_activation_states(self, base_save_folder):
+        hrelu_base_folder = base_save_folder + "/PlainImages/HardRelu/"
+        if not os.path.exists(hrelu_base_folder):
+            os.makedirs(hrelu_base_folder)
 
         dict_full_path_to_saves = dict()
 
-        current_post_activation_values = self.post_activation_values_all_batches
+        # current_post_activation_values = HardRelu()(
+        #     torch.from_numpy(self.post_activation_values_all_batches))
 
         current_full_save_path = base_save_folder+"/Video/HardRelu/" + \
             "hardrelu_raw_postactivation_images_*.mp4"
         dict_full_path_to_saves["raw_post_activation"] = current_full_save_path
         print("current_full_save_path:", current_full_save_path)
 
-        # current_full_img_save_path = base_save_folder + \
-        #     "/Images/HardRelu/" + \
-        #     "hard_relu_post_act_img_b_*.jpg"
-
-        current_full_img_save_path = base_save_folder + \
-            "/PlainImages/HardRelu/" + \
+        current_full_img_save_path = hrelu_base_folder + \
             "hard_relu_post_act_img_b_*.jpg"
 
         print("current_full_img_save_path:", current_full_img_save_path)
 
+        generate_plain_image(self.post_activation_values_positive_hrelu_counts,
+                             hrelu_base_folder+"c_Positive_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
+        generate_plain_image(self.post_activation_values_negative_hrelu_counts,
+                             hrelu_base_folder+"c_Negative_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
+        generate_plain_image(self.post_activation_values_positive_negative_hrelu_count_diff,
+                             hrelu_base_folder+"c_Diff_Positive_Negative_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
+
         if hasattr(self, 'diff_counts_post_activation_values_all_layers'):
-            current_full_txt_save_path = base_save_folder + "/PlainImages/HardRelu/" + \
+            current_full_txt_save_path = hrelu_base_folder + \
                 "diff_counts.txt"
-            sfolder = current_full_txt_save_path[0:current_full_txt_save_path.rfind(
-                "/")+1]
-            if not os.path.exists(sfolder):
-                os.makedirs(sfolder)
-            # print("self.diff_counts_post_activation_values_all_layers",
-            #       self.diff_counts_post_activation_values_all_layers.size())
             with open(current_full_txt_save_path, "w") as myfile:
                 for f_ind in range(self.diff_counts_post_activation_values_all_layers.size()[0]):
                     curr_filter = self.diff_counts_post_activation_values_all_layers[f_ind]
@@ -170,15 +179,15 @@ class RawActivationAnalyser():
                     myfile.write(
                         "\n ************************************ Next Filter:{} = {} *********************************** \n".format(f_ind, sum_curr_filter))
                     myfile.write("%s" % curr_filter)
-            current_full_diff_img_save_path = base_save_folder + "/PlainImages/HardRelu/" + \
+            current_full_diff_img_save_path = hrelu_base_folder + \
                 "diff_counts_image.jpg"
             generate_plain_image(self.diff_counts_post_activation_values_all_layers,
                                  current_full_diff_img_save_path, is_standarize=False, is_standarize_01=True)
 
         # generate_list_of_images_from_data(current_post_activation_values, 200, 300,
         #                                   "Hard relu Raw post activation video", save_each_img_path=current_full_img_save_path, cmap='binary')
-        generate_list_of_plain_images_from_data(
-            current_post_activation_values, save_each_img_path=current_full_img_save_path, is_standarize=False)
+        # generate_list_of_plain_images_from_data(
+        #     current_post_activation_values, save_each_img_path=current_full_img_save_path, is_standarize=False)
         # generate_video_of_image_from_data(
         #     current_post_activation_values, 200, 300, "Hard relu Raw post activation video", save_path=current_full_save_path, save_each_img_path=current_full_img_save_path, cmap='binary')
 
@@ -187,6 +196,9 @@ class RawActivationAnalyser():
     def initialise_raw_record_states(self):
         self.total_tcollect_img_count = 0
         self.post_activation_values_all_batches = None
+        self.post_activation_values_positive_hrelu_counts = None
+        self.post_activation_values_negative_hrelu_counts = None
+        self.post_activation_values_positive_negative_hrelu_count_diff = None
 
     def update_raw_record_states_per_batch(self):
         cpudevice = torch.device("cpu")
@@ -202,7 +214,7 @@ class RawActivationAnalyser():
                 each_conv_output = conv_outs[indx]
 
                 # each_conv_output = torch.nn.Sigmoid()(beta * each_conv_output)
-                each_conv_output = HardRelu()(each_conv_output)
+                # each_conv_output = each_conv_output
                 each_conv_output = each_conv_output.to(
                     cpudevice, non_blocking=True).numpy()
 
@@ -262,8 +274,22 @@ class RawActivationAnalyser():
 
                 if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
                     break
+
+        temp = torch.from_numpy(
+            self.post_activation_values_all_batches)
+        pos_hrelu = HardRelu()(temp)
+        neg_hrelu = HardRelu()(-temp)
+
+        self.post_activation_values_positive_hrelu_counts = torch.sum(
+            pos_hrelu, dim=0)
+        self.post_activation_values_negative_hrelu_counts = torch.sum(
+            neg_hrelu, dim=0)
+        self.post_activation_values_positive_negative_hrelu_count_diff = self.post_activation_values_positive_hrelu_counts - \
+            self.post_activation_values_negative_hrelu_counts
         print("self.post_activation_values_all_batches",
               self.post_activation_values_all_batches.shape)
+        print("self.post_activation_values_positive_hrelu_counts",
+              self.post_activation_values_positive_hrelu_counts.size())
         # print("self.post_activation_values_all_batches",
         #       self.post_activation_values_all_batches)
 
@@ -644,7 +670,7 @@ if __name__ == '__main__':
     # If it gives out of memory error or locks the computer
     # Try it with a smaller image
     print("Start")
-    # mnist , cifar10
+    # mnist , cifar10 , fashion_mnist
     dataset = 'mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
@@ -654,7 +680,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_inbuilt_norm_with_flip_crop
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
-    # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
+    # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net_n16_small
     model_arch_type = 'conv4_dlgn_n16_small'
     # If False, then on test
     is_act_collection_on_train = True
@@ -673,7 +699,7 @@ if __name__ == '__main__':
     valid_split_size = 0.1
     torch_seed = 2022
     # GENERATE_RECORD_STATS_PER_CLASS ,  GENERATE_RECORD_STATS_OVERALL
-    exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
+    exp_type = "GENERATE_RECORD_STATS_OVERALL"
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE
@@ -760,14 +786,14 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+            direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
                     sub_scheme_type = 'OVER_ORIGINAL'
-                    is_save_graph_visualizations = False
+                    is_save_graph_visualizations = True
 
                     list_of_list_of_act_analyser_orig = run_generate_scheme(
                         models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=direct_model_path)
@@ -792,14 +818,14 @@ if __name__ == '__main__':
                             list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                                           list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
             elif(merge_scheme_type == "TWO_CUSTOM_MODELS"):
-                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir_epoch_5.pt"
-                direct_model_path2 = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_n16_small_dir.pt"
+                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                direct_model_path2 = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
                 num_iterations = 1
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
                     # sub_scheme_type = 'OVER_ORIGINAL'
                     sub_scheme_type = 'OVER_ADVERSARIAL'
-                    is_save_graph_visualizations = False
+                    is_save_graph_visualizations = True
 
                     is_save_adv = True
                     eps = 0.06
