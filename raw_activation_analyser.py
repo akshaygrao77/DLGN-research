@@ -73,7 +73,7 @@ class RawActivationAnalyser():
         self.post_activation_values_all_batches = None
         self.post_activation_values_positive_hrelu_counts = None
         self.post_activation_values_negative_hrelu_counts = None
-        self.post_activation_values_positive_negative_hrelu_count_diff = None
+        self.post_activation_values_gate_entropy = None
 
     def diff_merge_with_another_activation(self, other_activation_state, root_save_prefix, final_postfix_for_save, wandb_group_name, wand_project_name=None, is_save_graph_visualizations=True):
         merged_act_analyser = RawActivationAnalyser(None)
@@ -111,8 +111,8 @@ class RawActivationAnalyser():
                 other_activation_state.post_activation_values_positive_hrelu_counts
             merged_act_analyser.post_activation_values_negative_hrelu_counts = self.post_activation_values_negative_hrelu_counts - \
                 other_activation_state.post_activation_values_negative_hrelu_counts
-            merged_act_analyser.post_activation_values_positive_negative_hrelu_count_diff = self.post_activation_values_positive_negative_hrelu_count_diff - \
-                other_activation_state.post_activation_values_positive_negative_hrelu_count_diff
+            merged_act_analyser.post_activation_values_gate_entropy = self.post_activation_values_gate_entropy - \
+                other_activation_state.post_activation_values_gate_entropy
 
             temp1 = merged_act_analyser.post_activation_values_all_batches
             pos_diff = HardRelu()(temp1)
@@ -165,8 +165,8 @@ class RawActivationAnalyser():
                              hrelu_base_folder+"c_Positive_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
         generate_plain_image(self.post_activation_values_negative_hrelu_counts,
                              hrelu_base_folder+"c_Negative_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
-        generate_plain_image(self.post_activation_values_positive_negative_hrelu_count_diff,
-                             hrelu_base_folder+"c_Diff_Positive_Negative_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
+        generate_plain_image(self.post_activation_values_gate_entropy,
+                             hrelu_base_folder+"c_Entropy.jpg", is_standarize=False, is_standarize_01=True)
 
         if hasattr(self, 'diff_counts_post_activation_values_all_layers'):
             current_full_txt_save_path = hrelu_base_folder + \
@@ -198,7 +198,7 @@ class RawActivationAnalyser():
         self.post_activation_values_all_batches = None
         self.post_activation_values_positive_hrelu_counts = None
         self.post_activation_values_negative_hrelu_counts = None
-        self.post_activation_values_positive_negative_hrelu_count_diff = None
+        self.post_activation_values_gate_entropy = None
 
     def update_raw_record_states_per_batch(self):
         cpudevice = torch.device("cpu")
@@ -284,8 +284,28 @@ class RawActivationAnalyser():
             pos_hrelu, dim=0)
         self.post_activation_values_negative_hrelu_counts = torch.sum(
             neg_hrelu, dim=0)
-        self.post_activation_values_positive_negative_hrelu_count_diff = self.post_activation_values_positive_hrelu_counts - \
-            self.post_activation_values_negative_hrelu_counts
+
+        prob_pos = self.post_activation_values_positive_hrelu_counts / \
+            self.total_tcollect_img_count
+        prob_neg = self.post_activation_values_negative_hrelu_counts / \
+            self.total_tcollect_img_count
+        prob_zero = 1 - (prob_pos + prob_neg)
+        entropy_bin_list = [prob_pos, prob_neg, prob_zero]
+
+        self.post_activation_values_gate_entropy = torch.zeros(
+            size=self.post_activation_values_positive_hrelu_counts.size(), device=self.device)
+
+        for each_bin_value in entropy_bin_list:
+            each_bin_value = each_bin_value.to(self.device)
+            zero_default = torch.zeros(
+                size=each_bin_value.size(), device=self.device)
+
+            pre_entropy = torch.where(
+                each_bin_value == 0., zero_default, (each_bin_value * torch.log2(each_bin_value)))
+            self.post_activation_values_gate_entropy += pre_entropy
+
+        self.post_activation_values_gate_entropy = - \
+            self.post_activation_values_gate_entropy
         print("self.post_activation_values_all_batches",
               self.post_activation_values_all_batches.shape)
         print("self.post_activation_values_positive_hrelu_counts",
@@ -699,7 +719,7 @@ if __name__ == '__main__':
     valid_split_size = 0.1
     torch_seed = 2022
     # GENERATE_RECORD_STATS_PER_CLASS ,  GENERATE_RECORD_STATS_OVERALL
-    exp_type = "GENERATE_RECORD_STATS_OVERALL"
+    exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE
@@ -707,7 +727,7 @@ if __name__ == '__main__':
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
-    merge_scheme_type = "OVER_ORIGINAL_VS_ADVERSARIAL"
+    merge_scheme_type = "TWO_CUSTOM_MODELS"
 
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
@@ -786,7 +806,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -824,7 +844,7 @@ if __name__ == '__main__':
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
                     # sub_scheme_type = 'OVER_ORIGINAL'
-                    sub_scheme_type = 'OVER_ADVERSARIAL'
+                    sub_scheme_type = 'OVER_ORIGINAL'
                     is_save_graph_visualizations = True
 
                     is_save_adv = True
