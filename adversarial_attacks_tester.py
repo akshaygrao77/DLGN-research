@@ -56,13 +56,21 @@ def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv
     return wandb_config
 
 
-def plain_evaluate_model(net, dataloader):
+def plain_evaluate_model(net, dataloader, classes=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
     acc = 0.
 
     net.train(False)
+
+    frequency_pred = None
+    if(classes is not None):
+        num_classes = len(classes)
+        frequency_pred = torch.zeros(num_classes)
+        frequency_pred = frequency_pred.to(device, non_blocking=True)
+        all_classes = torch.arange(0, num_classes)
+        all_classes = all_classes.to(device, non_blocking=True)
 
     loader = tqdm.tqdm(dataloader, desc='Evaluating')
     # since we're not training, we don't need to calculate the gradients for our outputs
@@ -80,13 +88,18 @@ def plain_evaluate_model(net, dataloader):
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
+        if(classes is not None):
+            temp = torch.cat((predicted.float(), all_classes))
+            temp = temp.to(device)
+            frequency_pred += torch.histc(temp, num_classes) - 1
+
         cur_time = time.time()
         step_time = cur_time - begin_time
         acc = 100.*correct/total
         loader.set_postfix(
             acc=acc, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
 
-    return acc
+    return acc, frequency_pred
 
 
 def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
@@ -620,17 +633,18 @@ if __name__ == '__main__':
         # wand_project_name = 'common_active_pixels_on_reconst_augmentation'
         # wand_project_name = None
 
+        torch_seed = 2022
         number_of_adversarial_optimization_steps = 161
         adv_attack_type = "PGD"
         adv_target = None
-        # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST
-        exp_type = "ADV_ATTACK"
+        # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST , ADV_ATTACK_PER_CLASS
+        exp_type = "ADV_ATTACK_PER_CLASS"
         is_adv_attack_on_train = True
         eps_step_size = 0.01
 
-        model_and_data_save_prefix = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/"
+        model_and_data_save_prefix = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/"
 
-        number_of_augment_iterations = 3
+        number_of_augment_iterations = 2
 
         is_targetted = adv_target is not None
         is_log_wandb = not(wand_project_name is None)
@@ -734,16 +748,106 @@ if __name__ == '__main__':
                     save_images_from_dataloader(to_be_analysed_adversarial_dataloader, classes,
                                                 postfix_folder_for_save='/adver/', save_image_prefix=save_folder)
 
-                    eval_orig_acc = plain_evaluate_model(
+                    eval_orig_acc, _ = plain_evaluate_model(
                         net, eval_loader)
-                    eval_adv_acc = plain_evaluate_model(
+                    eval_adv_acc, _ = plain_evaluate_model(
                         net, to_be_analysed_adversarial_dataloader)
 
                     if(is_log_wandb):
                         wandb.log({"eval_orig_acc": eval_orig_acc,
                                   "eval_adv_acc": eval_adv_acc})
                         wandb.finish()
+                elif(exp_type == "ADV_ATTACK_PER_CLASS"):
+                    class_indx_to_visualize = [i for i in range(len(classes))]
+                    if(direct_model_path is None):
+                        each_save_postfix = "/aug_indx_{}".format(
+                            current_aug_iter_num)
+                        final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                            adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train, each_save_postfix)
+                    else:
+                        final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/".format(
+                            adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train)
+                    adv_save_path = model_and_data_save_prefix + \
+                        final_adv_postfix_for_save+"/adv_dataset.npy"
+                    is_current_adv_aug_available = os.path.exists(
+                        adv_save_path)
+                    if(is_current_adv_aug_available):
+                        with open(adv_save_path, 'rb') as file:
+                            npzfile = np.load(adv_save_path)
+                            list_of_adv_images = npzfile['x']
+                            list_of_labels = npzfile['y']
+                            adv_dataset = CustomSimpleDataset(
+                                list_of_adv_images, list_of_labels)
+                            print("Loading adversarial examples from path:",
+                                  adv_save_path)
+                    else:
+                        print("adv_save_path:", adv_save_path)
+                        adv_dataset = generate_adv_examples(
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path)
 
+                    to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
+                        adv_dataset, shuffle=False, batch_size=128)
+
+                    true_eval_dataset_per_class = true_segregation(
+                        eval_loader, num_classes)
+                    true_tobe_analysed_dataset_per_class = true_segregation(
+                        to_be_analysed_adversarial_dataloader, num_classes)
+
+                    for c_indx in class_indx_to_visualize:
+                        class_label = classes[c_indx]
+                        print(
+                            "************************************************************ Class:", class_label)
+                        per_class_eval_dataset = PerClassDataset(
+                            true_eval_dataset_per_class[c_indx], c_indx)
+                        per_class_tobe_analysed_dataset = PerClassDataset(
+                            true_tobe_analysed_dataset_per_class[c_indx], c_indx)
+                        wandb_group_name = "DS_"+str(dataset) + \
+                            "_adv_attack_over_aug_"+str(model_arch_type)
+
+                        if(is_log_wandb):
+                            wandb_run_name = str(
+                                model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                            wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
+                                                            eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                            wandb_config["aug_iter_num"] = current_aug_iter_num
+                            wandb_config["class_label"] = class_label
+                            wandb_config["c_indx"] = c_indx
+                            wandb.init(
+                                project=f"{wand_project_name}",
+                                name=f"{wandb_run_name}",
+                                group=f"{wandb_group_name}",
+                                config=wandb_config,
+                            )
+
+                        coll_seed_gen = torch.Generator()
+                        coll_seed_gen.manual_seed(torch_seed)
+
+                        per_class_eval_data_loader = torch.utils.data.DataLoader(per_class_eval_dataset, batch_size=128,
+                                                                                 shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+
+                        coll_seed_gen = torch.Generator()
+                        coll_seed_gen.manual_seed(torch_seed)
+
+                        per_class_tobe_analysed_data_loader = torch.utils.data.DataLoader(per_class_tobe_analysed_dataset, batch_size=128,
+                                                                                          shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+                        save_images_from_dataloader(to_be_analysed_adversarial_dataloader, classes,
+                                                    postfix_folder_for_save='/adver/', save_image_prefix=save_folder)
+
+                        eval_orig_acc, _ = plain_evaluate_model(
+                            net, per_class_eval_data_loader)
+                        eval_adv_acc, frequency_pred = plain_evaluate_model(
+                            net, per_class_tobe_analysed_data_loader, classes)
+
+                        frequency_pred = (
+                            frequency_pred / len(per_class_tobe_analysed_dataset))*100
+                        frequency_pred = torch.round(frequency_pred)
+                        print("frequency_pred", frequency_pred)
+
+                        if(is_log_wandb):
+                            wandb.log({"eval_orig_acc": eval_orig_acc,
+                                       "eval_adv_acc": eval_adv_acc,
+                                       "frequency_pred": frequency_pred})
+                            wandb.finish()
                 elif(exp_type == "ADV_ATTACK_EVAL_VIA_RECONST"):
                     wandb_group_name = "DS_"+str(dataset) + \
                         "_adv_attack_over_aug_"+str(model_arch_type)
