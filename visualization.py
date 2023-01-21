@@ -228,13 +228,13 @@ class TemplateImageGenerator():
                 # [B,C,W,H]
                 # red_pos = add_lower_dimension_vectors_within_itself(
                 #   positives)
-                red_pos = torch.sum(positives,dim=0)
+                red_pos = torch.sum(positives, dim=0)
                 self.y_plus_list[indx] += red_pos
 
                 negatives = HardRelu()(-each_conv_output)
                 # red_neg = add_lower_dimension_vectors_within_itself(
                 #     negatives)
-                red_neg = torch.sum(negatives,dim=0)
+                red_neg = torch.sum(negatives, dim=0)
                 self.y_minus_list[indx] += red_neg
 
             self.total_tcollect_img_count += conv_outs[0].size()[0]
@@ -533,8 +533,9 @@ class TemplateImageGenerator():
                 HardRelu()(each_overall_y))
             non_zero_pixel_points += torch.count_nonzero(each_overall_y).item()
             active_pixel_points += current_active_pixel.item()
-            pre_exponent = torch.exp(-each_overall_y *
-                                     tanh(each_conv_output))
+            exp_pow_term = -each_overall_y * tanh(each_conv_output)
+            exp_pow_term = torch.clamp(exp_pow_term, -10, 10)
+            pre_exponent = torch.exp(exp_pow_term)
 
             exp_product_active_pixels = torch.where(
                 each_overall_y == 0, each_overall_y, pre_exponent)
@@ -911,7 +912,7 @@ class TemplateImageGenerator():
                         print("active_pixel_points", active_pixel_points)
                         print("total_pixel_points", total_pixel_points)
                         print("Percentage of active pixels:",
-                                percent_active_pixels)
+                              percent_active_pixels)
                         if(percent_active_pixels > max_percent_active_pixels):
                             max_percent_active_pixels = percent_active_pixels
                         if(percent_active_pixels < min_percent_active_pixels):
@@ -961,8 +962,9 @@ class TemplateImageGenerator():
                         self.initial_image = torch.from_numpy(
                             self.initial_image[None])
                         if(step_iter % 100 == 0):
-                            print("Loss:{},norm_image:{},norm_grad:{},norm_raw_grad:{}".format(loss.item(),torch.norm(self.initial_image).item(),torch.norm(gradients).item(),norm_grad.item()))
-                        
+                            print("Loss:{},norm_image:{},norm_grad:{},norm_raw_grad:{}".format(loss.item(), torch.norm(
+                                self.initial_image).item(), torch.norm(gradients).item(), norm_grad.item()))
+
                         # pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
                             # self.initial_image).item(), norm_grad=torch.norm(gradients).item(), norm_raw_grad=norm_grad.item())
 
@@ -1091,7 +1093,7 @@ class TemplateImageGenerator():
                 else:
                     list_of_reconst_images = np.vstack(
                         (list_of_reconst_images, init_img_np))
-                if(batch_indx % 40 == 0):
+                if(batch_indx % 160 == 0):
                     self.created_image = recreate_image(
                         self.initial_image, normalize_image)
                     save_folder = self.image_save_prefix_folder + \
@@ -1277,7 +1279,7 @@ class TemplateImageGenerator():
 
                     verbose = 1
                     loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
-                        template_loss_type, class_indx=0, outputs=outputs,verbose=verbose)
+                        template_loss_type, class_indx=0, outputs=outputs, verbose=verbose)
 
                     # print("{} Loss: {}".format(template_loss_type, loss))
                     if(step_iter == 0 and "TEMP" in template_loss_type):
@@ -1714,7 +1716,7 @@ class TemplateImageGenerator():
                 step_lists = [(plot_iteration_interval * indx)
                               for indx in range(number_of_intervals)]
                 each_class_softmax_ordered_by_steps = [None] * num_classes
-                
+
                 for c_ind in range(num_classes):
                     current_class_softmax_list = []
                     for indx in range(number_of_intervals):
@@ -1897,22 +1899,23 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_inbuilt_norm_with_flip_crop
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
-    # plain_pure_conv4_dnn , conv4_dlgn
-    model_arch_type = 'conv4_dlgn'
+    # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
+    # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
+    model_arch_type = 'conv4_deep_gated_net_n16_small'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     # uniform_init_image , zero_init_image , gaussian_init_image
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 32
+    template_image_calculation_batch_size = 1
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
-    template_loss_type = "TEMP_LOSS"
+    template_loss_type = "TANH_TEMP_LOSS"
     number_of_batch_to_collect = None
-    wand_project_name = "test_template_visualisation_augmentation"
-    # wand_project_name = "template_images_visualization-test"
-    wand_project_name = None
+    wand_project_name = "V2_template_visualisation_augmentation"
+    # wand_project_name = "test_template_visualisation_augmentation"
+    # wand_project_name = None
     wandb_group_name = "TP_"+str(template_loss_type) + \
         "_DS_"+str(dataset)+"_MT_"+str(model_arch_type)
     is_split_validation = False
@@ -1920,8 +1923,8 @@ if __name__ == '__main__':
     torch_seed = 2022
     number_of_image_optimization_steps = 161
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES
-    exp_type = "GENERATE_TEMPLATE_IMAGES"
-    collect_threshold = 0.95
+    exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
+    collect_threshold = 0.73
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
@@ -1954,7 +1957,7 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+    custom_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

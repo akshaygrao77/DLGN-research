@@ -172,13 +172,38 @@ class RawActivationAnalyser():
             current_full_txt_save_path = hrelu_base_folder + \
                 "diff_counts.txt"
             with open(current_full_txt_save_path, "w") as myfile:
+                min_per_pixel = torch.min(
+                    self.diff_counts_post_activation_values_all_layers, dim=0).values
+                max_per_pixel = torch.max(
+                    self.diff_counts_post_activation_values_all_layers, dim=0).values
+                std_per_pixel = torch.std(
+                    self.diff_counts_post_activation_values_all_layers, dim=0)
+                mean_per_pixel = torch.mean(
+                    self.diff_counts_post_activation_values_all_layers, dim=0)
+                overall_min = torch.min(min_per_pixel)
+                overall_max = torch.max(max_per_pixel)
+                overall_std = torch.std(
+                    self.diff_counts_post_activation_values_all_layers)
+                overall_mean = torch.mean(
+                    self.diff_counts_post_activation_values_all_layers)
+
+                myfile.write("Overall Min = %s\n" % overall_min)
+                myfile.write("Overall Max = %s\n" % overall_max)
+                myfile.write("Overall STD = %s\n" % overall_std)
+                myfile.write("Overall mean = %s \n" % overall_mean)
+
+                myfile.write(" Min per pixel = %s\n" % min_per_pixel)
+                myfile.write("Max per pixel = %s\n" % max_per_pixel)
+                myfile.write("STD per pixel = %s\n" % std_per_pixel)
+                myfile.write("Mean per pixel = %s \n" % mean_per_pixel)
+
                 for f_ind in range(self.diff_counts_post_activation_values_all_layers.size()[0]):
                     curr_filter = self.diff_counts_post_activation_values_all_layers[f_ind]
                     # print("curr_filter size", curr_filter.size())
                     sum_curr_filter = torch.sum(curr_filter)
                     myfile.write(
                         "\n ************************************ Next Filter:{} = {} *********************************** \n".format(f_ind, sum_curr_filter))
-                    myfile.write("%s" % curr_filter)
+                    myfile.write("\n%s\n" % curr_filter)
             current_full_diff_img_save_path = hrelu_base_folder + \
                 "diff_counts_image.jpg"
             generate_plain_image(self.diff_counts_post_activation_values_all_layers,
@@ -701,7 +726,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'conv4_dlgn'
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
@@ -723,7 +748,7 @@ if __name__ == '__main__':
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE
-    scheme_type = "GENERATE_MERGE_AND_SAVE"
+    scheme_type = "GENERATE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
@@ -746,7 +771,7 @@ if __name__ == '__main__':
     if(scheme_type == "GENERATE"):
 
         models_base_path = None
-        is_save_graph_visualizations = False
+        is_save_graph_visualizations = True
 
         is_save_adv = True
         eps = 0.02
@@ -755,10 +780,21 @@ if __name__ == '__main__':
         eps_step_size = 0.01
         adv_target = None
 
-        models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+        c_indices = [i for i in range(10)]
 
-        list_of_list_of_act_analyser = run_generate_scheme(
-            models_base_path, to_be_analysed_dataloader, custom_data_loader)
+        # class_ind_visualize = None
+
+        for c_i in c_indices:
+            class_ind_visualize = [c_i]
+
+            models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
+
+            direct_model_path = None
+
+            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+
+            list_of_list_of_act_analyser = run_generate_scheme(
+                models_base_path, to_be_analysed_dataloader, custom_data_loader, direct_model_path=direct_model_path)
 
     elif(scheme_type == "LOAD_AND_SAVE"):
         class_ind_visualize = [9]
@@ -806,7 +842,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+            direct_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -843,8 +879,8 @@ if __name__ == '__main__':
                 num_iterations = 1
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
+                    sub_scheme_type = 'OVER_ADVERSARIAL'
                     # sub_scheme_type = 'OVER_ORIGINAL'
-                    sub_scheme_type = 'OVER_ORIGINAL'
                     is_save_graph_visualizations = True
 
                     is_save_adv = True
