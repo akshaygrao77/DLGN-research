@@ -141,6 +141,28 @@ class RawActivationAnalyser():
 
         return merged_act_analyser
 
+    def get_mean_sd(self, input_tensor):
+        overall_std = torch.std(input_tensor)
+        overall_mean = torch.mean(input_tensor)
+        return overall_mean, overall_std
+
+    def generate_stats(self, input_tensor):
+        min_per_pixel = torch.min(input_tensor, dim=0).values
+        max_per_pixel = torch.max(input_tensor, dim=0).values
+        std_per_pixel = torch.std(input_tensor, dim=0)
+        mean_per_pixel = torch.mean(input_tensor, dim=0)
+        overall_min = torch.min(min_per_pixel)
+        overall_max = torch.max(max_per_pixel)
+        overall_mean, overall_std = self.get_mean_sd(input_tensor)
+
+        mean_min_per_pixel, sd_min_per_pixel = self.get_mean_sd(min_per_pixel)
+        mean_max_per_pixel, sd_max_per_pixel = self.get_mean_sd(max_per_pixel)
+        mean_std_per_pixel, sd_std_per_pixel = self.get_mean_sd(std_per_pixel)
+        mean_mean_per_pixel, sd_mean_per_pixel = self.get_mean_sd(
+            mean_per_pixel)
+
+        return overall_min, overall_max, overall_std, overall_mean, min_per_pixel, max_per_pixel, std_per_pixel, mean_per_pixel, mean_min_per_pixel, sd_min_per_pixel, mean_max_per_pixel, sd_max_per_pixel, mean_std_per_pixel, sd_std_per_pixel, mean_mean_per_pixel, sd_mean_per_pixel
+
     def save_raw_recorded_activation_states(self, base_save_folder):
         hrelu_base_folder = base_save_folder + "/PlainImages/HardRelu/"
         if not os.path.exists(hrelu_base_folder):
@@ -167,35 +189,103 @@ class RawActivationAnalyser():
                              hrelu_base_folder+"c_Negative_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
         generate_plain_image(self.post_activation_values_gate_entropy,
                              hrelu_base_folder+"c_Entropy.jpg", is_standarize=False, is_standarize_01=True)
+        current_full_txt_save_path = hrelu_base_folder + \
+            "entropy_stats.txt"
+        with open(current_full_txt_save_path, "w") as myfile:
+            ovrl_diff_entr_min, ovrl_diff_entr_max, ovrl_diff_entr_std, ovrl_diff_entr_mean, diff_entr_min_per_pxl, diff_entr_max_per_pxl, diff_entr_std_per_pxl, diff_entr_mean_per_pxl, mean_diff_entr_min_per_pxl, sd_diff_entr_min_per_pxl, mean_diff_entr_max_per_pxl, sd_diff_entr_max_per_pxl, mean_diff_entr_std_per_pxl, sd_diff_entr_std_per_pxl, mean_diff_entr_mean_per_pxl, sd_diff_entr_mean_per_pxl = self.generate_stats(
+                self.post_activation_values_gate_entropy)
+
+            myfile.write("Overall Entr Min = %s\n" %
+                         ovrl_diff_entr_min)
+            myfile.write("Overall Entr Max = %s\n" %
+                         ovrl_diff_entr_max)
+            myfile.write("Overall Entr STD = %s\n" %
+                         ovrl_diff_entr_std)
+            myfile.write("Overall Entr mean = %s \n" %
+                         ovrl_diff_entr_mean)
+
+            myfile.write(
+                "======================== Min per pixel stats ==================== \n")
+            myfile.write("Mean = %s \t" %
+                         mean_diff_entr_min_per_pxl)
+            myfile.write("SD = %s\n" %
+                         sd_diff_entr_min_per_pxl)
+            myfile.write(
+                "======================== Max per pixel stats ==================== \n")
+            myfile.write("Mean = %s \t" %
+                         mean_diff_entr_max_per_pxl)
+            myfile.write("SD = %s\n" %
+                         sd_diff_entr_max_per_pxl)
+            myfile.write(
+                "======================== Std per pixel stats ==================== \n")
+            myfile.write("Mean = %s \t" %
+                         mean_diff_entr_std_per_pxl)
+            myfile.write("SD = %s\n" %
+                         sd_diff_entr_std_per_pxl)
+            myfile.write(
+                "======================== Mean per pixel stats ==================== \n")
+            myfile.write("Mean = %s \t" %
+                         mean_diff_entr_mean_per_pxl)
+            myfile.write("SD = %s\n" %
+                         sd_diff_entr_mean_per_pxl)
+
+            myfile.write("Entr Min per pixel = %s\n" %
+                         diff_entr_min_per_pxl)
+            myfile.write("Entr Max per pixel = %s\n" %
+                         diff_entr_max_per_pxl)
+            myfile.write("Entr STD per pixel = %s\n" %
+                         diff_entr_std_per_pxl)
+            myfile.write("Entr Mean per pixel = %s \n" %
+                         diff_entr_mean_per_pxl)
 
         if hasattr(self, 'diff_counts_post_activation_values_all_layers'):
             current_full_txt_save_path = hrelu_base_folder + \
                 "diff_counts.txt"
             with open(current_full_txt_save_path, "w") as myfile:
-                min_per_pixel = torch.min(
-                    self.diff_counts_post_activation_values_all_layers, dim=0).values
-                max_per_pixel = torch.max(
-                    self.diff_counts_post_activation_values_all_layers, dim=0).values
-                std_per_pixel = torch.std(
-                    self.diff_counts_post_activation_values_all_layers, dim=0)
-                mean_per_pixel = torch.mean(
-                    self.diff_counts_post_activation_values_all_layers, dim=0)
-                overall_min = torch.min(min_per_pixel)
-                overall_max = torch.max(max_per_pixel)
-                overall_std = torch.std(
-                    self.diff_counts_post_activation_values_all_layers)
-                overall_mean = torch.mean(
+                ovrl_diff_count_min, ovrl_diff_count_max, ovrl_diff_count_std, ovrl_diff_count_mean, diff_count_min_per_pxl, diff_count_max_per_pxl, diff_count_std_per_pxl, diff_count_mean_per_pxl, mean_diff_count_min_per_pxl, sd_diff_count_min_per_pxl, mean_diff_count_max_per_pxl, sd_diff_count_max_per_pxl, mean_diff_count_std_per_pxl, sd_diff_count_std_per_pxl, mean_diff_count_mean_per_pxl, sd_diff_count_mean_per_pxl = self.generate_stats(
                     self.diff_counts_post_activation_values_all_layers)
 
-                myfile.write("Overall Min = %s\n" % overall_min)
-                myfile.write("Overall Max = %s\n" % overall_max)
-                myfile.write("Overall STD = %s\n" % overall_std)
-                myfile.write("Overall mean = %s \n" % overall_mean)
+                myfile.write("Overall Diff Count Min = %s\n" %
+                             ovrl_diff_count_min)
+                myfile.write("Overall Diff Count Max = %s\n" %
+                             ovrl_diff_count_max)
+                myfile.write("Overall Diff Count STD = %s\n" %
+                             ovrl_diff_count_std)
+                myfile.write("Overall Diff Count mean = %s \n" %
+                             ovrl_diff_count_mean)
+                myfile.write(
+                    "======================== Min per pixel stats ==================== \n")
+                myfile.write("Mean = %s \t" %
+                             mean_diff_count_min_per_pxl)
+                myfile.write("SD = %s\n" %
+                             sd_diff_count_min_per_pxl)
+                myfile.write(
+                    "======================== Max per pixel stats ==================== \n")
+                myfile.write("Mean = %s \t" %
+                             mean_diff_count_max_per_pxl)
+                myfile.write("SD = %s\n" %
+                             sd_diff_count_max_per_pxl)
+                myfile.write(
+                    "======================== Std per pixel stats ==================== \n")
+                myfile.write("Mean = %s \t" %
+                             mean_diff_count_std_per_pxl)
+                myfile.write("SD = %s\n" %
+                             sd_diff_count_std_per_pxl)
+                myfile.write(
+                    "======================== Mean per pixel stats ==================== \n")
+                myfile.write("Mean = %s \t" %
+                             mean_diff_count_mean_per_pxl)
+                myfile.write("SD = %s\n" %
+                             sd_diff_count_mean_per_pxl)
 
-                myfile.write(" Min per pixel = %s\n" % min_per_pixel)
-                myfile.write("Max per pixel = %s\n" % max_per_pixel)
-                myfile.write("STD per pixel = %s\n" % std_per_pixel)
-                myfile.write("Mean per pixel = %s \n" % mean_per_pixel)
+                myfile.write("Diff Count Min per pixel = %s\n" %
+                             diff_count_min_per_pxl)
+                myfile.write("Diff Count Max per pixel = %s\n" %
+                             diff_count_max_per_pxl)
+                myfile.write("Diff Count STD per pixel = %s\n" %
+                             diff_count_std_per_pxl)
+                myfile.write("Diff Count Mean per pixel = %s \n" %
+                             diff_count_mean_per_pxl)
 
                 for f_ind in range(self.diff_counts_post_activation_values_all_layers.size()[0]):
                     curr_filter = self.diff_counts_post_activation_values_all_layers[f_ind]
@@ -726,7 +816,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net_n16_small
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
@@ -748,11 +838,11 @@ if __name__ == '__main__':
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE
-    scheme_type = "GENERATE"
+    scheme_type = "GENERATE_MERGE_AND_SAVE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
-    merge_scheme_type = "TWO_CUSTOM_MODELS"
+    merge_scheme_type = "OVER_ORIGINAL_VS_ADVERSARIAL"
 
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
@@ -842,7 +932,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -879,8 +969,8 @@ if __name__ == '__main__':
                 num_iterations = 1
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
-                    sub_scheme_type = 'OVER_ADVERSARIAL'
-                    # sub_scheme_type = 'OVER_ORIGINAL'
+                    # sub_scheme_type = 'OVER_ADVERSARIAL'
+                    sub_scheme_type = 'OVER_ORIGINAL'
                     is_save_graph_visualizations = True
 
                     is_save_adv = True
