@@ -74,6 +74,7 @@ class RawActivationAnalyser():
         self.post_activation_values_positive_hrelu_counts = None
         self.post_activation_values_negative_hrelu_counts = None
         self.post_activation_values_gate_entropy = None
+        self.post_activation_values_entropy_per_sample = None
 
     def diff_merge_with_another_activation(self, other_activation_state, root_save_prefix, final_postfix_for_save, wandb_group_name, wand_project_name=None, is_save_graph_visualizations=True):
         merged_act_analyser = RawActivationAnalyser(None)
@@ -113,6 +114,8 @@ class RawActivationAnalyser():
                 other_activation_state.post_activation_values_negative_hrelu_counts
             merged_act_analyser.post_activation_values_gate_entropy = self.post_activation_values_gate_entropy - \
                 other_activation_state.post_activation_values_gate_entropy
+            merged_act_analyser.post_activation_values_entropy_per_sample = self.post_activation_values_entropy_per_sample - \
+                other_activation_state.post_activation_values_entropy_per_sample
 
             temp1 = merged_act_analyser.post_activation_values_all_batches
             pos_diff = HardRelu()(temp1)
@@ -195,6 +198,22 @@ class RawActivationAnalyser():
             ovrl_diff_entr_min, ovrl_diff_entr_max, ovrl_diff_entr_std, ovrl_diff_entr_mean, diff_entr_min_per_pxl, diff_entr_max_per_pxl, diff_entr_std_per_pxl, diff_entr_mean_per_pxl, mean_diff_entr_min_per_pxl, sd_diff_entr_min_per_pxl, mean_diff_entr_max_per_pxl, sd_diff_entr_max_per_pxl, mean_diff_entr_std_per_pxl, sd_diff_entr_std_per_pxl, mean_diff_entr_mean_per_pxl, sd_diff_entr_mean_per_pxl = self.generate_stats(
                 self.post_activation_values_gate_entropy)
 
+            ovrl_sample_entr_mean, ovrl_sample_entr_std = self.get_mean_sd(
+                self.post_activation_values_entropy_per_sample)
+            ovrl_sample_entr_min = torch.min(
+                self.post_activation_values_entropy_per_sample)
+            ovrl_sample_entr_max = torch.max(
+                self.post_activation_values_entropy_per_sample)
+
+            myfile.write("Overall Sample Entr Min = %s\n" %
+                         ovrl_sample_entr_min)
+            myfile.write("Overall Sample Entr Max = %s\n" %
+                         ovrl_sample_entr_max)
+            myfile.write("Overall Sample Entr STD = %s\n" %
+                         ovrl_sample_entr_std)
+            myfile.write("Overall Sample Entr mean = %s \n" %
+                         ovrl_sample_entr_mean)
+
             myfile.write("Overall Entr Min = %s\n" %
                          ovrl_diff_entr_min)
             myfile.write("Overall Entr Max = %s\n" %
@@ -228,6 +247,9 @@ class RawActivationAnalyser():
                          mean_diff_entr_mean_per_pxl)
             myfile.write("SD = %s\n" %
                          sd_diff_entr_mean_per_pxl)
+
+            myfile.write("Overall Entr Per Sample = %s \n" %
+                         self.post_activation_values_entropy_per_sample)
 
             myfile.write("Entr Min per pixel = %s\n" %
                          diff_entr_min_per_pxl)
@@ -314,6 +336,7 @@ class RawActivationAnalyser():
         self.post_activation_values_positive_hrelu_counts = None
         self.post_activation_values_negative_hrelu_counts = None
         self.post_activation_values_gate_entropy = None
+        self.post_activation_values_entropy_per_sample = None
 
     def update_raw_record_states_per_batch(self):
         cpudevice = torch.device("cpu")
@@ -360,6 +383,21 @@ class RawActivationAnalyser():
         self.update_raw_record_states_per_batch()
         self.total_tcollect_img_count += current_batch_size
 
+    def calculate_entropy(self, entropy_bin_list):
+        entropy = torch.zeros(
+            size=entropy_bin_list[0].size(), device=self.device)
+        zero_default = torch.zeros(
+            size=entropy_bin_list[0].size(), device=self.device)
+
+        for each_bin_value in entropy_bin_list:
+            each_bin_value = each_bin_value.to(self.device)
+
+            pre_entropy = torch.where(
+                each_bin_value == 0., zero_default, (each_bin_value * torch.log2(each_bin_value)))
+            entropy += pre_entropy
+
+        return -entropy
+
     def record_raw_activation_states(self, per_class_data_loader, class_label, number_of_batch_to_collect, is_save_original_image=True):
         self.reset_raw_analyser_state()
         self.model.train(False)
@@ -390,41 +428,55 @@ class RawActivationAnalyser():
                 if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
                     break
 
-        temp = torch.from_numpy(
-            self.post_activation_values_all_batches)
-        pos_hrelu = HardRelu()(temp)
-        neg_hrelu = HardRelu()(-temp)
+            temp = torch.from_numpy(
+                self.post_activation_values_all_batches)
+            pos_hrelu = HardRelu()(temp)
+            neg_hrelu = HardRelu()(-temp)
 
-        self.post_activation_values_positive_hrelu_counts = torch.sum(
-            pos_hrelu, dim=0)
-        self.post_activation_values_negative_hrelu_counts = torch.sum(
-            neg_hrelu, dim=0)
+            self.post_activation_values_positive_hrelu_counts = torch.sum(
+                pos_hrelu, dim=0)
+            self.post_activation_values_negative_hrelu_counts = torch.sum(
+                neg_hrelu, dim=0)
 
-        prob_pos = self.post_activation_values_positive_hrelu_counts / \
-            self.total_tcollect_img_count
-        prob_neg = self.post_activation_values_negative_hrelu_counts / \
-            self.total_tcollect_img_count
-        prob_zero = 1 - (prob_pos + prob_neg)
-        entropy_bin_list = [prob_pos, prob_neg, prob_zero]
+            prob_pos = self.post_activation_values_positive_hrelu_counts / \
+                self.total_tcollect_img_count
+            prob_neg = self.post_activation_values_negative_hrelu_counts / \
+                self.total_tcollect_img_count
+            prob_zero = 1 - (prob_pos + prob_neg)
+            entropy_bin_list = [prob_pos, prob_neg, prob_zero]
 
-        self.post_activation_values_gate_entropy = torch.zeros(
-            size=self.post_activation_values_positive_hrelu_counts.size(), device=self.device)
+            self.post_activation_values_gate_entropy = self.calculate_entropy(
+                entropy_bin_list)
+            print("self.post_activation_values_all_batches",
+                  self.post_activation_values_all_batches.shape)
+            print("self.post_activation_values_positive_hrelu_counts",
+                  self.post_activation_values_positive_hrelu_counts.size())
 
-        for each_bin_value in entropy_bin_list:
-            each_bin_value = each_bin_value.to(self.device)
-            zero_default = torch.zeros(
-                size=each_bin_value.size(), device=self.device)
+            post_act_values_pos_hrelu_counts = torch.sum(
+                pos_hrelu, dim=[i for i in range(1, len(pos_hrelu.size()))])
+            post_act_values_neg_hrelu_counts = torch.sum(
+                neg_hrelu, dim=[i for i in range(1, len(neg_hrelu.size()))])
 
-            pre_entropy = torch.where(
-                each_bin_value == 0., zero_default, (each_bin_value * torch.log2(each_bin_value)))
-            self.post_activation_values_gate_entropy += pre_entropy
+            each_sample_layer_out_size = torch.numel(
+                pos_hrelu[0])
+            prob_pos = post_act_values_pos_hrelu_counts / each_sample_layer_out_size
+            prob_neg = post_act_values_neg_hrelu_counts / each_sample_layer_out_size
+            prob_zero = 1 - (prob_pos + prob_neg)
+            overall_entropy_bin = torch.vstack((prob_pos, prob_neg, prob_zero))
+            overall_entropy_bin = torch.transpose(overall_entropy_bin, 0, 1)
+            self.post_activation_values_entropy_per_sample = torch.zeros(
+                self.total_tcollect_img_count)
+            # print("overall_entropy_bin size", overall_entropy_bin.size())
+            for indx in range(len(overall_entropy_bin)):
+                each_entropy_bin_list = overall_entropy_bin[indx]
+                temp_entr = self.calculate_entropy(
+                    each_entropy_bin_list)
+                self.post_activation_values_entropy_per_sample[indx] = temp_entr
 
-        self.post_activation_values_gate_entropy = - \
-            self.post_activation_values_gate_entropy
-        print("self.post_activation_values_all_batches",
-              self.post_activation_values_all_batches.shape)
-        print("self.post_activation_values_positive_hrelu_counts",
-              self.post_activation_values_positive_hrelu_counts.size())
+            print("self.post_activation_values_entropy_per_sample",
+                  self.post_activation_values_entropy_per_sample.size())
+            print("each_sample_layer_out_size", each_sample_layer_out_size)
+
         # print("self.post_activation_values_all_batches",
         #       self.post_activation_values_all_batches)
 
@@ -816,7 +868,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
@@ -932,7 +984,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -964,13 +1016,13 @@ if __name__ == '__main__':
                             list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                                           list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
             elif(merge_scheme_type == "TWO_CUSTOM_MODELS"):
-                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
-                direct_model_path2 = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                direct_model_path2 = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
                 num_iterations = 1
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
-                    # sub_scheme_type = 'OVER_ADVERSARIAL'
-                    sub_scheme_type = 'OVER_ORIGINAL'
+                    sub_scheme_type = 'OVER_ADVERSARIAL'
+                    # sub_scheme_type = 'OVER_ORIGINAL'
                     is_save_graph_visualizations = True
 
                     is_save_adv = True
