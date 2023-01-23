@@ -5,6 +5,7 @@ import wandb
 import random
 import numpy as np
 import pickle
+import itertools
 
 
 from utils.visualise_utils import save_image, recreate_image, generate_list_of_plain_images_from_data, generate_plain_image, generate_list_of_images_from_data, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_image_from_data
@@ -49,6 +50,30 @@ def get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type
         wandb_config["number_of_batch_to_collect"] = number_of_batch_to_collect
 
     return wandb_config
+
+
+def get_mean_sd(input_tensor):
+    overall_std = torch.std(input_tensor)
+    overall_mean = torch.mean(input_tensor)
+    return overall_mean, overall_std
+
+
+def generate_stats(input_tensor):
+    min_per_pixel = torch.min(input_tensor, dim=0).values
+    max_per_pixel = torch.max(input_tensor, dim=0).values
+    std_per_pixel = torch.std(input_tensor, dim=0)
+    mean_per_pixel = torch.mean(input_tensor, dim=0)
+    overall_min = torch.min(min_per_pixel)
+    overall_max = torch.max(max_per_pixel)
+    overall_mean, overall_std = get_mean_sd(input_tensor)
+
+    mean_min_per_pixel, sd_min_per_pixel = get_mean_sd(min_per_pixel)
+    mean_max_per_pixel, sd_max_per_pixel = get_mean_sd(max_per_pixel)
+    mean_std_per_pixel, sd_std_per_pixel = get_mean_sd(std_per_pixel)
+    mean_mean_per_pixel, sd_mean_per_pixel = get_mean_sd(
+        mean_per_pixel)
+
+    return overall_min, overall_max, overall_std, overall_mean, min_per_pixel, max_per_pixel, std_per_pixel, mean_per_pixel, mean_min_per_pixel, sd_min_per_pixel, mean_max_per_pixel, sd_max_per_pixel, mean_std_per_pixel, sd_std_per_pixel, mean_mean_per_pixel, sd_mean_per_pixel
 
 
 class RawActivationAnalyser():
@@ -106,6 +131,7 @@ class RawActivationAnalyser():
                                              "_2"] = other_activation_state.wandb_config[each_key]
 
         with torch.no_grad():
+            merged_act_analyser.total_tcollect_img_count = self.total_tcollect_img_count
             merged_act_analyser.post_activation_values_all_batches = HardRelu()(torch.from_numpy(self.post_activation_values_all_batches)) - \
                 HardRelu()(torch.from_numpy(other_activation_state.post_activation_values_all_batches))
             merged_act_analyser.post_activation_values_positive_hrelu_counts = self.post_activation_values_positive_hrelu_counts - \
@@ -144,28 +170,6 @@ class RawActivationAnalyser():
 
         return merged_act_analyser
 
-    def get_mean_sd(self, input_tensor):
-        overall_std = torch.std(input_tensor)
-        overall_mean = torch.mean(input_tensor)
-        return overall_mean, overall_std
-
-    def generate_stats(self, input_tensor):
-        min_per_pixel = torch.min(input_tensor, dim=0).values
-        max_per_pixel = torch.max(input_tensor, dim=0).values
-        std_per_pixel = torch.std(input_tensor, dim=0)
-        mean_per_pixel = torch.mean(input_tensor, dim=0)
-        overall_min = torch.min(min_per_pixel)
-        overall_max = torch.max(max_per_pixel)
-        overall_mean, overall_std = self.get_mean_sd(input_tensor)
-
-        mean_min_per_pixel, sd_min_per_pixel = self.get_mean_sd(min_per_pixel)
-        mean_max_per_pixel, sd_max_per_pixel = self.get_mean_sd(max_per_pixel)
-        mean_std_per_pixel, sd_std_per_pixel = self.get_mean_sd(std_per_pixel)
-        mean_mean_per_pixel, sd_mean_per_pixel = self.get_mean_sd(
-            mean_per_pixel)
-
-        return overall_min, overall_max, overall_std, overall_mean, min_per_pixel, max_per_pixel, std_per_pixel, mean_per_pixel, mean_min_per_pixel, sd_min_per_pixel, mean_max_per_pixel, sd_max_per_pixel, mean_std_per_pixel, sd_std_per_pixel, mean_mean_per_pixel, sd_mean_per_pixel
-
     def save_raw_recorded_activation_states(self, base_save_folder):
         hrelu_base_folder = base_save_folder + "/PlainImages/HardRelu/"
         if not os.path.exists(hrelu_base_folder):
@@ -195,10 +199,10 @@ class RawActivationAnalyser():
         current_full_txt_save_path = hrelu_base_folder + \
             "entropy_stats.txt"
         with open(current_full_txt_save_path, "w") as myfile:
-            ovrl_diff_entr_min, ovrl_diff_entr_max, ovrl_diff_entr_std, ovrl_diff_entr_mean, diff_entr_min_per_pxl, diff_entr_max_per_pxl, diff_entr_std_per_pxl, diff_entr_mean_per_pxl, mean_diff_entr_min_per_pxl, sd_diff_entr_min_per_pxl, mean_diff_entr_max_per_pxl, sd_diff_entr_max_per_pxl, mean_diff_entr_std_per_pxl, sd_diff_entr_std_per_pxl, mean_diff_entr_mean_per_pxl, sd_diff_entr_mean_per_pxl = self.generate_stats(
+            ovrl_diff_entr_min, ovrl_diff_entr_max, ovrl_diff_entr_std, ovrl_diff_entr_mean, diff_entr_min_per_pxl, diff_entr_max_per_pxl, diff_entr_std_per_pxl, diff_entr_mean_per_pxl, mean_diff_entr_min_per_pxl, sd_diff_entr_min_per_pxl, mean_diff_entr_max_per_pxl, sd_diff_entr_max_per_pxl, mean_diff_entr_std_per_pxl, sd_diff_entr_std_per_pxl, mean_diff_entr_mean_per_pxl, sd_diff_entr_mean_per_pxl = generate_stats(
                 self.post_activation_values_gate_entropy)
 
-            ovrl_sample_entr_mean, ovrl_sample_entr_std = self.get_mean_sd(
+            ovrl_sample_entr_mean, ovrl_sample_entr_std = get_mean_sd(
                 self.post_activation_values_entropy_per_sample)
             ovrl_sample_entr_min = torch.min(
                 self.post_activation_values_entropy_per_sample)
@@ -264,7 +268,7 @@ class RawActivationAnalyser():
             current_full_txt_save_path = hrelu_base_folder + \
                 "diff_counts.txt"
             with open(current_full_txt_save_path, "w") as myfile:
-                ovrl_diff_count_min, ovrl_diff_count_max, ovrl_diff_count_std, ovrl_diff_count_mean, diff_count_min_per_pxl, diff_count_max_per_pxl, diff_count_std_per_pxl, diff_count_mean_per_pxl, mean_diff_count_min_per_pxl, sd_diff_count_min_per_pxl, mean_diff_count_max_per_pxl, sd_diff_count_max_per_pxl, mean_diff_count_std_per_pxl, sd_diff_count_std_per_pxl, mean_diff_count_mean_per_pxl, sd_diff_count_mean_per_pxl = self.generate_stats(
+                ovrl_diff_count_min, ovrl_diff_count_max, ovrl_diff_count_std, ovrl_diff_count_mean, diff_count_min_per_pxl, diff_count_max_per_pxl, diff_count_std_per_pxl, diff_count_mean_per_pxl, mean_diff_count_min_per_pxl, sd_diff_count_min_per_pxl, mean_diff_count_max_per_pxl, sd_diff_count_max_per_pxl, mean_diff_count_std_per_pxl, sd_diff_count_std_per_pxl, mean_diff_count_mean_per_pxl, sd_diff_count_mean_per_pxl = generate_stats(
                     self.diff_counts_post_activation_values_all_layers)
 
                 myfile.write("Overall Diff Count Min = %s\n" %
@@ -383,21 +387,6 @@ class RawActivationAnalyser():
         self.update_raw_record_states_per_batch()
         self.total_tcollect_img_count += current_batch_size
 
-    def calculate_entropy(self, entropy_bin_list):
-        entropy = torch.zeros(
-            size=entropy_bin_list[0].size(), device=self.device)
-        zero_default = torch.zeros(
-            size=entropy_bin_list[0].size(), device=self.device)
-
-        for each_bin_value in entropy_bin_list:
-            each_bin_value = each_bin_value.to(self.device)
-
-            pre_entropy = torch.where(
-                each_bin_value == 0., zero_default, (each_bin_value * torch.log2(each_bin_value)))
-            entropy += pre_entropy
-
-        return -entropy
-
     def record_raw_activation_states(self, per_class_data_loader, class_label, number_of_batch_to_collect, is_save_original_image=True):
         self.reset_raw_analyser_state()
         self.model.train(False)
@@ -445,7 +434,7 @@ class RawActivationAnalyser():
             prob_zero = 1 - (prob_pos + prob_neg)
             entropy_bin_list = [prob_pos, prob_neg, prob_zero]
 
-            self.post_activation_values_gate_entropy = self.calculate_entropy(
+            self.post_activation_values_gate_entropy = calculate_entropy(
                 entropy_bin_list)
             print("self.post_activation_values_all_batches",
                   self.post_activation_values_all_batches.shape)
@@ -469,7 +458,7 @@ class RawActivationAnalyser():
             # print("overall_entropy_bin size", overall_entropy_bin.size())
             for indx in range(len(overall_entropy_bin)):
                 each_entropy_bin_list = overall_entropy_bin[indx]
-                temp_entr = self.calculate_entropy(
+                temp_entr = calculate_entropy(
                     each_entropy_bin_list)
                 self.post_activation_values_entropy_per_sample[indx] = temp_entr
 
@@ -587,6 +576,24 @@ class RawActivationAnalyser():
                 os.makedirs(save_folder)
             self.save_raw_recorded_activation_states(
                 save_folder)
+
+
+def calculate_entropy(entropy_bin_list):
+    device = torch.device(
+        "cuda:0" if torch.cuda.is_available() else "cpu")
+    entropy = torch.zeros(
+        size=entropy_bin_list[0].size(), device=device)
+    zero_default = torch.zeros(
+        size=entropy_bin_list[0].size(), device=device)
+
+    for each_bin_value in entropy_bin_list:
+        each_bin_value = each_bin_value.to(device)
+
+        pre_entropy = torch.where(
+            each_bin_value == 0., zero_default, (each_bin_value * torch.log2(each_bin_value)))
+        entropy += pre_entropy
+
+    return -entropy
 
 
 def diff_merge_two_activation_analysis(merge_type, list_of_act_analyser1, list_of_act_analyser2, wandb_group_name=None, wand_project_name=None,
@@ -851,6 +858,141 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
     return list_of_list_of_act_analyser
 
 
+def generate_per_class_combination_stats(list_of_act_analyser_of_class_comb):
+    # min_common_batch = list_of_act_analyser_of_class_comb[0].total_tcollect_img_count
+    # for each_class_act_analyser in list_of_act_analyser_of_class_comb:
+    #     if(min_common_batch < each_class_act_analyser.total_tcollect_img_count):
+    #         min_common_batch = each_class_act_analyser.total_tcollect_img_count
+
+    common_class_pos_hrelu_difference = list_of_act_analyser_of_class_comb[
+        0].post_activation_values_positive_hrelu_counts.clone()
+    common_class_neg_hrelu_difference = list_of_act_analyser_of_class_comb[
+        0].post_activation_values_negative_hrelu_counts.clone()
+
+    common_class_total_pos_hrelu_counts = common_class_pos_hrelu_difference.clone()
+    common_class_total_neg_hrelu_counts = common_class_neg_hrelu_difference.clone()
+
+    for ii in range(1, len(list_of_act_analyser_of_class_comb)):
+        each_class_act_analyser = list_of_act_analyser_of_class_comb[ii]
+        common_class_pos_hrelu_difference = common_class_pos_hrelu_difference - \
+            each_class_act_analyser.post_activation_values_positive_hrelu_counts
+        common_class_neg_hrelu_difference = common_class_neg_hrelu_difference - \
+            each_class_act_analyser.post_activation_values_negative_hrelu_counts
+        common_class_total_pos_hrelu_counts = common_class_total_pos_hrelu_counts + \
+            each_class_act_analyser.post_activation_values_positive_hrelu_counts
+        common_class_total_neg_hrelu_counts = common_class_total_neg_hrelu_counts + \
+            each_class_act_analyser.post_activation_values_negative_hrelu_counts
+
+    pos_hrelu_entropy_bin_list = []
+    neg_hrelu_entropy_bin_list = []
+    device = torch.device(
+        "cuda:0" if torch.cuda.is_available() else "cpu")
+    zeros_t = torch.zeros(
+        list_of_act_analyser_of_class_comb[0].post_activation_values_positive_hrelu_counts.size())
+    pos_sum = torch.zeros(
+        list_of_act_analyser_of_class_comb[0].post_activation_values_positive_hrelu_counts.size(), device=device)
+    neg_sum = torch.zeros(
+        list_of_act_analyser_of_class_comb[0].post_activation_values_positive_hrelu_counts.size(), device=device)
+    for ind in range(len(list_of_act_analyser_of_class_comb)-1):
+        each_class_act_analyser = list_of_act_analyser_of_class_comb[ind]
+        temp_pos = each_class_act_analyser.post_activation_values_positive_hrelu_counts / \
+            common_class_total_pos_hrelu_counts
+        temp_pos = torch.where(
+            common_class_total_pos_hrelu_counts > 0., temp_pos, zeros_t)
+        pos_hrelu_entropy_bin_list.append(temp_pos)
+        pos_sum += temp_pos.to(device)
+        temp_neg = each_class_act_analyser.post_activation_values_negative_hrelu_counts / \
+            common_class_total_neg_hrelu_counts
+        temp_neg = torch.where(
+            common_class_total_neg_hrelu_counts > 0., temp_neg, zeros_t)
+        neg_hrelu_entropy_bin_list.append(temp_neg)
+        neg_sum += temp_neg.to(device)
+
+    pos_hrelu_entropy_bin_list.append(1-pos_sum)
+    neg_hrelu_entropy_bin_list.append(1-neg_sum)
+
+    pos_hrelu_entr_per_pixel = calculate_entropy(pos_hrelu_entropy_bin_list)
+    neg_hrelu_entr_per_pixel = calculate_entropy(neg_hrelu_entropy_bin_list)
+
+    return common_class_pos_hrelu_difference, common_class_neg_hrelu_difference, pos_hrelu_entr_per_pixel, neg_hrelu_entr_per_pixel
+
+
+def write_stats_to_file(write_to_file_path, input_tensor, append_title):
+    with open(write_to_file_path, "w") as myfile:
+        ovrl_min, ovrl_max, ovrl_std, ovrl_mean, min_per_pxl, max_per_pxl, std_per_pxl, mean_per_pxl, mean_min_per_pxl, sd_min_per_pxl, mean_max_per_pxl, sd_max_per_pxl, mean_std_per_pxl, sd_std_per_pxl, mean_mean_per_pxl, sd_mean_per_pxl = generate_stats(
+            input_tensor)
+
+        myfile.write("Overall {} Min = {} \n".format(append_title, ovrl_min))
+        myfile.write("Overall {} Max = {} \n".format(append_title, ovrl_max))
+        myfile.write("Overall {} STD = {} \n".format(append_title, ovrl_std))
+        myfile.write("Overall {} Mean = {} \n".format(append_title, ovrl_mean))
+        myfile.write(
+            "======================== Min per pixel stats ==================== \n")
+        myfile.write("Mean = {} \t".format(mean_min_per_pxl))
+        myfile.write("SD = {}\n".format(sd_min_per_pxl))
+        myfile.write(
+            "======================== Max per pixel stats ==================== \n")
+        myfile.write("Mean = {} \t".format(mean_max_per_pxl))
+        myfile.write("SD = {} \n".format(sd_max_per_pxl))
+        myfile.write(
+            "======================== Std per pixel stats ==================== \n")
+        myfile.write("Mean = {} \t".format(mean_std_per_pxl))
+        myfile.write("SD = {} \n".format(sd_std_per_pxl))
+        myfile.write(
+            "======================== Mean per pixel stats ==================== \n")
+        myfile.write("Mean = {} \t".format(mean_mean_per_pxl))
+        myfile.write("SD = {} \n".format(sd_mean_per_pxl))
+
+        myfile.write("{} Min per pixel = {} \n".format(
+            append_title, min_per_pxl))
+        myfile.write("{} Max per pixel = {} \n".format(
+            append_title, max_per_pxl))
+        myfile.write("{} STD per pixel = {} \n".format(
+            append_title, std_per_pxl))
+        myfile.write("{} Mean per pixel = {} \n".format(
+            append_title, mean_per_pxl))
+
+
+def generate_class_combination_statistics(list_of_list_of_act_analyser, class_combination_tuple_list):
+    for each_list_of_act_analyser in list_of_list_of_act_analyser:
+        for (class_indx_to_generate_combinations, class_combination_length) in class_combination_tuple_list:
+            for each_class_combination in itertools.combinations(class_indx_to_generate_combinations, class_combination_length):
+                comb_tag = str('_'.join(map(str, each_class_combination)))
+                print("each_class_combination: {}".format(comb_tag))
+                current_combination_act_analysers = [
+                    None] * class_combination_length
+                for ii in range(len(each_class_combination)):
+                    each_class_in_comb = each_class_combination[ii]
+                    current_combination_act_analysers[ii] = each_list_of_act_analyser[each_class_in_comb]
+
+                common_class_pos_hrelu_difference, common_class_neg_hrelu_difference, pos_hrelu_entr_per_pixel, neg_hrelu_entr_per_pixel = generate_per_class_combination_stats(
+                    current_combination_act_analysers)
+
+                save_folder = current_combination_act_analysers[0].image_save_prefix_folder + "/CLASS_COMPARISION/COMB_LENGTH_" + str(class_combination_length) +\
+                    "/class_" + comb_tag \
+                    + "/"
+                if not os.path.exists(save_folder):
+                    os.makedirs(save_folder)
+
+                print("Writing class combination:{} under path:{}".format(
+                    each_class_combination, save_folder))
+                generate_plain_image(common_class_pos_hrelu_difference,
+                                     save_folder+"c_Diff_Positive_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
+                generate_plain_image(common_class_neg_hrelu_difference,
+                                     save_folder+"c_Diff_Negative_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
+                generate_plain_image(pos_hrelu_entr_per_pixel,
+                                     save_folder+"c_PosHrelu_Entropy.jpg", is_standarize=False, is_standarize_01=True)
+                generate_plain_image(neg_hrelu_entr_per_pixel,
+                                     save_folder+"c_NegHrelu_Entropy.jpg", is_standarize=False, is_standarize_01=True)
+
+                write_stats_to_file(save_folder+"c_Diff_Positive_HRelu_counts.txt",
+                                    common_class_pos_hrelu_difference, "Diff PHrelu Count")
+                write_stats_to_file(save_folder+"c_PosHrelu_Entropy.txt",
+                                    pos_hrelu_entr_per_pixel, "PHrelu Entropy")
+                write_stats_to_file(save_folder+"c_NegHrelu_Entropy.txt",
+                                    pos_hrelu_entr_per_pixel, "NHrelu Entropy")
+
+
 if __name__ == '__main__':
     # THIS OPERATION IS MEMORY HUNGRY! #
     # Because of the selected image is very large
@@ -868,7 +1010,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net_n16_small
-    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
@@ -894,12 +1036,18 @@ if __name__ == '__main__':
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
-    merge_scheme_type = "OVER_ORIGINAL_VS_ADVERSARIAL"
+    merge_scheme_type = "TWO_CUSTOM_MODELS"
 
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
     trainloader, _, testloader = preprocess_dataset_get_data_loader(
         ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
+
+    class_combination_tuple_list = None
+    # class_combination_tuple_list = [
+    #     ([i for i in range(len(classes))], 2)
+    # ]
+
     if(is_act_collection_on_train):
         custom_data_loader = trainloader, None
         to_be_analysed_dataloader = trainloader
@@ -925,9 +1073,16 @@ if __name__ == '__main__':
         c_indices = [i for i in range(10)]
 
         # class_ind_visualize = None
+        if(class_combination_tuple_list is not None):
+            loop_range = [0]
+        else:
+            loop_range = c_indices
 
-        for c_i in c_indices:
-            class_ind_visualize = [c_i]
+        for c_i in loop_range:
+            if(class_combination_tuple_list is not None):
+                class_ind_visualize = None
+            else:
+                class_ind_visualize = [c_i]
 
             models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.95/"
 
@@ -937,6 +1092,9 @@ if __name__ == '__main__':
 
             list_of_list_of_act_analyser = run_generate_scheme(
                 models_base_path, to_be_analysed_dataloader, custom_data_loader, direct_model_path=direct_model_path)
+            if(class_combination_tuple_list is not None):
+                generate_class_combination_statistics(
+                    list_of_list_of_act_analyser, class_combination_tuple_list)
 
     elif(scheme_type == "LOAD_AND_SAVE"):
         class_ind_visualize = [9]
@@ -973,9 +1131,16 @@ if __name__ == '__main__':
         c_indices = [i for i in range(10)]
 
         # class_ind_visualize = None
+        if(class_combination_tuple_list is not None):
+            loop_range = [0]
+        else:
+            loop_range = c_indices
 
-        for c_i in c_indices:
-            class_ind_visualize = [c_i]
+        for c_i in loop_range:
+            if(class_combination_tuple_list is not None):
+                class_ind_visualize = None
+            else:
+                class_ind_visualize = [c_i]
 
             list_of_model_paths = []
             models_base_path = None
@@ -984,7 +1149,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+            direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -995,6 +1160,9 @@ if __name__ == '__main__':
 
                     list_of_list_of_act_analyser_orig = run_generate_scheme(
                         models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=direct_model_path)
+                    if(class_combination_tuple_list is not None):
+                        generate_class_combination_statistics(
+                            list_of_list_of_act_analyser_orig, class_combination_tuple_list)
 
                     sub_scheme_type = 'OVER_ADVERSARIAL'
                     is_save_adv = True
@@ -1006,6 +1174,9 @@ if __name__ == '__main__':
 
                     list_of_list_of_act_analyser_adv = run_generate_scheme(
                         models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=direct_model_path)
+                    if(class_combination_tuple_list is not None):
+                        generate_class_combination_statistics(
+                            list_of_list_of_act_analyser_adv, class_combination_tuple_list)
 
                     for ind in range(len(list_of_list_of_act_analyser_adv)):
                         list_of_act_analyser1 = list_of_list_of_act_analyser_adv[ind]
@@ -1015,9 +1186,13 @@ if __name__ == '__main__':
                             is_save_graph_visualizations = True
                             list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                                           list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
+                            if(class_combination_tuple_list is not None):
+                                generate_class_combination_statistics(
+                                    list_of_merged_act1_act2, class_combination_tuple_list)
+
             elif(merge_scheme_type == "TWO_CUSTOM_MODELS"):
-                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
-                direct_model_path2 = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                direct_model_path2 = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
                 num_iterations = 1
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
@@ -1034,9 +1209,15 @@ if __name__ == '__main__':
 
                     list_of_list_of_act_analyser_m1 = run_generate_scheme(
                         models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=direct_model_path1)
+                    if(class_combination_tuple_list is not None):
+                        generate_class_combination_statistics(
+                            list_of_list_of_act_analyser_m1, class_combination_tuple_list)
 
                     list_of_list_of_act_analyser_m2 = run_generate_scheme(
                         models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=direct_model_path2)
+                    if(class_combination_tuple_list is not None):
+                        generate_class_combination_statistics(
+                            list_of_list_of_act_analyser_m2, class_combination_tuple_list)
 
                     for ind in range(len(list_of_list_of_act_analyser_m2)):
                         list_of_act_analyser1 = list_of_list_of_act_analyser_m2[ind]
@@ -1046,6 +1227,9 @@ if __name__ == '__main__':
                             is_save_graph_visualizations = True
                             list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                                           list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
+                            if(class_combination_tuple_list is not None):
+                                generate_class_combination_statistics(
+                                    [list_of_merged_act1_act2], class_combination_tuple_list)
 
     elif(scheme_type == "LOAD_AND_GENERATE_MERGE"):
         merge_type = "DIFF"
@@ -1091,5 +1275,12 @@ if __name__ == '__main__':
                                                                                     class_indx_to_visualize=class_ind_visualize, is_save_graph_visualizations=False)
                 list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                               list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
+                if(class_combination_tuple_list is not None and class_ind_visualize is None):
+                    generate_class_combination_statistics(
+                        list_of_act_analyser1, class_combination_tuple_list)
+                    generate_class_combination_statistics(
+                        list_of_act_analyser2, class_combination_tuple_list)
+                    generate_class_combination_statistics(
+                        list_of_merged_act1_act2, class_combination_tuple_list)
 
     print("Finished execution!!!")
