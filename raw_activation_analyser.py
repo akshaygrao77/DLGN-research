@@ -6,7 +6,7 @@ import random
 import numpy as np
 import pickle
 import itertools
-
+import xlsxwriter
 
 from utils.visualise_utils import save_image, recreate_image, generate_list_of_plain_images_from_data, generate_plain_image, generate_list_of_images_from_data, construct_images_from_feature_maps, construct_heatmaps_from_data, generate_video_of_image_from_data
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader, seed_worker
@@ -421,6 +421,10 @@ class RawActivationAnalyser():
                 self.post_activation_values_all_batches)
             pos_hrelu = HardRelu()(temp)
             neg_hrelu = HardRelu()(-temp)
+
+            temp = pos_hrelu + neg_hrelu
+            tones = torch.ones(temp.size())
+            neg_hrelu = torch.where(temp == 0, tones, neg_hrelu)
 
             self.post_activation_values_positive_hrelu_counts = torch.sum(
                 pos_hrelu, dim=0)
@@ -990,7 +994,130 @@ def generate_class_combination_statistics(list_of_list_of_act_analyser, class_co
                 write_stats_to_file(save_folder+"c_PosHrelu_Entropy.txt",
                                     pos_hrelu_entr_per_pixel, "PHrelu Entropy")
                 write_stats_to_file(save_folder+"c_NegHrelu_Entropy.txt",
-                                    pos_hrelu_entr_per_pixel, "NHrelu Entropy")
+                                    neg_hrelu_entr_per_pixel, "NHrelu Entropy")
+
+
+def generate_class_pair_wise_stats_array(list_of_act_analyser, classes):
+    current_combination_act_analysers = [None] * 2
+    pairwise_class_stats = []
+    for each_source_c_indx in range(len(classes)):
+        current_class_pairing_stats = []
+        current_combination_act_analysers[0] = list_of_act_analyser[each_source_c_indx]
+        for each_dest_c_indx in range(len(classes)):
+            current_combination_act_analysers[1] = list_of_act_analyser[each_dest_c_indx]
+            common_class_pos_hrelu_diff, common_class_neg_hrelu_diff, pos_hrelu_entr_per_pixel, neg_hrelu_entr_per_pixel = generate_per_class_combination_stats(
+                current_combination_act_analysers)
+            ovrl_phrelu_diff_min, ovrl_phrelu_diff_max, ovrl_phrelu_diff_std, ovrl_phrelu_diff_mean, _, _, _, _, _, _, _, _, _, _, _, _ = generate_stats(
+                common_class_pos_hrelu_diff)
+            ovrl_nhrelu_diff_min, ovrl_nhrelu_diff_max, ovrl_nhrelu_diff_std, ovrl_nhrelu_diff_mean, _, _, _, _, _, _, _, _, _, _, _, _ = generate_stats(
+                common_class_neg_hrelu_diff)
+            ovrl_phrelu_entr_min, ovrl_phrelu_entr_max, ovrl_phrelu_entr_std, ovrl_phrelu_entr_mean, _, _, _, _, _, _, _, _, _, _, _, _ = generate_stats(
+                pos_hrelu_entr_per_pixel)
+            ovrl_nhrelu_entr_min, ovrl_nhrelu_entr_max, ovrl_nhrelu_entr_std, ovrl_nhrelu_entr_mean, _, _, _, _, _, _, _, _, _, _, _, _ = generate_stats(
+                neg_hrelu_entr_per_pixel)
+            current_pair_stats = [ovrl_phrelu_diff_min.cpu().numpy(), ovrl_phrelu_diff_max.cpu().numpy(), ovrl_phrelu_diff_std.cpu().numpy(), ovrl_phrelu_diff_mean.cpu().numpy(), ovrl_phrelu_entr_min.cpu().numpy(), ovrl_phrelu_entr_max.cpu().numpy(), ovrl_phrelu_entr_std.cpu().numpy(), ovrl_phrelu_entr_mean.cpu().numpy(),
+                                  ovrl_nhrelu_diff_min.cpu().numpy(), ovrl_nhrelu_diff_max.cpu().numpy(), ovrl_nhrelu_diff_std.cpu().numpy(), ovrl_nhrelu_diff_mean.cpu().numpy(), ovrl_nhrelu_entr_min.cpu().numpy(), ovrl_nhrelu_entr_max.cpu().numpy(), ovrl_nhrelu_entr_std.cpu().numpy(), ovrl_nhrelu_entr_mean.cpu().numpy()]
+            current_class_pairing_stats.append(current_pair_stats)
+        pairwise_class_stats.append(current_class_pairing_stats)
+    return pairwise_class_stats
+
+
+def merge_two_pairwise_class_stats_in_alternative_manner(stats1, stats2):
+    merged_pairwise_class_stats = []
+    for source_class_indx in range(len(stats1)):
+        per_class_stats1 = stats1[source_class_indx]
+        per_class_stats2 = stats2[source_class_indx]
+        current_class_merged_pairing_stats = []
+        for dest_class_indx in range(len(per_class_stats1)):
+            per_class_pairing_stats1 = per_class_stats1[dest_class_indx]
+            per_class_pairing_stats2 = per_class_stats2[dest_class_indx]
+            current_class_pairing_stats = []
+            for each_stat_indx in range(len(per_class_pairing_stats1)):
+                current_class_pairing_stats.append(
+                    per_class_pairing_stats1[each_stat_indx])
+                current_class_pairing_stats.append(
+                    per_class_pairing_stats2[each_stat_indx])
+            current_class_merged_pairing_stats.append(
+                current_class_pairing_stats)
+        merged_pairwise_class_stats.append(current_class_merged_pairing_stats)
+    return merged_pairwise_class_stats
+
+
+def generate_class_pairwise_excel_report(csv_file_name, std_model_merged_classpair_stats, adv_model_merged_classpair_stats):
+    # Open an Excel workbook
+    workbook = xlsxwriter.Workbook(csv_file_name+'.xlsx')
+
+    # Set up a format
+    adv_example_of_std_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'red', 'bg_color': 'white'})
+    orig_example_of_std_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'black', 'bg_color': 'white'})
+    adv_example_of_adv_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'red', 'bg_color': 'yellow'})
+    orig_example_of_adv_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'black', 'bg_color': 'yellow'})
+    header_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'red'})
+
+    property_names = ["MIN-Ovral Act Gate Diff", "MAX-Ovral Act Gate Diff", "STD-Ovral Act Gate Diff", "MEAN-Ovral Active Gate Diff", "MIN-Ovral Act Gate Entropy", "MAX-Ovral Act Gate Entropy", "STD-Ovral Act Gate Entropy", "MEAN-Ovral Act Gate Entropy",
+                      "MIN-Ovral INAct Gate Diff", "MAX-Ovral INAct Gate Diff", "STD-Ovral INAct Gate Diff", "MEAN-Ovral INAct Gate Diff", "MIN-Ovral INAct Gate Entropy", "MAX-Ovral INAct Gate Entropy", "STD-Ovral INAct Gate Entropy", "MEAN-Ovral INAct Gate Entropy"]
+
+    # Create a sheet
+    worksheet = workbook.add_worksheet('Stats_Sheet')
+    worksheet.freeze_panes(1, 0)
+
+    headers = ["Type of Model", "Source Class Label", "Property Measured"]
+    for ind in range(len(std_model_merged_classpair_stats)):
+        headers.append(ind)
+
+    # Write the headers
+    for col_num, each_header in enumerate(headers):
+        worksheet.write(0, col_num, each_header, header_format)
+
+    is_currently_adv = False
+    row_num = 0
+    for each_source_class_indx in range(len(adv_model_merged_classpair_stats)):
+        per_class_adv_model_cp_stats = adv_model_merged_classpair_stats[each_source_class_indx]
+        per_class_std_model_cp_stats = std_model_merged_classpair_stats[each_source_class_indx]
+        per_class_adv_model_cp_stats = np.transpose(
+            per_class_adv_model_cp_stats, (1, 0))
+        per_class_std_model_cp_stats = np.transpose(
+            per_class_std_model_cp_stats, (1, 0))
+        for internal_row in range(len(per_class_adv_model_cp_stats)):
+            each_pc_stat_prop = per_class_adv_model_cp_stats[internal_row]
+            if(internal_row % 2 == 0):
+                current_format = adv_example_of_adv_model_format
+            else:
+                current_format = orig_example_of_adv_model_format
+            worksheet.write(row_num+1, 0, "ADV Model", current_format)
+            worksheet.write(row_num+1, 1, "Class_Ind_" +
+                            str(each_source_class_indx), current_format)
+            worksheet.write(
+                row_num+1, 2, property_names[internal_row//2], current_format)
+            for col_num, cell_data in enumerate(each_pc_stat_prop):
+                worksheet.write(row_num+1, col_num+3,
+                                cell_data, current_format)
+            row_num += 1
+
+        for internal_row in range(len(per_class_std_model_cp_stats)):
+            each_pc_stat_prop = per_class_std_model_cp_stats[internal_row]
+            if(internal_row % 2 == 0):
+                current_format = adv_example_of_std_model_format
+            else:
+                current_format = orig_example_of_std_model_format
+            worksheet.write(row_num+1, 0, "STD Model", current_format)
+            worksheet.write(row_num+1, 1, "Class_Ind_" +
+                            str(each_source_class_indx), current_format)
+            worksheet.write(
+                row_num+1, 2, property_names[internal_row//2], current_format)
+            for col_num, cell_data in enumerate(each_pc_stat_prop):
+                worksheet.write(row_num+1, col_num+3,
+                                cell_data, current_format)
+            row_num += 1
+        row_num += 1
+
+    # Close the workbook
+    workbook.close()
 
 
 if __name__ == '__main__':
@@ -1032,11 +1159,11 @@ if __name__ == '__main__':
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE
-    scheme_type = "GENERATE_MERGE_AND_SAVE"
+    scheme_type = "CLASS_WISE_REPORT"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
-    merge_scheme_type = "TWO_CUSTOM_MODELS"
+    merge_scheme_type = "OVER_ORIGINAL_VS_ADVERSARIAL"
 
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
@@ -1044,9 +1171,9 @@ if __name__ == '__main__':
         ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
 
     class_combination_tuple_list = None
-    # class_combination_tuple_list = [
-    #     ([i for i in range(len(classes))], 2)
-    # ]
+    class_combination_tuple_list = [
+        ([i for i in range(len(classes))], 2)
+    ]
 
     if(is_act_collection_on_train):
         custom_data_loader = trainloader, None
@@ -1149,7 +1276,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -1188,7 +1315,7 @@ if __name__ == '__main__':
                                                                                           list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
                             if(class_combination_tuple_list is not None):
                                 generate_class_combination_statistics(
-                                    list_of_merged_act1_act2, class_combination_tuple_list)
+                                    [list_of_merged_act1_act2], class_combination_tuple_list)
 
             elif(merge_scheme_type == "TWO_CUSTOM_MODELS"):
                 direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
@@ -1282,5 +1409,117 @@ if __name__ == '__main__':
                         list_of_act_analyser2, class_combination_tuple_list)
                     generate_class_combination_statistics(
                         list_of_merged_act1_act2, class_combination_tuple_list)
+    elif(scheme_type == "CLASS_WISE_REPORT"):
+        is_save_adv = True
+        eps = 0.06
+        adv_attack_type = 'PGD'
+        number_of_adversarial_optimization_steps = 161
+        eps_step_size = 0.01
+        adv_target = None
+        class_ind_visualize = None
+        is_save_graph_visualizations = True
+        current_it_start = 1
+        models_base_path = None
+        std_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+        adv_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+
+        tmp_image_over_what_str = 'test'
+        if(is_act_collection_on_train):
+            tmp_image_over_what_str = 'train'
+
+        seg_over_what_str = 'MP'
+        if(is_class_segregation_on_ground_truth):
+            seg_over_what_str = 'GT'
+
+        first_prefix = std_model_path[0:std_model_path.rfind("/")+1]
+        final_postfix_for_save = "/{}/EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
+            first_prefix, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size)
+        prefix = adv_model_path[0:adv_model_path.rfind("/")+1]
+        image_save_prefix_folder = str(prefix)+"/RAW_ACT_ANALYSIS/CLASS_PAIRWISE_REPORT/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(activation_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/_torch_seed_"+str(torch_seed)+"/" + str(final_postfix_for_save) + "/"
+
+        if not os.path.exists(image_save_prefix_folder):
+            os.makedirs(image_save_prefix_folder)
+
+        std_model_merged_classwise_pair_stats_store_location = image_save_prefix_folder + \
+            "/std_model_cp_stats.npy"
+        print("std_model_merged_classwise_pair_stats_store_location",
+              std_model_merged_classwise_pair_stats_store_location)
+        adv_model_merged_classwise_pair_stats_store_location = image_save_prefix_folder + \
+            "/adv_model_cp_stats.npy"
+        xls_save_location = image_save_prefix_folder + \
+            "/adv_std_model_over_adv_orig_examples_report"
+
+        if(os.path.exists(std_model_merged_classwise_pair_stats_store_location) and os.path.exists(adv_model_merged_classwise_pair_stats_store_location)):
+            with open(std_model_merged_classwise_pair_stats_store_location, 'rb') as file:
+                npzfile = np.load(
+                    std_model_merged_classwise_pair_stats_store_location)
+                std_model_merged_classpair_stats = npzfile['arr']
+
+            with open(adv_model_merged_classwise_pair_stats_store_location, 'rb') as file:
+                npzfile = np.load(
+                    adv_model_merged_classwise_pair_stats_store_location)
+                adv_model_merged_classpair_stats = npzfile['arr']
+        else:
+            sub_scheme_type = 'OVER_ORIGINAL'
+            list_of_list_of_act_analyser = run_generate_scheme(
+                models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=std_model_path)
+            if(class_combination_tuple_list is not None):
+                generate_class_combination_statistics(
+                    list_of_list_of_act_analyser, class_combination_tuple_list)
+            std_model_pairwise_class_stats_for_orig = generate_class_pair_wise_stats_array(
+                list_of_list_of_act_analyser[0], classes)
+            print("std_model_pairwise_class_stats_for_orig shape:",
+                  np.array(std_model_pairwise_class_stats_for_orig).shape)
+            list_of_list_of_act_analyser = run_generate_scheme(
+                models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=adv_model_path)
+            if(class_combination_tuple_list is not None):
+                generate_class_combination_statistics(
+                    list_of_list_of_act_analyser, class_combination_tuple_list)
+            adv_model_pairwise_class_stats_for_orig = generate_class_pair_wise_stats_array(
+                list_of_list_of_act_analyser[0], classes)
+            print("adv_model_pairwise_class_stats_for_orig shape:",
+                  np.array(adv_model_pairwise_class_stats_for_orig).shape)
+
+            sub_scheme_type = 'OVER_ADVERSARIAL'
+
+            list_of_list_of_act_analyser = run_generate_scheme(
+                models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=std_model_path)
+            if(class_combination_tuple_list is not None):
+                generate_class_combination_statistics(
+                    list_of_list_of_act_analyser, class_combination_tuple_list)
+            std_model_pairwise_class_stats_for_adv = generate_class_pair_wise_stats_array(
+                list_of_list_of_act_analyser[0], classes)
+            print("std_model_pairwise_class_stats_for_adv shape:",
+                  np.array(std_model_pairwise_class_stats_for_adv).shape)
+            list_of_list_of_act_analyser = run_generate_scheme(
+                models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=adv_model_path)
+            if(class_combination_tuple_list is not None):
+                generate_class_combination_statistics(
+                    list_of_list_of_act_analyser, class_combination_tuple_list)
+            adv_model_pairwise_class_stats_for_adv = generate_class_pair_wise_stats_array(
+                list_of_list_of_act_analyser[0], classes)
+            print("adv_model_pairwise_class_stats_for_adv shape:",
+                  np.array(adv_model_pairwise_class_stats_for_adv).shape)
+
+            std_model_merged_classpair_stats = np.array(merge_two_pairwise_class_stats_in_alternative_manner(
+                std_model_pairwise_class_stats_for_adv, std_model_pairwise_class_stats_for_orig))
+            adv_model_merged_classpair_stats = np.array(merge_two_pairwise_class_stats_in_alternative_manner(
+                adv_model_pairwise_class_stats_for_adv, adv_model_pairwise_class_stats_for_orig))
+
+            with open(adv_model_merged_classwise_pair_stats_store_location, 'wb') as file:
+                np.savez(
+                    file, arr=adv_model_merged_classpair_stats)
+
+            with open(std_model_merged_classwise_pair_stats_store_location, 'wb') as file:
+                np.savez(
+                    file, arr=std_model_merged_classpair_stats)
+
+        print("std_model_merged_classpair_stats shape:",
+              std_model_merged_classpair_stats.shape)
+        print("adv_model_merged_classpair_stats shape:",
+              adv_model_merged_classpair_stats.shape)
+        generate_class_pairwise_excel_report(
+            xls_save_location, std_model_merged_classpair_stats, adv_model_merged_classpair_stats)
 
     print("Finished execution!!!")
