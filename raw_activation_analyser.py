@@ -1075,8 +1075,12 @@ def generate_all_classes_excel_report(csv_file_name, std_model_merged_all_classe
     diff_example_of_adv_model_format = workbook.add_format(
         properties={'bold': True, 'font_color': 'blue', 'bg_color': 'yellow'})
 
-    header_format = workbook.add_format(
-        properties={'bold': True, 'font_color': 'red'})
+    header_format1 = workbook.add_format(
+        properties={'bold': True, 'font_color': 'pink'})
+    header_format2 = workbook.add_format(
+        properties={'bold': True, 'font_color': 'green'})
+
+    header_format = [header_format1, header_format2]
 
     property_names = ["MIN-Ovral Act Gate Diff", "MAX-Ovral Act Gate Diff", "STD-Ovral Act Gate Diff", "MEAN-Ovral Active Gate Diff", "MIN-Ovral Act Gate Entropy", "MAX-Ovral Act Gate Entropy", "STD-Ovral Act Gate Entropy", "MEAN-Ovral Act Gate Entropy",
                       "MIN-Ovral INAct Gate Diff", "MAX-Ovral INAct Gate Diff", "STD-Ovral INAct Gate Diff", "MEAN-Ovral INAct Gate Diff", "MIN-Ovral Diff Gate Count", "MAX-Ovral Diff Gate Count", "STD-Ovral Diff Gate Count", "MEAN-Ovral Diff Gate Count"]
@@ -1093,7 +1097,8 @@ def generate_all_classes_excel_report(csv_file_name, std_model_merged_all_classe
 
     # Write the headers
     for col_num, each_header in enumerate(headers):
-        worksheet.write(0, col_num, each_header, header_format)
+        worksheet.write(0, col_num, each_header,
+                        header_format[((col_num - 2) // 12) % 2])
 
     row_num = 0
     model_type_arr = ["ADV Model", "STD Model"]
@@ -1124,8 +1129,12 @@ def generate_all_classes_only_diff_excel_report(csv_file_name, model_merged_all_
     diff_example_of_adv_model_format = workbook.add_format(
         properties={'bold': True, 'font_color': 'red', 'bg_color': 'yellow'})
 
-    header_format = workbook.add_format(
-        properties={'bold': True, 'font_color': 'red'})
+    header_format1 = workbook.add_format(
+        properties={'bold': True, 'font_color': 'pink'})
+    header_format2 = workbook.add_format(
+        properties={'bold': True, 'font_color': 'green'})
+
+    header_format = [header_format1, header_format2]
 
     property_names = ["MIN-Ovral Act Gate Diff", "MAX-Ovral Act Gate Diff", "STD-Ovral Act Gate Diff", "MEAN-Ovral Active Gate Diff", "MIN-Ovral Act Gate Entropy", "MAX-Ovral Act Gate Entropy", "STD-Ovral Act Gate Entropy", "MEAN-Ovral Act Gate Entropy",
                       "MIN-Ovral INAct Gate Diff", "MAX-Ovral INAct Gate Diff", "STD-Ovral INAct Gate Diff", "MEAN-Ovral INAct Gate Diff", "MIN-Ovral Diff Gate Count", "MAX-Ovral Diff Gate Count", "STD-Ovral Diff Gate Count", "MEAN-Ovral Diff Gate Count"]
@@ -1142,7 +1151,8 @@ def generate_all_classes_only_diff_excel_report(csv_file_name, model_merged_all_
 
     # Write the headers
     for col_num, each_header in enumerate(headers):
-        worksheet.write(0, col_num, each_header, header_format)
+        worksheet.write(0, col_num, each_header,
+                        header_format[((col_num - 1) // 8) % 2])
 
     row_num = 0
     format_arr = [diff_example_of_adv_model_format,
@@ -1195,6 +1205,13 @@ def generate_class_pairwise_excel_report(csv_file_name, std_model_merged_classpa
     header_format = workbook.add_format(
         properties={'bold': True, 'font_color': 'red'})
 
+    property_format1 = workbook.add_format(
+        properties={'bold': True, 'font_color': 'pink'})
+    property_format2 = workbook.add_format(
+        properties={'bold': True, 'font_color': 'green'})
+
+    property_format = [property_format1, property_format2]
+
     property_names = ["MIN-Ovral Act Gate Diff", "MAX-Ovral Act Gate Diff", "STD-Ovral Act Gate Diff", "MEAN-Ovral Active Gate Diff", "MIN-Ovral Act Gate Entropy", "MAX-Ovral Act Gate Entropy", "STD-Ovral Act Gate Entropy", "MEAN-Ovral Act Gate Entropy",
                       "MIN-Ovral INAct Gate Diff", "MAX-Ovral INAct Gate Diff", "STD-Ovral INAct Gate Diff", "MEAN-Ovral INAct Gate Diff", "MIN-Ovral INAct Gate Entropy", "MAX-Ovral INAct Gate Entropy", "STD-Ovral INAct Gate Entropy", "MEAN-Ovral INAct Gate Entropy"]
 
@@ -1229,7 +1246,7 @@ def generate_class_pairwise_excel_report(csv_file_name, std_model_merged_classpa
             worksheet.write(row_num+1, 1, "Class_Ind_" +
                             str(each_source_class_indx), current_format)
             worksheet.write(
-                row_num+1, 2, property_names[internal_row//2], current_format)
+                row_num+1, 2, property_names[internal_row//2], property_format[((internal_row) // 8) % 2])
             for col_num, cell_data in enumerate(each_pc_stat_prop):
                 worksheet.write(row_num+1, col_num+3,
                                 cell_data, current_format)
@@ -1245,7 +1262,7 @@ def generate_class_pairwise_excel_report(csv_file_name, std_model_merged_classpa
             worksheet.write(row_num+1, 1, "Class_Ind_" +
                             str(each_source_class_indx), current_format)
             worksheet.write(
-                row_num+1, 2, property_names[internal_row//2], current_format)
+                row_num+1, 2, property_names[internal_row//2], property_format[((internal_row) // 8) % 2])
             for col_num, cell_data in enumerate(each_pc_stat_prop):
                 worksheet.write(row_num+1, col_num+3,
                                 cell_data, current_format)
@@ -1295,7 +1312,7 @@ if __name__ == '__main__':
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE , ADV_VS_ORIG_REPORT , CLASS_WISE_REPORT
-    scheme_type = "ADV_VS_ORIG_REPORT"
+    scheme_type = "CLASS_WISE_REPORT"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
