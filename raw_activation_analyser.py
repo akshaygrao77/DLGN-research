@@ -1022,6 +1022,142 @@ def generate_class_pair_wise_stats_array(list_of_act_analyser, classes):
     return pairwise_class_stats
 
 
+def generate_all_class_stats(list_of_act_analyser):
+    all_class_stats = []
+    for each_act_analyser in list_of_act_analyser:
+        ovrl_phrelu_count_min, ovrl_phrelu_count_max, ovrl_phrelu_count_std, ovrl_phrelu_count_mean, _, _, _, _, _, _, _, _, _, _, _, _ = generate_stats(
+            each_act_analyser.post_activation_values_positive_hrelu_counts)
+        ovrl_nhrelu_count_min, ovrl_nhrelu_count_max, ovrl_nhrelu_count_std, ovrl_nhrelu_count_mean, _, _, _, _, _, _, _, _, _, _, _, _ = generate_stats(
+            each_act_analyser.post_activation_values_negative_hrelu_counts)
+        ovrl_phrelu_entr_min, ovrl_phrelu_entr_max, ovrl_phrelu_entr_std, ovrl_phrelu_entr_mean, _, _, _, _, _, _, _, _, _, _, _, _ = generate_stats(
+            each_act_analyser.post_activation_values_gate_entropy)
+        if hasattr(each_act_analyser, 'diff_counts_post_activation_values_all_layers'):
+            ovrl_nhrelu_entr_min, ovrl_nhrelu_entr_max, ovrl_nhrelu_entr_std, ovrl_nhrelu_entr_mean, _, _, _, _, _, _, _, _, _, _, _, _ = generate_stats(
+                each_act_analyser.diff_counts_post_activation_values_all_layers)
+        else:
+            temp = torch.zeros(1)
+            ovrl_nhrelu_entr_min, ovrl_nhrelu_entr_max, ovrl_nhrelu_entr_std, ovrl_nhrelu_entr_mean = temp, temp, temp, temp
+        current_per_class_stats = [ovrl_phrelu_count_min.item(), ovrl_phrelu_count_max.item(), ovrl_phrelu_count_std.item(), ovrl_phrelu_count_mean.item(), ovrl_phrelu_entr_min.item(), ovrl_phrelu_entr_max.item(), ovrl_phrelu_entr_std.item(), ovrl_phrelu_entr_mean.item(),
+                                   ovrl_nhrelu_count_min.item(), ovrl_nhrelu_count_max.item(), ovrl_nhrelu_count_std.item(), ovrl_nhrelu_count_mean.item(), ovrl_nhrelu_entr_min.item(), ovrl_nhrelu_entr_max.item(), ovrl_nhrelu_entr_std.item(), ovrl_nhrelu_entr_mean.item()]
+        all_class_stats.append(current_per_class_stats)
+
+    return all_class_stats
+
+
+def merge_all_class_stats(all_stats_arr):
+    merged_all_class_stats = []
+    for each_class_ind in range(len(all_stats_arr[0])):
+        pc_stats = all_stats_arr[0][each_class_ind]
+        per_class_stats = []
+        for each_col_ind in range(len(pc_stats)):
+            for f_in in range(len(all_stats_arr)):
+                per_class_stats.append(
+                    all_stats_arr[f_in][each_class_ind][each_col_ind])
+        merged_all_class_stats.append(per_class_stats)
+    return merged_all_class_stats
+
+
+def generate_all_classes_excel_report(csv_file_name, std_model_merged_all_classes_stats, adv_model_merged_all_classes_stats):
+    # Open an Excel workbook
+    workbook = xlsxwriter.Workbook(csv_file_name+'.xlsx')
+
+    # Set up a format
+    adv_example_of_std_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'red', 'bg_color': 'white'})
+    orig_example_of_std_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'black', 'bg_color': 'white'})
+    diff_example_of_std_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'blue', 'bg_color': 'white'})
+    adv_example_of_adv_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'red', 'bg_color': 'yellow'})
+    orig_example_of_adv_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'black', 'bg_color': 'yellow'})
+    diff_example_of_adv_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'blue', 'bg_color': 'yellow'})
+
+    header_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'red'})
+
+    property_names = ["MIN-Ovral Act Gate Diff", "MAX-Ovral Act Gate Diff", "STD-Ovral Act Gate Diff", "MEAN-Ovral Active Gate Diff", "MIN-Ovral Act Gate Entropy", "MAX-Ovral Act Gate Entropy", "STD-Ovral Act Gate Entropy", "MEAN-Ovral Act Gate Entropy",
+                      "MIN-Ovral INAct Gate Diff", "MAX-Ovral INAct Gate Diff", "STD-Ovral INAct Gate Diff", "MEAN-Ovral INAct Gate Diff", "MIN-Ovral Diff Gate Count", "MAX-Ovral Diff Gate Count", "STD-Ovral Diff Gate Count", "MEAN-Ovral Diff Gate Count"]
+    property_types = ["ADV_EX", "ORG_EX", "DIFF_EX"]
+
+    # Create a sheet
+    worksheet = workbook.add_worksheet('Stats_Sheet')
+    worksheet.freeze_panes(1, 0)
+
+    headers = ["Type of Model", "Class Label"]
+    for each_property_name in property_names:
+        for each_prop_type in property_types:
+            headers.append(each_prop_type+"_"+each_property_name)
+
+    # Write the headers
+    for col_num, each_header in enumerate(headers):
+        worksheet.write(0, col_num, each_header, header_format)
+
+    row_num = 0
+    model_type_arr = ["ADV Model", "STD Model"]
+    format_arr = [[adv_example_of_adv_model_format, orig_example_of_adv_model_format, diff_example_of_adv_model_format],
+                  [adv_example_of_std_model_format, orig_example_of_std_model_format, diff_example_of_std_model_format]]
+    for out_in, current_model_merged_all_classes_stats in enumerate([adv_model_merged_all_classes_stats, std_model_merged_all_classes_stats]):
+        for r_num, r_data in enumerate(current_model_merged_all_classes_stats):
+            row_num += 1
+            worksheet.write(
+                row_num, 0, model_type_arr[out_in], format_arr[out_in][1])
+            worksheet.write(row_num, 1, "Cl_Ind_" +
+                            str(r_num), format_arr[out_in][1])
+            for c_num, col_data in enumerate(r_data):
+                worksheet.write(row_num, c_num+2, col_data,
+                                format_arr[out_in][c_num % 3])
+        row_num += 1
+
+    workbook.close()
+
+
+def generate_all_classes_only_diff_excel_report(csv_file_name, model_merged_all_classes_stats):
+    # Open an Excel workbook
+    workbook = xlsxwriter.Workbook(csv_file_name+'.xlsx')
+
+    # Set up a format
+    diff_example_of_std_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'black', 'bg_color': 'white'})
+    diff_example_of_adv_model_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'red', 'bg_color': 'yellow'})
+
+    header_format = workbook.add_format(
+        properties={'bold': True, 'font_color': 'red'})
+
+    property_names = ["MIN-Ovral Act Gate Diff", "MAX-Ovral Act Gate Diff", "STD-Ovral Act Gate Diff", "MEAN-Ovral Active Gate Diff", "MIN-Ovral Act Gate Entropy", "MAX-Ovral Act Gate Entropy", "STD-Ovral Act Gate Entropy", "MEAN-Ovral Act Gate Entropy",
+                      "MIN-Ovral INAct Gate Diff", "MAX-Ovral INAct Gate Diff", "STD-Ovral INAct Gate Diff", "MEAN-Ovral INAct Gate Diff", "MIN-Ovral Diff Gate Count", "MAX-Ovral Diff Gate Count", "STD-Ovral Diff Gate Count", "MEAN-Ovral Diff Gate Count"]
+    property_types = ["ADV_MOD", "STD_MOD"]
+
+    # Create a sheet
+    worksheet = workbook.add_worksheet('Adv_vs_orig_Sheet')
+    worksheet.freeze_panes(1, 0)
+
+    headers = ["Class Label"]
+    for each_property_name in property_names:
+        for each_prop_type in property_types:
+            headers.append(each_prop_type+"_"+each_property_name)
+
+    # Write the headers
+    for col_num, each_header in enumerate(headers):
+        worksheet.write(0, col_num, each_header, header_format)
+
+    row_num = 0
+    format_arr = [diff_example_of_adv_model_format,
+                  diff_example_of_std_model_format]
+    for r_num, r_data in enumerate(model_merged_all_classes_stats):
+        row_num += 1
+        worksheet.write(row_num, 0, "Cl_Ind_" +
+                        str(r_num))
+        for c_num, col_data in enumerate(r_data):
+            worksheet.write(row_num, c_num + 1, col_data,
+                            format_arr[c_num % 2])
+
+    workbook.close()
+
+
 def merge_two_pairwise_class_stats_in_alternative_manner(stats1, stats2):
     merged_pairwise_class_stats = []
     for source_class_indx in range(len(stats1)):
@@ -1158,8 +1294,8 @@ if __name__ == '__main__':
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = True
     is_save_activation_records = False
-    # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE
-    scheme_type = "CLASS_WISE_REPORT"
+    # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE , ADV_VS_ORIG_REPORT , CLASS_WISE_REPORT
+    scheme_type = "ADV_VS_ORIG_REPORT"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
@@ -1521,5 +1657,132 @@ if __name__ == '__main__':
               adv_model_merged_classpair_stats.shape)
         generate_class_pairwise_excel_report(
             xls_save_location, std_model_merged_classpair_stats, adv_model_merged_classpair_stats)
+    elif(scheme_type == "ADV_VS_ORIG_REPORT"):
+        merge_type = "DIFF"
+        is_save_adv = True
+        eps = 0.06
+        adv_attack_type = 'PGD'
+        number_of_adversarial_optimization_steps = 161
+        eps_step_size = 0.01
+        adv_target = None
+        class_ind_visualize = None
+        is_save_graph_visualizations = True
+        current_it_start = 1
+        models_base_path = None
+        std_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+        adv_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+
+        tmp_image_over_what_str = 'test'
+        if(is_act_collection_on_train):
+            tmp_image_over_what_str = 'train'
+
+        seg_over_what_str = 'MP'
+        if(is_class_segregation_on_ground_truth):
+            seg_over_what_str = 'GT'
+
+        first_prefix = std_model_path[0:std_model_path.rfind("/")+1]
+        final_postfix_for_save = "/{}/EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
+            first_prefix, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size)
+        prefix = adv_model_path[0:adv_model_path.rfind("/")+1]
+        image_save_prefix_folder = str(prefix)+"/RAW_ACT_ANALYSIS/ADV_VS_ORIG_REPORT/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(activation_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/_torch_seed_"+str(torch_seed)+"/" + str(final_postfix_for_save) + "/"
+
+        if not os.path.exists(image_save_prefix_folder):
+            os.makedirs(image_save_prefix_folder)
+
+        std_model_merged_adv_vs_orig_stats_store_location = image_save_prefix_folder + \
+            "/std_model_adv_vs_orig_stats.npy"
+        print("std_model_merged_classwise_pair_stats_store_location",
+              std_model_merged_adv_vs_orig_stats_store_location)
+        adv_model_merged_adv_vs_orig_stats_store_location = image_save_prefix_folder + \
+            "/adv_model_adv_vs_orig_stats.npy"
+        xls_save_location = image_save_prefix_folder + \
+            "/adv_std_model_adv_vs_origs_report"
+        only_diff_xls_save_location = image_save_prefix_folder + \
+            "/adv_std_model_only_adv_vs_origs_report"
+
+        if(os.path.exists(std_model_merged_adv_vs_orig_stats_store_location) and os.path.exists(adv_model_merged_adv_vs_orig_stats_store_location)):
+            with open(std_model_merged_adv_vs_orig_stats_store_location, 'rb') as file:
+                npzfile = np.load(
+                    std_model_merged_adv_vs_orig_stats_store_location, allow_pickle=True)
+                adv_ex_stats = npzfile['adv']
+                orig_ex_stats = npzfile['orig']
+                std_model_adv_vs_orig_ex_stats = npzfile['adv_orig']
+                std_model_adv_orig_diff_stats = merge_all_class_stats(
+                    [adv_ex_stats, orig_ex_stats, std_model_adv_vs_orig_ex_stats])
+
+            with open(adv_model_merged_adv_vs_orig_stats_store_location, 'rb') as file:
+                npzfile = np.load(
+                    adv_model_merged_adv_vs_orig_stats_store_location, allow_pickle=True)
+                adv_ex_stats = npzfile['adv']
+                orig_ex_stats = npzfile['orig']
+                adv_model_adv_vs_orig_ex_stats = npzfile['adv_orig']
+                adv_model_adv_orig_diff_stats = merge_all_class_stats(
+                    [adv_ex_stats, orig_ex_stats, adv_model_adv_vs_orig_ex_stats])
+        else:
+            sub_scheme_type = 'OVER_ADVERSARIAL'
+            list_of_list_of_act_analyser_adv = run_generate_scheme(
+                models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=std_model_path)
+            adv_ex_stats = np.array(generate_all_class_stats(
+                list_of_list_of_act_analyser_adv[0]))
+            sub_scheme_type = 'OVER_ORIGINAL'
+            list_of_list_of_act_analyser_orig = run_generate_scheme(
+                models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=std_model_path)
+            orig_ex_stats = np.array(generate_all_class_stats(
+                list_of_list_of_act_analyser_orig[0]))
+            is_save_graph_visualizations = True
+            list_of_merged_act1_act2 = diff_merge_two_activation_analysis(
+                merge_type, list_of_list_of_act_analyser_adv[0], list_of_list_of_act_analyser_orig[0], wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
+            std_model_adv_vs_orig_ex_stats = np.array(generate_all_class_stats(
+                list_of_merged_act1_act2))
+            std_model_adv_orig_diff_stats = merge_all_class_stats(
+                [adv_ex_stats, orig_ex_stats, std_model_adv_vs_orig_ex_stats])
+            with open(std_model_merged_adv_vs_orig_stats_store_location, 'wb') as file:
+                np.savez(
+                    file, adv=adv_ex_stats, orig=orig_ex_stats, adv_orig=std_model_adv_vs_orig_ex_stats)
+
+            sub_scheme_type = 'OVER_ADVERSARIAL'
+            list_of_list_of_act_analyser_adv = run_generate_scheme(
+                models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=adv_model_path)
+            adv_ex_stats = np.array(generate_all_class_stats(
+                list_of_list_of_act_analyser_adv[0]))
+            sub_scheme_type = 'OVER_ORIGINAL'
+            list_of_list_of_act_analyser_orig = run_generate_scheme(
+                models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=adv_model_path)
+            orig_ex_stats = np.array(generate_all_class_stats(
+                list_of_list_of_act_analyser_orig[0]))
+            is_save_graph_visualizations = True
+            list_of_merged_act1_act2 = diff_merge_two_activation_analysis(
+                merge_type, list_of_list_of_act_analyser_adv[0], list_of_list_of_act_analyser_orig[0], wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
+            adv_model_adv_vs_orig_ex_stats = np.array(generate_all_class_stats(
+                list_of_merged_act1_act2))
+            adv_model_adv_orig_diff_stats = merge_all_class_stats(
+                [adv_ex_stats, orig_ex_stats, adv_model_adv_vs_orig_ex_stats])
+
+            with open(adv_model_merged_adv_vs_orig_stats_store_location, 'wb') as file:
+                np.savez(
+                    file, adv=adv_ex_stats, orig=orig_ex_stats, adv_orig=adv_model_adv_vs_orig_ex_stats)
+
+        print("adv_ex_stats shape", adv_ex_stats.shape)
+        print("orig_ex_stats shape", orig_ex_stats.shape)
+        print("adv_model_adv_vs_orig_ex_stats shape",
+              adv_model_adv_vs_orig_ex_stats.shape)
+        # print("adv_ex_stats ", adv_ex_stats)
+        # print("orig_ex_stats ", orig_ex_stats)
+        # print("adv_model_adv_vs_orig_ex_stats ",
+        #       adv_model_adv_vs_orig_ex_stats)
+
+        print("adv_model_adv_orig_diff_stats shape:",
+              np.array(adv_model_adv_orig_diff_stats).shape)
+        print("std_model_adv_orig_diff_stats shape",
+              np.array(std_model_adv_orig_diff_stats).shape)
+        generate_all_classes_excel_report(
+            xls_save_location, std_model_adv_orig_diff_stats, adv_model_adv_orig_diff_stats)
+        all_model_adv_vs_orig_ex_stats = merge_all_class_stats(
+            [adv_model_adv_vs_orig_ex_stats, std_model_adv_vs_orig_ex_stats])
+        print("all_model_adv_vs_orig_ex_stats shape:",
+              np.array(all_model_adv_vs_orig_ex_stats).shape)
+        generate_all_classes_only_diff_excel_report(
+            only_diff_xls_save_location, all_model_adv_vs_orig_ex_stats)
 
     print("Finished execution!!!")
