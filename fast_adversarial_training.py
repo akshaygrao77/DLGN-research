@@ -32,8 +32,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         raise ValueError('Unknown lr_type')
 
     criterion = nn.CrossEntropyLoss()
-
-    for epoch in range(epochs):
+    epoch = 0
+    while(epoch < epochs and (start_net_path is None or (stop_at_adv_test_acc is None or best_test_acc < stop_at_adv_test_acc))):
         correct = 0
         total = 0
 
@@ -109,6 +109,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             best_test_acc = test_acc
             torch.save(model, model_save_path)
             print("Saved model at", model_save_path)
+        epoch += 1
 
     save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
     if not os.path.exists(save_adv_image_prefix):
@@ -124,11 +125,11 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
-    model_arch_type = 'masked_conv4_dlgn'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # scheme_type = ''
     # batch_size = 128
     wand_project_name = "fast_adv_tr_visualisation"
@@ -144,6 +145,7 @@ if __name__ == '__main__':
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     template_initial_image_type = 'zero_init_image'
+    # TANH_TEMP_LOSS , TEMP_LOSS
     template_loss_type = "TEMP_LOSS"
     is_split_validation = False
     valid_split_size = 0.1
@@ -210,16 +212,18 @@ if __name__ == '__main__':
         net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
         model_arch_type_str = model_arch_type
         if("masked" in model_arch_type):
-            mask_percentage = 50
+            mask_percentage = 90
             model_arch_type_str = model_arch_type_str + \
                 "_PRC_"+str(mask_percentage)
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed)
         start_net_path = None
 
-        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
-        # custom_temp_model = torch.load(start_net_path)
-        # net.load_state_dict(custom_temp_model.state_dict())
+        start_net_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+        custom_temp_model = torch.load(start_net_path)
+        net.load_state_dict(custom_temp_model.state_dict())
+        stop_at_adv_test_acc = None
+        stop_at_adv_test_acc = 70.9
 
         net = net.to(device)
 
@@ -286,7 +290,7 @@ if __name__ == '__main__':
                             )
 
                         best_test_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name, alpha=eps_step_size)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc})
                             wandb.finish()

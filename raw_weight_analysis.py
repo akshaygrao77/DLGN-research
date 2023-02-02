@@ -1012,17 +1012,17 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
 
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
     # list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
     list_of_scheme_type = [
-        "IMAGE_OUT_PER_RES_FILTER"]
+        "IMAGE_SEQ_OUTPUTS_PER_FILTER"]
 
     # std_image_preprocessing , mnist , fashion_mnist
-    list_of_filter_vis_dataset = ["std_image_preprocessing"]
+    list_of_filter_vis_dataset = ["mnist"]
 
     batch_size = 14
 
@@ -1036,12 +1036,12 @@ if __name__ == '__main__':
     num_batches_to_visualize = 1
 
     # ORIGINAL, ADVERSARIAL , ADVERSARIAL_PERTURB
-    analyse_on = "ORIGINAL"
+    analyse_on = "ADVERSARIAL_PERTURB"
 
     model_arch_type_str = model_arch_type
     mask_percentage = 0
     if("masked" in model_arch_type):
-        mask_percentage = 10
+        mask_percentage = 50
         model_arch_type_str = model_arch_type_str + \
             "_PRC_"+str(mask_percentage)
 
@@ -1121,7 +1121,7 @@ if __name__ == '__main__':
                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 

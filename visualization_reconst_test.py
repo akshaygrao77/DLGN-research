@@ -582,6 +582,9 @@ dataset = 'mnist'
 # conv4_deep_gated_net_with_random_ones_in_wt_net
 model_arch_type = 'plain_pure_conv4_dnn'
 
+# torch_seed = ""
+torch_seed = 2022
+
 models_base_path = None
 # models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.93/aug_conv4_dlgn_iter_1_dir.pt"
 models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.91/aug_conv4_dlgn_iter_1_dir.pt"
@@ -593,7 +596,7 @@ models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # vis_model = torch.load("/content/conv4_dgn_iter_1_dir.pt",map_location=device)
 vis_model = get_model_instance_from_dataset(
-    dataset, model_arch_type)
+    dataset, model_arch_type,torch_seed)
 if(models_base_path is not None):
     custom_temp_model = torch.load(models_base_path, map_location=device)
     vis_model.load_state_dict(custom_temp_model.state_dict())

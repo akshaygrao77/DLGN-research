@@ -132,8 +132,14 @@ class RawActivationAnalyser():
 
         with torch.no_grad():
             merged_act_analyser.total_tcollect_img_count = self.total_tcollect_img_count
-            merged_act_analyser.post_activation_values_all_batches = HardRelu()(torch.from_numpy(self.post_activation_values_all_batches)) - \
-                HardRelu()(torch.from_numpy(other_activation_state.post_activation_values_all_batches))
+            temp1 = self.post_activation_values_all_batches
+            temp2 = other_activation_state.post_activation_values_all_batches
+            if(not isinstance(temp1, torch.Tensor)):
+                temp1 = torch.from_numpy(temp1)
+            if(not isinstance(temp2, torch.Tensor)):
+                temp2 = torch.from_numpy(temp2)
+            merged_act_analyser.post_activation_values_all_batches = HardRelu()(temp1) - \
+                HardRelu()(temp2)
             merged_act_analyser.post_activation_values_positive_hrelu_counts = self.post_activation_values_positive_hrelu_counts - \
                 other_activation_state.post_activation_values_positive_hrelu_counts
             merged_act_analyser.post_activation_values_negative_hrelu_counts = self.post_activation_values_negative_hrelu_counts - \
@@ -170,22 +176,25 @@ class RawActivationAnalyser():
 
         return merged_act_analyser
 
-    def save_raw_recorded_activation_states(self, base_save_folder):
+    def save_raw_recorded_activation_states(self, base_save_folder, is_save_video_data=False):
         hrelu_base_folder = base_save_folder + "/PlainImages/HardRelu/"
+        hrelu_video_base_folder = base_save_folder + "/VideoImages/HardRelu/"
         if not os.path.exists(hrelu_base_folder):
             os.makedirs(hrelu_base_folder)
 
         dict_full_path_to_saves = dict()
 
-        # current_post_activation_values = HardRelu()(
-        #     torch.from_numpy(self.post_activation_values_all_batches))
+        temp1 = self.post_activation_values_all_batches
+        if(not isinstance(temp1, torch.Tensor)):
+            temp1 = torch.from_numpy(temp1)
+        current_post_activation_values = HardRelu()(temp1)
 
         current_full_save_path = base_save_folder+"/Video/HardRelu/" + \
             "hardrelu_raw_postactivation_images_*.mp4"
         dict_full_path_to_saves["raw_post_activation"] = current_full_save_path
         print("current_full_save_path:", current_full_save_path)
 
-        current_full_img_save_path = hrelu_base_folder + \
+        current_full_img_save_path = hrelu_video_base_folder + \
             "hard_relu_post_act_img_b_*.jpg"
 
         print("current_full_img_save_path:", current_full_img_save_path)
@@ -327,8 +336,11 @@ class RawActivationAnalyser():
 
         # generate_list_of_images_from_data(current_post_activation_values, 200, 300,
         #                                   "Hard relu Raw post activation video", save_each_img_path=current_full_img_save_path, cmap='binary')
-        # generate_list_of_plain_images_from_data(
-        #     current_post_activation_values, save_each_img_path=current_full_img_save_path, is_standarize=False)
+        if(is_save_video_data):
+            if not os.path.exists(hrelu_video_base_folder):
+                os.makedirs(hrelu_video_base_folder)
+            generate_list_of_plain_images_from_data(
+                current_post_activation_values, save_each_img_path=current_full_img_save_path, is_standarize=False)
         # generate_video_of_image_from_data(
         #     current_post_activation_values, 200, 300, "Hard relu Raw post activation video", save_path=current_full_save_path, save_each_img_path=current_full_img_save_path, cmap='binary')
 
@@ -579,7 +591,7 @@ class RawActivationAnalyser():
             if not os.path.exists(save_folder):
                 os.makedirs(save_folder)
             self.save_raw_recorded_activation_states(
-                save_folder)
+                save_folder, is_save_video_data=is_save_video_data)
 
 
 def calculate_entropy(entropy_bin_list):
@@ -1280,7 +1292,7 @@ if __name__ == '__main__':
     # Try it with a smaller image
     print("Start")
     # mnist , cifar10 , fashion_mnist
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -1290,7 +1302,8 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    is_save_video_data = False
     # If False, then on test
     is_act_collection_on_train = True
     # If False, then segregation is over model prediction
@@ -1312,7 +1325,7 @@ if __name__ == '__main__':
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE , ADV_VS_ORIG_REPORT , CLASS_WISE_REPORT
-    scheme_type = "CLASS_WISE_REPORT"
+    scheme_type = "GENERATE_MERGE_AND_SAVE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
@@ -1407,6 +1420,7 @@ if __name__ == '__main__':
 
     elif(scheme_type == "GENERATE_MERGE_AND_SAVE"):
         merge_type = "DIFF"
+        is_save_video_data = False
 
         c_indices = [i for i in range(10)]
 
@@ -1429,7 +1443,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+            direct_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_deep_gated_net_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -1463,6 +1477,7 @@ if __name__ == '__main__':
                         list_of_act_analyser2 = list_of_list_of_act_analyser_orig[ind]
 
                         if(merge_type == "DIFF"):
+                            is_save_video_data = True
                             is_save_graph_visualizations = True
                             list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                                           list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
@@ -1573,8 +1588,8 @@ if __name__ == '__main__':
         is_save_graph_visualizations = True
         current_it_start = 1
         models_base_path = None
-        std_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
-        adv_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+        std_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+        adv_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
         tmp_image_over_what_str = 'test'
         if(is_act_collection_on_train):
@@ -1686,8 +1701,8 @@ if __name__ == '__main__':
         is_save_graph_visualizations = True
         current_it_start = 1
         models_base_path = None
-        std_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
-        adv_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+        std_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+        adv_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
         tmp_image_over_what_str = 'test'
         if(is_act_collection_on_train):
