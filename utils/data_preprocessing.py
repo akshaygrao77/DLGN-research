@@ -173,6 +173,25 @@ def segregate_classes(model, trainloader, testloader, num_classes, is_template_i
     return input_data_list_per_class
 
 
+def filter_dataset_to_contain_certain_classes(X, Y, list_of_classes):
+    list_of_classes.sort()
+    value_ind_map = dict()
+    for ind in range(len(list_of_classes)):
+        each_c = list_of_classes[ind]
+        value_ind_map[str(int(each_c))] = ind
+    filtered_X = []
+    filtered_y = []
+    for each_X, each_y in zip(X, Y):
+        if(each_y in list_of_classes):
+            modified_y = value_ind_map[str(int(each_y))]
+            filtered_X.append(each_X)
+            filtered_y.append(modified_y)
+
+    filtered_X = np.array(filtered_X, dtype=np.double)
+    filtered_y = np.array(filtered_y)
+    return filtered_X, filtered_y
+
+
 def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):
     valid_data_loader = None
     transform = None
@@ -315,31 +334,51 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
         X_train = X_train.astype(np.float32)
         X_test = X_test.astype(np.float32)
 
+        if(dataset_config.list_of_classes is None):
+            filtered_X_train, filtered_y_train = X_train, y_train
+            filtered_X_test, filtered_y_test = X_test, y_test
+        else:
+            filtered_X_train, filtered_y_train = filter_dataset_to_contain_certain_classes(
+                X_train, y_train, dataset_config.list_of_classes)
+            filtered_X_test, filtered_y_test = filter_dataset_to_contain_certain_classes(
+                X_test, y_test, dataset_config.list_of_classes)
+            filtered_X_train = filtered_X_train.astype(np.float32)
+            filtered_X_test = filtered_X_test.astype(np.float32)
+
+        if(verbose > 2):
+            print("After filtering dataset")
+            print("filtered_X_train size:{} filtered_y_train size:{}".format(
+                filtered_X_train.shape, filtered_y_train.shape))
+            print("filtered_X_test size:{} filtered_y_test size:{}".format(
+                filtered_X_test.shape, filtered_y_test.shape))
+            print("filtered_y_train[0]", filtered_y_train[0])
+            print("filtered_y_train[1]", filtered_y_train[1])
+
         if(dataset_config.is_normalize_data == True):
-            max = np.max(X_train)
-            X_train = X_train / max
-            X_test = X_test / max
+            max = np.max(filtered_X_train)
+            filtered_X_train = filtered_X_train / max
+            filtered_X_test = filtered_X_test / max
             if(verbose > 2):
                 print("After normalizing dataset")
                 print("Max value:{}".format(max))
                 print("filtered_X_train size:{} filtered_y_train size:{}".format(
-                    X_train.shape, y_train.shape))
-                print("filtered_X_test size:{} y_test size:{}".format(
-                    X_test.shape, y_test.shape))
+                    filtered_X_train.shape, filtered_y_train.shape))
+                print("filtered_X_test size:{} filtered_y_test size:{}".format(
+                    filtered_X_test.shape, filtered_y_test.shape))
 
         if(not("dlgn_fc" in model_arch_type)):
-            X_train = add_channel_to_image(X_train)
-            X_test = add_channel_to_image(X_test)
+            filtered_X_train = add_channel_to_image(filtered_X_train)
+            filtered_X_test = add_channel_to_image(filtered_X_test)
         if(is_split_validation):
-            X_train, X_valid, y_train, y_valid = train_test_split(
-                X_train, y_train, test_size=dataset_config.valid_split_size, random_state=42)
+            filtered_X_train, X_valid, filtered_y_train, y_valid = train_test_split(
+                filtered_X_train, filtered_y_train, test_size=dataset_config.valid_split_size, random_state=42)
 
         train_data_loader = get_data_loader(
-            X_train, y_train, dataset_config.batch_size)
+            filtered_X_train, filtered_y_train, dataset_config.batch_size)
         if(is_split_validation):
             valid_data_loader = get_data_loader(
                 X_valid, y_valid, dataset_config.batch_size)
         test_data_loader = get_data_loader(
-            X_test, y_test, dataset_config.batch_size)
+            filtered_X_test, filtered_y_test, dataset_config.batch_size)
 
         return train_data_loader, valid_data_loader, test_data_loader

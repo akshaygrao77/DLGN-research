@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from structure.fc_models import DLGN_FC_Network, DNN_FC_Network
 
 
 def replace_percent_of_values(inp_np, const_value, percentage):
@@ -23,7 +24,7 @@ def replace_percent_of_values_with_exact_percentages(inp_np, const_value, percen
 
 
 class Mask_Conv4_DLGN_Net(nn.Module):
-    def __init__(self, input_channel, random_inp_percent=40, beta=4, seed=2022):
+    def __init__(self, input_channel, random_inp_percent=40, beta=4, seed=2022, num_classes=10):
         super().__init__()
         torch.manual_seed(seed)
         self.beta = beta
@@ -40,7 +41,7 @@ class Mask_Conv4_DLGN_Net(nn.Module):
         self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(128, 10)
+        self.fc1 = nn.Linear(128, num_classes)
 
     def forward(self, inp):
         device = torch.device(
@@ -133,7 +134,7 @@ class Mask_Conv4_DLGN_Net(nn.Module):
 
 
 class Mask_Conv4_DLGN_Net_N16_Small(nn.Module):
-    def __init__(self, input_channel, random_inp_percent=40, beta=4, seed=2022):
+    def __init__(self, input_channel, random_inp_percent=40, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
         torch.manual_seed(seed)
@@ -150,7 +151,7 @@ class Mask_Conv4_DLGN_Net_N16_Small(nn.Module):
         self.conv3_w = nn.Conv2d(16, 16, 3, padding=1)
         self.conv4_w = nn.Conv2d(16, 16, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(16, 10)
+        self.fc1 = nn.Linear(16, num_classes)
 
     def forward(self, inp):
         device = torch.device(
@@ -243,7 +244,7 @@ class Mask_Conv4_DLGN_Net_N16_Small(nn.Module):
 
 
 class Plain_CONV4_Net(nn.Module):
-    def __init__(self, input_channel, seed=2022):
+    def __init__(self, input_channel, seed=2022, num_classes=10):
         super().__init__()
         torch.manual_seed(seed)
         self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
@@ -254,7 +255,7 @@ class Plain_CONV4_Net(nn.Module):
         self.relu = nn.ReLU()
 
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(128, 10)
+        self.fc1 = nn.Linear(128, num_classes)
 
     def forward(self, inp):
 
@@ -297,7 +298,7 @@ class Plain_CONV4_Net(nn.Module):
 
 
 class Plain_CONV4_Net_N16_Small(nn.Module):
-    def __init__(self, input_channel, seed=2022):
+    def __init__(self, input_channel, seed=2022, num_classes=10):
         super().__init__()
         torch.manual_seed(seed)
         self.conv1_g = nn.Conv2d(input_channel, 16, 3, padding=1)
@@ -308,7 +309,7 @@ class Plain_CONV4_Net_N16_Small(nn.Module):
         self.relu = nn.ReLU()
 
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(16, 10)
+        self.fc1 = nn.Linear(16, num_classes)
 
     def forward(self, inp):
 
@@ -351,7 +352,7 @@ class Plain_CONV4_Net_N16_Small(nn.Module):
 
 
 class Conv4_DLGN_Net(nn.Module):
-    def __init__(self, input_channel, beta=4, seed=2022):
+    def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         torch.manual_seed(seed)
         self.beta = beta
@@ -365,7 +366,7 @@ class Conv4_DLGN_Net(nn.Module):
         self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(128, 10)
+        self.fc1 = nn.Linear(128, num_classes)
 
     def forward(self, inp):
         device = torch.device(
@@ -427,7 +428,7 @@ class Conv4_DLGN_Net(nn.Module):
 
 
 class Conv4_DeepGated_Net(nn.Module):
-    def __init__(self, input_channel, beta=4, seed=2022):
+    def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
         torch.manual_seed(seed)
@@ -441,7 +442,7 @@ class Conv4_DeepGated_Net(nn.Module):
         self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(128, 10)
+        self.fc1 = nn.Linear(128, num_classes)
 
     def forward(self, inp):
         device = torch.device(
@@ -509,7 +510,7 @@ class Conv4_DeepGated_Net(nn.Module):
 
 
 class Conv4_DeepGated_Net_N16_Small(nn.Module):
-    def __init__(self, input_channel, beta=4, seed=2022):
+    def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
         torch.manual_seed(seed)
@@ -523,7 +524,7 @@ class Conv4_DeepGated_Net_N16_Small(nn.Module):
         self.conv3_w = nn.Conv2d(16, 16, 3, padding=1)
         self.conv4_w = nn.Conv2d(16, 16, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(16, 10)
+        self.fc1 = nn.Linear(16, num_classes)
 
     def forward(self, inp):
         device = torch.device(
@@ -591,7 +592,7 @@ class Conv4_DeepGated_Net_N16_Small(nn.Module):
 
 
 class Conv4_DeepGated_Net_With_Actual_Inp_Over_WeightNet(nn.Module):
-    def __init__(self, input_channel, beta=4, seed=2022):
+    def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
         torch.manual_seed(seed)
@@ -605,7 +606,7 @@ class Conv4_DeepGated_Net_With_Actual_Inp_Over_WeightNet(nn.Module):
         self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(128, 10)
+        self.fc1 = nn.Linear(128, num_classes)
 
     def forward(self, inp):
         device = torch.device(
@@ -670,7 +671,7 @@ class Conv4_DeepGated_Net_With_Actual_Inp_Over_WeightNet(nn.Module):
 
 
 class Conv4_DeepGated_Net_With_Random_AllOnes_Over_WeightNet(nn.Module):
-    def __init__(self, input_channel, random_inp_percent=4, beta=4, seed=2022):
+    def __init__(self, input_channel, random_inp_percent=4, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
         self.random_inp_percent = random_inp_percent
@@ -685,7 +686,7 @@ class Conv4_DeepGated_Net_With_Random_AllOnes_Over_WeightNet(nn.Module):
         self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(128, 10)
+        self.fc1 = nn.Linear(128, num_classes)
 
     def forward(self, inp):
         device = torch.device(
@@ -760,7 +761,7 @@ class Conv4_DeepGated_Net_With_Random_AllOnes_Over_WeightNet(nn.Module):
 
 
 class Conv4_DeepGated_Net_With_Random_Actual_Inp_Over_WeightNet(nn.Module):
-    def __init__(self, input_channel, random_inp_percent=4, beta=4, seed=2022):
+    def __init__(self, input_channel, random_inp_percent=4, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
         self.random_inp_percent = random_inp_percent
@@ -775,7 +776,7 @@ class Conv4_DeepGated_Net_With_Random_Actual_Inp_Over_WeightNet(nn.Module):
         self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(128, 10)
+        self.fc1 = nn.Linear(128, num_classes)
 
     def forward(self, inp):
         device = torch.device(
@@ -849,7 +850,7 @@ class Conv4_DeepGated_Net_With_Random_Actual_Inp_Over_WeightNet(nn.Module):
 
 
 class Conv4_DLGN_Net_N16_Small(nn.Module):
-    def __init__(self, input_channel, beta=4, seed=2022):
+    def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
         torch.manual_seed(seed)
@@ -863,7 +864,7 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
         self.conv3_w = nn.Conv2d(16, 16, 3, padding=1)
         self.conv4_w = nn.Conv2d(16, 16, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(16, 10)
+        self.fc1 = nn.Linear(16, num_classes)
 
     def forward(self, inp):
         device = torch.device(
@@ -924,60 +925,76 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
                 return self.fc1
 
 
-def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40):
+def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[]):
     if(dataset == "cifar10"):
         inp_channel = 3
+        input_size_list = [32, 32]
     elif(dataset == "mnist"):
         inp_channel = 1
+        input_size_list = [28, 28]
     elif(dataset == "fashion_mnist"):
         inp_channel = 1
+        input_size_list = [28, 28]
 
-    return get_model_instance(model_arch_type, inp_channel, seed=seed, mask_percentage=mask_percentage)
+    return get_model_instance(model_arch_type, inp_channel, seed=seed, mask_percentage=mask_percentage, num_classes=num_classes, input_size_list=input_size_list, nodes_in_each_layer_list=nodes_in_each_layer_list)
 
 
-def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=40):
+def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], input_size_list=[]):
     if(seed == ""):
         seed = 2022
 
     net = None
     if(model_arch_type == 'plain_pure_conv4_dnn'):
-        net = Plain_CONV4_Net(inp_channel, seed=seed)
+        net = Plain_CONV4_Net(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_dlgn'):
-        net = Conv4_DLGN_Net(inp_channel, seed=seed)
+        net = Conv4_DLGN_Net(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_dlgn_n16_small'):
-        net = Conv4_DLGN_Net_N16_Small(inp_channel, seed=seed)
+        net = Conv4_DLGN_Net_N16_Small(
+            inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'plain_pure_conv4_dnn_n16_small'):
-        net = Plain_CONV4_Net_N16_Small(inp_channel, seed=seed)
+        net = Plain_CONV4_Net_N16_Small(
+            inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_deep_gated_net'):
-        net = Conv4_DeepGated_Net(inp_channel, seed=seed)
+        net = Conv4_DeepGated_Net(
+            inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_deep_gated_net_n16_small'):
-        net = Conv4_DeepGated_Net_N16_Small(inp_channel, seed=seed)
+        net = Conv4_DeepGated_Net_N16_Small(
+            inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_deep_gated_net_with_actual_inp_in_wt_net'):
         net = Conv4_DeepGated_Net_With_Actual_Inp_Over_WeightNet(
-            inp_channel, seed=seed)
+            inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net'):
         net = Conv4_DeepGated_Net_With_Random_Actual_Inp_Over_WeightNet(
-            inp_channel, seed=seed)
+            inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_deep_gated_net_with_random_ones_in_wt_net'):
         net = Conv4_DeepGated_Net_With_Random_AllOnes_Over_WeightNet(
-            inp_channel, seed=seed)
+            inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == "masked_conv4_dlgn"):
         net = Mask_Conv4_DLGN_Net(
-            inp_channel, random_inp_percent=mask_percentage, seed=seed)
+            inp_channel, random_inp_percent=mask_percentage, seed=seed, num_classes=num_classes)
     elif(model_arch_type == "masked_conv4_dlgn_n16_small"):
         net = Mask_Conv4_DLGN_Net_N16_Small(
-            inp_channel, random_inp_percent=mask_percentage, seed=seed)
+            inp_channel, random_inp_percent=mask_percentage, seed=seed, num_classes=num_classes)
+    elif(model_arch_type == "fc_dnn"):
+        net = DNN_FC_Network(
+            nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
+    elif(model_arch_type == "fc_dlgn"):
+        net = DLGN_FC_Network(
+            nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
 
     return net
 
 
-def get_model_save_path(model_arch_type, dataset, seed=""):
+def get_model_save_path(model_arch_type, dataset, seed="", list_of_classes_to_train_on_str=""):
     if(seed == ""):
         torch_seed_str = ""
     else:
         torch_seed_str = "/ST_"+str(seed)+"/"
+    if(list_of_classes_to_train_on_str != ""):
+        list_of_classes_to_train_on_str = "TR_ON_" + list_of_classes_to_train_on_str
+
     final_model_save_path = "root/model/save/" + \
-        str(dataset)+"/CLEAN_TRAINING/" + \
+        str(dataset)+"/CLEAN_TRAINING/"+str(list_of_classes_to_train_on_str)+"/" + \
         str(torch_seed_str)+str(model_arch_type)+"_dir.pt"
 
     return final_model_save_path

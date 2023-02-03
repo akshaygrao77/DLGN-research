@@ -16,11 +16,12 @@ class Configs(Namespace):
             return None
 
 class DatasetConfig:
-    def __init__(self, name, is_normalize_data, valid_split_size, batch_size=64):
+    def __init__(self, name, is_normalize_data, valid_split_size, batch_size=64,list_of_classes=None):
         self.name = name
         self.is_normalize_data = is_normalize_data
         self.valid_split_size = valid_split_size
         self.batch_size = batch_size
+        self.list_of_classes = list_of_classes
 
 class AllParams:
     def __init__(self, *args):

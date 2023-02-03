@@ -7,6 +7,7 @@ import tqdm
 import time
 import os
 import wandb
+import torch.backends.cudnn as cudnn
 
 from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader
@@ -20,6 +21,13 @@ from structure.conv4_models import get_model_instance
 
 def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375):
     print("Model will be saved at", model_save_path)
+    device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if device_str == 'cuda':
+        if(torch.cuda.device_count() > 1):
+            print("Parallelizing model")
+            model = torch.nn.DataParallel(model)
+
+        cudnn.benchmark = True
     is_log_wandb = not(wand_project_name is None)
     best_test_acc = 0
     opt = torch.optim.Adam(model.parameters(), lr=lr_max)

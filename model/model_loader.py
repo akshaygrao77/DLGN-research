@@ -2,7 +2,6 @@ import torch
 import numpy as np
 
 from vgg_net_16 import DLGN_VGG_Network, DLGN_VGG_LinearNetwork, DLGN_VGG_WeightNetwork
-from mnist_dlgn_fc import DLGN_FC_Network, DLGN_FC_Gating_Network, DLGN_FC_Value_Network
 from cross_verification import Net
 from cross_verification_conv4_sim_vgg_with_dn import Net_sim_VGG_with_BN
 from cross_verification_conv4_sim_vgg_without_bn import Net_sim_VGG_without_BN

@@ -7,21 +7,28 @@ import tqdm
 import time
 import os
 import wandb
+import torch.backends.cudnn as cudnn
 
 from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
-from structure.conv4_models import get_model_instance, get_model_save_path
+from structure.conv4_models import get_model_instance, get_model_save_path, get_model_instance_from_dataset
 from visualization import run_visualization_on_config
 from utils.weight_utils import get_gating_layer_weights
 from raw_weight_analysis import convert_list_tensor_to_numpy
 
 
-def evaluate_model(net, dataloader):
+def evaluate_model(net, dataloader, num_classes_trained_on=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
+    frequency_pred = None
+    if(num_classes_trained_on is not None):
+        frequency_pred = torch.zeros(num_classes_trained_on)
+        frequency_pred = frequency_pred.to(device, non_blocking=True)
+        all_classes = torch.arange(0, num_classes_trained_on)
+        all_classes = all_classes.to(device, non_blocking=True)
     # since we're not training, we don't need to calculate the gradients for our outputs
     with torch.no_grad():
         for data in dataloader:
@@ -35,10 +42,23 @@ def evaluate_model(net, dataloader):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-    return 100. * correct / total
+            if(num_classes_trained_on is not None):
+                temp = torch.cat((predicted.float(), all_classes))
+                temp = temp.to(device)
+                frequency_pred += torch.histc(temp, num_classes_trained_on) - 1
+
+    return 100. * correct / total, frequency_pred
 
 
 def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None):
+    device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if device_str == 'cuda':
+        if(torch.cuda.device_count() > 1):
+            print("Parallelizing model")
+            net = torch.nn.DataParallel(net)
+
+        cudnn.benchmark = True
+
     is_log_wandb = not(wand_project_name is None)
     best_test_acc = 0
     for epoch in range(epochs):  # loop over the dataset multiple times
@@ -76,7 +96,8 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
                                train_acc=100.*correct/total, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
 
         train_acc = 100. * correct/total
-        test_acc = evaluate_model(net, testloader)
+        test_acc, _ = evaluate_model(
+            net, testloader)
         if(is_log_wandb):
             wandb.log({"train_acc": train_acc, "test_acc": test_acc})
 
@@ -140,13 +161,13 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
-    model_arch_type = 'conv4_deep_gated_net'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn
+    model_arch_type = 'fc_dnn'
     # iterative_augmenting , nil
-    scheme_type = 'iterative_augmenting'
+    scheme_type = 'nil'
     # scheme_type = ''
     batch_size = 32
 
@@ -154,8 +175,12 @@ if __name__ == '__main__':
     torch_seed = 2022
 
     # wand_project_name = None
-    # wand_project_name = "common_model_init_exps"
-    wand_project_name = "V2_template_visualisation_augmentation"
+    wand_project_name = "common_model_init_exps"
+    # wand_project_name = "V2_template_visualisation_augmentation"
+
+    # None means that train on all classes
+    list_of_classes_to_train_on = None
+    list_of_classes_to_train_on = [4, 6]
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -164,7 +189,7 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         cifar10_config = DatasetConfig(
-            'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size)
+            'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -175,7 +200,7 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         mnist_config = DatasetConfig(
-            'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+            'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -187,7 +212,7 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         fashion_mnist_config = DatasetConfig(
-            'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+            'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -195,16 +220,39 @@ if __name__ == '__main__':
     print("Training over "+dataset)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
+    num_classes_trained_on = num_classes
+    dataset_str = dataset
+
+    list_of_classes_to_train_on_str = ""
+    if(list_of_classes_to_train_on is not None):
+        for each_class_to_train_on in list_of_classes_to_train_on:
+            list_of_classes_to_train_on_str += \
+                str(each_class_to_train_on)+"_"
+        list_of_classes_to_train_on_str = list_of_classes_to_train_on_str[0:-1]
+        dataset_str += "_"+str(list_of_classes_to_train_on_str)
+        num_classes_trained_on = len(list_of_classes_to_train_on)
+
     model_arch_type_str = model_arch_type
     if("masked" in model_arch_type):
         mask_percentage = 90
         model_arch_type_str = model_arch_type_str + \
             "_PRC_"+str(mask_percentage)
         net = get_model_instance(
-            model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed)
+            model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
+    elif("fc" in model_arch_type):
+        fc_width = 128
+        fc_depth = 4
+        nodes_in_each_layer_list = [fc_width] * fc_depth
+        model_arch_type_str = model_arch_type_str + \
+            "_W_"+str(fc_width)+"_D_"+str(fc_depth)
+        net = get_model_instance_from_dataset(dataset,
+                                              model_arch_type, seed=torch_seed, num_classes=num_classes_trained_on, nodes_in_each_layer_list=nodes_in_each_layer_list)
+    else:
+        net = get_model_instance(model_arch_type, inp_channel,
+                                 seed=torch_seed, num_classes=num_classes_trained_on)
+
     final_model_save_path = get_model_save_path(
-        model_arch_type_str, dataset, torch_seed)
+        model_arch_type_str, dataset, torch_seed, list_of_classes_to_train_on_str)
 
     # list_of_weights, list_of_bias = get_gating_layer_weights(net)
 
@@ -218,7 +266,7 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss()
     lr = 3e-4
     optimizer = optim.Adam(net.parameters(), lr=lr)
-    epochs = 32
+    epochs = 5
 
     if(scheme_type == 'iterative_augmenting'):
         # If False, then on test
@@ -235,7 +283,7 @@ if __name__ == '__main__':
         # wand_project_name = "template_images_visualization-test"
         wand_project_name = "V2_template_visualisation_augmentation"
         # wand_project_name = None
-        wandb_group_name = "DS_"+str(dataset) + \
+        wandb_group_name = "DS_"+str(dataset_str) + \
             "_template_vis_aug_"+str(model_arch_type_str)
         is_split_validation = False
         valid_split_size = 0.1
@@ -260,7 +308,7 @@ if __name__ == '__main__':
         root_save_prefix = "root/" + \
             str(visualization_version)+"AUG_RECONS_SAVE/"
         model_and_data_save_prefix = "root/model/save/" + \
-            str(dataset)+"/"+str(visualization_version)+"_iterative_augmenting/DS_"+str(dataset)+"/MT_"+str(model_arch_type_str)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+            str(dataset)+"/"+str(visualization_version)+"_iterative_augmenting/DS_"+str(dataset_str)+"/MT_"+str(model_arch_type_str)+"_ET_"+str(exp_type)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
                 seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"
 
         # number_of_augment_iterations = 5
@@ -325,7 +373,7 @@ if __name__ == '__main__':
                     wandb_run_name = str(
                         model_arch_type_str)+"_aug_iteration_"+str(current_aug_iter_num)
                     experiment_type = 'TRAIN'+str(exp_type)
-                    wandb_config = get_wandb_config(experiment_type, classes, model_arch_type_str, dataset, is_template_image_on_train,
+                    wandb_config = get_wandb_config(experiment_type, classes, model_arch_type_str, dataset_str, is_template_image_on_train,
                                                     is_class_segregation_on_ground_truth, template_initial_image_type,
                                                     template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
                                                     collect_threshold=collect_threshold, number_of_batch_to_collect=number_of_batch_to_collect)
@@ -458,7 +506,7 @@ if __name__ == '__main__':
     else:
         is_log_wandb = not(wand_project_name is None)
         if(is_log_wandb):
-            wandb_group_name = "DS_"+str(dataset) + \
+            wandb_group_name = "DS_"+str(dataset_str) + \
                 "_MT_"+str(model_arch_type_str)+"_SEED_"+str(torch_seed)
             wandb_run_name = "MT_" + \
                 str(model_arch_type_str)+"/SEED_"+str(torch_seed)+"/EP_"+str(epochs)+"/LR_" + \
@@ -468,7 +516,7 @@ if __name__ == '__main__':
             wandb_run_name = wandb_run_name.replace("/", "")
 
             wandb_config = dict()
-            wandb_config["dataset"] = dataset
+            wandb_config["dataset"] = dataset_str
             wandb_config["model_arch_type"] = model_arch_type_str
             wandb_config["torch_seed"] = torch_seed
             wandb_config["scheme_type"] = scheme_type
