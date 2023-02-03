@@ -15,7 +15,7 @@ from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
 from configs.generic_configs import get_preprocessing_and_other_configs
 
-from conv4_models import get_model_instance
+from structure.conv4_models import get_model_instance
 
 
 def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375):

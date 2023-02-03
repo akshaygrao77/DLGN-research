@@ -1,4 +1,4 @@
-from conv4_models import Plain_CONV4_Net, Plain_CONV4_Net_N16_Small, Conv4_DLGN_Net, Conv4_DeepGated_Net_N16_Small, Conv4_DLGN_Net_N16_Small, Conv4_DeepGated_Net, Conv4_DeepGated_Net_With_Actual_Inp_Over_WeightNet, Mask_Conv4_DLGN_Net_N16_Small, Mask_Conv4_DLGN_Net
+from structure.conv4_models import Plain_CONV4_Net, Plain_CONV4_Net_N16_Small, Conv4_DLGN_Net, Conv4_DeepGated_Net_N16_Small, Conv4_DLGN_Net_N16_Small, Conv4_DeepGated_Net, Conv4_DeepGated_Net_With_Actual_Inp_Over_WeightNet, Mask_Conv4_DLGN_Net_N16_Small, Mask_Conv4_DLGN_Net
 
 
 def get_gating_layer_weights(input_model):

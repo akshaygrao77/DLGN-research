@@ -4,7 +4,7 @@ import os
 import numpy as np
 import wandb
 from utils.weight_utils import get_gating_layer_weights
-from conv4_models import get_model_instance_from_dataset
+from structure.conv4_models import get_model_instance_from_dataset
 from visualization import preprocess_image, get_initial_image
 from tqdm import tqdm, trange
 from utils.visualise_utils import recreate_image, generate_plain_3DImage, save_image

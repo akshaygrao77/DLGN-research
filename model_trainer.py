@@ -12,7 +12,7 @@ from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
-from conv4_models import get_model_instance, get_model_save_path
+from structure.conv4_models import get_model_instance, get_model_save_path
 from visualization import run_visualization_on_config
 from utils.weight_utils import get_gating_layer_weights
 from raw_weight_analysis import convert_list_tensor_to_numpy
@@ -144,7 +144,7 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
-    model_arch_type = 'masked_conv4_dlgn_n16_small'
+    model_arch_type = 'conv4_deep_gated_net'
     # iterative_augmenting , nil
     scheme_type = 'iterative_augmenting'
     # scheme_type = ''

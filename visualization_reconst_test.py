@@ -7,10 +7,10 @@ from torch.autograd import Variable
 from PIL import Image
 import copy
 import torch.optim as optim
-from conv4_models import get_model_instance_from_dataset, get_model_save_path
+from structure.conv4_models import get_model_instance_from_dataset, get_model_save_path
 import scipy.ndimage as nd
 import os
-from conv4_trainer import evaluate_model
+from model_trainer import evaluate_model
 
 import torch.nn as nn
 
@@ -596,7 +596,7 @@ models_base_path = "root/model/save/mnist/iterative_augmenting/DS_mnist/MT_plain
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # vis_model = torch.load("/content/conv4_dgn_iter_1_dir.pt",map_location=device)
 vis_model = get_model_instance_from_dataset(
-    dataset, model_arch_type,torch_seed)
+    dataset, model_arch_type, torch_seed)
 if(models_base_path is not None):
     custom_temp_model = torch.load(models_base_path, map_location=device)
     vis_model.load_state_dict(custom_temp_model.state_dict())
