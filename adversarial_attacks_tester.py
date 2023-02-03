@@ -24,7 +24,7 @@ from cleverhans.torch.attacks.projected_gradient_descent import (
     projected_gradient_descent,
 )
 
-from structure.conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net
+from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net
 
 
 def apply_adversarial_attack_on_input(input_data, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted):

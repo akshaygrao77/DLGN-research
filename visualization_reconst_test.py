@@ -7,7 +7,7 @@ from torch.autograd import Variable
 from PIL import Image
 import copy
 import torch.optim as optim
-from structure.conv4_models import get_model_instance_from_dataset, get_model_save_path
+from conv4_models import get_model_instance_from_dataset, get_model_save_path
 import scipy.ndimage as nd
 import os
 from model_trainer import evaluate_model

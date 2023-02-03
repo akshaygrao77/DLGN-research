@@ -4,7 +4,7 @@ import os
 import numpy as np
 from utils.weight_utils import get_gating_layer_weights
 from utils.visualise_utils import generate_list_of_plain_images_from_data, generate_plain_image, generate_plain_image_data, save_image, recreate_image
-from structure.conv4_models import get_model_instance_from_dataset
+from conv4_models import get_model_instance_from_dataset
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader, seed_worker, true_segregation
 from structure.generic_structure import PerClassDataset, CustomSimpleDataset
 from structure.dlgn_conv_config_structure import DatasetConfig

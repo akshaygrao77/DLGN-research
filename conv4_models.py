@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from structure.fc_models import DLGN_FC_Network, DNN_FC_Network
+from structure.fc_models import DLGN_FC_Network, DNN_FC_Network,DGN_FC_Network
 
 
 def replace_percent_of_values(inp_np, const_value, percentage):
@@ -980,6 +980,9 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
     elif(model_arch_type == "fc_dlgn"):
         net = DLGN_FC_Network(
+            nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
+    elif(model_arch_type == "fc_dgn"):
+        net = DGN_FC_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
 
     return net

@@ -19,7 +19,7 @@ from configs.dlgn_conv_config import HardRelu
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
 from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
-from structure.conv4_models import get_model_instance
+from conv4_models import get_model_instance
 import scipy.ndimage as nd
 
 from external_utils import format_time
