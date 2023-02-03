@@ -14,9 +14,8 @@ from utils.data_preprocessing import preprocess_dataset_get_data_loader
 from adversarial_attacks_tester import evaluate_model, evaluate_model_via_reconstructed, plain_evaluate_model_via_reconstructed
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
-from configs.generic_configs import get_preprocessing_and_other_configs
 
-from structure.conv4_models import get_model_instance
+from conv4_models import get_model_instance, get_model_instance_from_dataset
 
 
 def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375):
@@ -133,12 +132,11 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
-    # scheme_type = ''
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
+    model_arch_type = 'fc_dgn'
     # batch_size = 128
     wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "common_model_init_exps"
@@ -178,6 +176,10 @@ if __name__ == '__main__':
     # batch_size_list = [256, 128, 64]
     batch_size_list = [128]
 
+    # None means that train on all classes
+    list_of_classes_to_train_on = None
+    list_of_classes_to_train_on = [4, 9]
+
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
             inp_channel = 3
@@ -186,7 +188,7 @@ if __name__ == '__main__':
             num_classes = len(classes)
 
             cifar10_config = DatasetConfig(
-                'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size)
+                'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -197,7 +199,7 @@ if __name__ == '__main__':
             num_classes = len(classes)
 
             mnist_config = DatasetConfig(
-                'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+                'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -209,7 +211,7 @@ if __name__ == '__main__':
             num_classes = len(classes)
 
             fashion_mnist_config = DatasetConfig(
-                'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+                'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -217,21 +219,46 @@ if __name__ == '__main__':
         print("Training over "+dataset)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        net = get_model_instance(model_arch_type, inp_channel, seed=torch_seed)
+        num_classes_trained_on = num_classes
+        dataset_str = dataset
+
+        list_of_classes_to_train_on_str = ""
+        if(list_of_classes_to_train_on is not None):
+            for each_class_to_train_on in list_of_classes_to_train_on:
+                list_of_classes_to_train_on_str += \
+                    str(each_class_to_train_on)+"_"
+            list_of_classes_to_train_on_str = "TR_ON_" + \
+                list_of_classes_to_train_on_str[0:-1]
+            dataset_str += "_"+str(list_of_classes_to_train_on_str)
+            num_classes_trained_on = len(list_of_classes_to_train_on)
+
         model_arch_type_str = model_arch_type
         if("masked" in model_arch_type):
             mask_percentage = 90
             model_arch_type_str = model_arch_type_str + \
                 "_PRC_"+str(mask_percentage)
             net = get_model_instance(
-                model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed)
+                model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
+        elif("fc" in model_arch_type):
+            fc_width = 128
+            fc_depth = 4
+            nodes_in_each_layer_list = [fc_width] * fc_depth
+            model_arch_type_str = model_arch_type_str + \
+                "_W_"+str(fc_width)+"_D_"+str(fc_depth)
+            net = get_model_instance_from_dataset(dataset,
+                                                  model_arch_type, seed=torch_seed, num_classes=num_classes_trained_on, nodes_in_each_layer_list=nodes_in_each_layer_list)
+        else:
+            net = get_model_instance(model_arch_type, inp_channel,
+                                     seed=torch_seed, num_classes=num_classes_trained_on)
+
         start_net_path = None
 
-        start_net_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
-        custom_temp_model = torch.load(start_net_path)
-        net.load_state_dict(custom_temp_model.state_dict())
-        stop_at_adv_test_acc = None
-        stop_at_adv_test_acc = 70.9
+        # start_net_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+        if(start_net_path is not None):
+            custom_temp_model = torch.load(start_net_path)
+            net.load_state_dict(custom_temp_model.state_dict())
+            stop_at_adv_test_acc = None
+            stop_at_adv_test_acc = 70.9
 
         net = net.to(device)
 
@@ -251,7 +278,7 @@ if __name__ == '__main__':
 
                     root_save_prefix = "root/ADVER_RECONS_SAVE/"
                     init_prefix = "root/model/save/" + \
-                        str(dataset)+"/adversarial_training/MT_" + \
+                        str(dataset)+"/adversarial_training/"+str(list_of_classes_to_train_on_str)+"/MT_" + \
                         str(model_arch_type_str)
                     if(start_net_path is not None):
                         init_prefix = start_net_path[0:start_net_path.rfind(
@@ -261,7 +288,7 @@ if __name__ == '__main__':
                         init_prefix)+"_ET_ADV_TRAINING/"
                     prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/".format(
                         fast_adv_attack_type, adv_attack_type, eps, batch_size, eps_step_size, number_of_adversarial_optimization_steps)
-                    wandb_group_name = "DS_"+str(dataset) + "_EXP_"+str(exp_type) +\
+                    wandb_group_name = "DS_"+str(dataset_str) + "_EXP_"+str(exp_type) +\
                         "_fast_adv_training_TYP_"+str(model_arch_type_str)
                     model_save_prefix += prefix2
                     model_save_path = model_save_prefix + "adv_model_dir.pt"
@@ -279,7 +306,7 @@ if __name__ == '__main__':
                             wandb_config["exp_type"] = exp_type
                             wandb_config["adv_attack_type"] = adv_attack_type
                             wandb_config["model_arch_type"] = model_arch_type_str
-                            wandb_config["dataset"] = dataset
+                            wandb_config["dataset"] = dataset_str
                             wandb_config["eps"] = eps
                             wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
                             wandb_config["epochs"] = epochs
@@ -318,7 +345,7 @@ if __name__ == '__main__':
                             wandb_config["exp_type"] = "EVAL_VIA_RECONST"
                             wandb_config["adv_attack_type"] = adv_attack_type
                             wandb_config["model_arch_type"] = model_arch_type_str
-                            wandb_config["dataset"] = dataset
+                            wandb_config["dataset"] = dataset_str
                             wandb_config["eps"] = eps
                             wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
                             wandb_config["epochs"] = epochs
@@ -361,7 +388,7 @@ if __name__ == '__main__':
                             wandb_config = dict()
                             wandb_config["adv_attack_type"] = adv_attack_type
                             wandb_config["model_arch_type"] = model_arch_type_str
-                            wandb_config["dataset"] = dataset
+                            wandb_config["dataset"] = dataset_str
                             wandb_config["eps"] = eps
                             wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
                             wandb_config["epochs"] = epochs
