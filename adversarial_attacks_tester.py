@@ -24,7 +24,7 @@ from cleverhans.torch.attacks.projected_gradient_descent import (
     projected_gradient_descent,
 )
 
-from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net
+from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net, get_model_instance, get_model_instance_from_dataset
 
 
 def apply_adversarial_attack_on_input(input_data, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted):
@@ -579,34 +579,42 @@ def extract_common_activation_patterns_between_reconst_and_original(true_input_d
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    # fc_dnn , fc_dlgn , fc_dgn
+    model_arch_type = 'fc_dnn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
 
+    torch_seed = 2022
+
+    # None means that train on all classes
+    list_of_classes_to_train_on = None
+    list_of_classes_to_train_on = [4, 9]
+
+    direct_model_path = None
+    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_4_9/ST_2022/fc_dnn_W_128_D_4_dir.pt"
+
     if(dataset == "cifar10"):
         inp_channel = 3
-        print("Evaluating over CIFAR 10")
         classes = ('plane', 'car', 'bird', 'cat',
                    'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
         num_classes = len(classes)
 
         cifar10_config = DatasetConfig(
-            'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size)
+            'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     elif(dataset == "mnist"):
         inp_channel = 1
-        print("Evaluating over MNIST")
         classes = [str(i) for i in range(0, 10)]
         num_classes = len(classes)
 
         mnist_config = DatasetConfig(
-            'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+            'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -618,12 +626,49 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         fashion_mnist_config = DatasetConfig(
-            'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size)
+            'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
+    print("Training over "+dataset)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    num_classes_trained_on = num_classes
+    dataset_str = dataset
+
+    list_of_classes_to_train_on_str = ""
+    if(list_of_classes_to_train_on is not None):
+        for each_class_to_train_on in list_of_classes_to_train_on:
+            list_of_classes_to_train_on_str += \
+                str(each_class_to_train_on)+"_"
+        dataset_str += "_"+str(list_of_classes_to_train_on_str)
+        list_of_classes_to_train_on_str = "TR_ON_" + \
+            list_of_classes_to_train_on_str[0:-1]
+        num_classes_trained_on = len(list_of_classes_to_train_on)
+        temp_classes = []
+        for ea_c in list_of_classes_to_train_on:
+            temp_classes.append(classes[ea_c])
+        classes = temp_classes
+
+    model_arch_type_str = model_arch_type
+    if("masked" in model_arch_type):
+        mask_percentage = 90
+        model_arch_type_str = model_arch_type_str + \
+            "_PRC_"+str(mask_percentage)
+        net = get_model_instance(
+            model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
+    elif("fc" in model_arch_type):
+        fc_width = 128
+        fc_depth = 4
+        nodes_in_each_layer_list = [fc_width] * fc_depth
+        model_arch_type_str = model_arch_type_str + \
+            "_W_"+str(fc_width)+"_D_"+str(fc_depth)
+        net = get_model_instance_from_dataset(dataset,
+                                              model_arch_type, seed=torch_seed, num_classes=num_classes_trained_on, nodes_in_each_layer_list=nodes_in_each_layer_list)
+    else:
+        net = get_model_instance(model_arch_type, inp_channel,
+                                 seed=torch_seed, num_classes=num_classes_trained_on)
 
     if(scheme_type == 'iterative_augmented_model_attack'):
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
@@ -657,9 +702,6 @@ if __name__ == '__main__':
         if(is_log_wandb):
             wandb.login()
 
-        direct_model_path = None
-        direct_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_deep_gated_net_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
-
         if(direct_model_path is not None):
             number_of_augment_iterations = 1
 
@@ -679,7 +721,9 @@ if __name__ == '__main__':
                 isExist = os.path.exists(model_save_path)
                 assert isExist == True, 'Model path does not have saved model'
 
-                net = torch.load(model_save_path)
+                custom_temp_model = torch.load(model_save_path)
+                net.load_state_dict(custom_temp_model.state_dict())
+
                 net = net.to(device)
                 device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
                 if device_str == 'cuda':
@@ -701,13 +745,13 @@ if __name__ == '__main__':
                         exp_type, adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps)
                 save_folder = model_and_data_save_prefix + final_postfix_for_save
                 if(exp_type == "ADV_ATTACK"):
-                    wandb_group_name = "DS_"+str(dataset) + \
+                    wandb_group_name = "DS_"+str(dataset_str) + \
                         "_adv_attack_over_aug_"+str(model_arch_type)
 
                     if(is_log_wandb):
                         wandb_run_name = str(
                             model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
-                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
+                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset_str, is_adv_attack_on_train,
                                                         eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
                         wandb_config["aug_iter_num"] = current_aug_iter_num
                         wandb.init(
@@ -789,9 +833,9 @@ if __name__ == '__main__':
                         adv_dataset, shuffle=False, batch_size=128)
 
                     true_eval_dataset_per_class = true_segregation(
-                        eval_loader, num_classes)
+                        eval_loader, num_classes_trained_on)
                     true_tobe_analysed_dataset_per_class = true_segregation(
-                        to_be_analysed_adversarial_dataloader, num_classes)
+                        to_be_analysed_adversarial_dataloader, num_classes_trained_on)
 
                     for c_indx in class_indx_to_visualize:
                         class_label = classes[c_indx]
@@ -801,13 +845,13 @@ if __name__ == '__main__':
                             true_eval_dataset_per_class[c_indx], c_indx)
                         per_class_tobe_analysed_dataset = PerClassDataset(
                             true_tobe_analysed_dataset_per_class[c_indx], c_indx)
-                        wandb_group_name = "DS_"+str(dataset) + \
+                        wandb_group_name = "DS_"+str(dataset_str) + \
                             "_adv_attack_over_aug_"+str(model_arch_type)
 
                         if(is_log_wandb):
                             wandb_run_name = str(
                                 model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
-                            wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
+                            wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset_str, is_adv_attack_on_train,
                                                             eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
                             wandb_config["aug_iter_num"] = current_aug_iter_num
                             wandb_config["class_label"] = class_label
@@ -849,7 +893,7 @@ if __name__ == '__main__':
                                        "frequency_pred": frequency_pred})
                             wandb.finish()
                 elif(exp_type == "ADV_ATTACK_EVAL_VIA_RECONST"):
-                    wandb_group_name = "DS_"+str(dataset) + \
+                    wandb_group_name = "DS_"+str(dataset_str) + \
                         "_adv_attack_over_aug_"+str(model_arch_type)
                     number_of_image_optimization_steps = 141
                     template_initial_image_type = 'zero_init_image'
@@ -858,7 +902,7 @@ if __name__ == '__main__':
                     if(is_log_wandb):
                         wandb_run_name = str(
                             model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
-                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
+                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset_str, is_adv_attack_on_train,
                                                         eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
                         wandb_config["aug_iter_num"] = current_aug_iter_num
                         wandb_config["number_of_image_optimization_steps"] = number_of_image_optimization_steps
@@ -912,11 +956,11 @@ if __name__ == '__main__':
                     collect_threshold = 0.95
                     torch_seed = 2022
 
-                    wandb_group_name = "DS_"+str(dataset) + "_EXP_"+str(exp_type) +\
+                    wandb_group_name = "DS_"+str(dataset_str) + "_EXP_"+str(exp_type) +\
                         "_adv_attack_over_aug_"+str(model_arch_type)
                     wandb_run_name = str(
                         model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
-                    wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
+                    wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset_str, is_adv_attack_on_train,
                                                     eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
                     wandb_config["template_image_calculation_batch_size"] = template_image_calculation_batch_size
                     wandb_config["number_of_batch_to_collect"] = number_of_batch_to_collect
@@ -925,7 +969,7 @@ if __name__ == '__main__':
                     wandb_config["aug_iter_num"] = current_aug_iter_num
 
                     true_input_data_list_per_class = true_segregation(
-                        eval_loader, num_classes)
+                        eval_loader, num_classes_trained_on)
 
                     per_class_common_active_percentages, per_class_common_active_pixel_counts, per_class_common_total_pixel_counts = extract_common_activation_patterns_between_adv_and_normal(true_input_data_list_per_class, net,
                                                                                                                                                                                                template_image_calculation_batch_size, number_of_batch_to_collect, collect_threshold, torch_seed,
@@ -937,14 +981,14 @@ if __name__ == '__main__':
                     collect_threshold = 0.95
                     torch_seed = 2022
 
-                    wandb_group_name = "DS_"+str(dataset) + "_EXP_"+str(exp_type) +\
+                    wandb_group_name = "DS_"+str(dataset_str) + "_EXP_"+str(exp_type) +\
                         "_adv_attack_over_aug_"+str(model_arch_type)
                     wandb_run_name = str(
                         model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
                     wandb_config = dict()
                     wandb_config["exp_type"] = exp_type
                     wandb_config["model_arch_type"] = model_arch_type
-                    wandb_config["dataset"] = dataset
+                    wandb_config["dataset"] = dataset_str
                     wandb_config["template_image_calculation_batch_size"] = template_image_calculation_batch_size
                     wandb_config["number_of_batch_to_collect"] = number_of_batch_to_collect
                     wandb_config["collect_threshold"] = collect_threshold
@@ -954,7 +998,7 @@ if __name__ == '__main__':
                     wandb_config["model_attacked_path"] = model_save_path
 
                     true_input_data_list_per_class = true_segregation(
-                        eval_loader, num_classes)
+                        eval_loader, num_classes_trained_on)
 
                     final_postfix_for_numpy_save = "aug_indx_{}/".format(
                         current_aug_iter_num)

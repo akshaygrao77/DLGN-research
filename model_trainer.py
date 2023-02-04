@@ -165,7 +165,7 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'fc_dnn'
+    model_arch_type = 'fc_dlgn'
     # iterative_augmenting , nil
     scheme_type = 'nil'
     # scheme_type = ''
@@ -180,7 +180,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3, 8]
+    # list_of_classes_to_train_on = [3, 8]
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -231,6 +231,10 @@ if __name__ == '__main__':
         list_of_classes_to_train_on_str = list_of_classes_to_train_on_str[0:-1]
         dataset_str += "_"+str(list_of_classes_to_train_on_str)
         num_classes_trained_on = len(list_of_classes_to_train_on)
+        temp_classes = []
+        for ea_c in list_of_classes_to_train_on:
+            temp_classes.append(classes[ea_c])
+        classes = temp_classes
 
     model_arch_type_str = model_arch_type
     if("masked" in model_arch_type):

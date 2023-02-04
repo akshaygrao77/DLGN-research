@@ -178,7 +178,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [4, 9]
+    list_of_classes_to_train_on = [3, 8]
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -227,10 +227,14 @@ if __name__ == '__main__':
             for each_class_to_train_on in list_of_classes_to_train_on:
                 list_of_classes_to_train_on_str += \
                     str(each_class_to_train_on)+"_"
+            dataset_str += "_"+str(list_of_classes_to_train_on_str)
             list_of_classes_to_train_on_str = "TR_ON_" + \
                 list_of_classes_to_train_on_str[0:-1]
-            dataset_str += "_"+str(list_of_classes_to_train_on_str)
             num_classes_trained_on = len(list_of_classes_to_train_on)
+            temp_classes = []
+            for ea_c in list_of_classes_to_train_on:
+                temp_classes.append(classes[ea_c])
+            classes = temp_classes
 
         model_arch_type_str = model_arch_type
         if("masked" in model_arch_type):
