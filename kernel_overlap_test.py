@@ -15,6 +15,7 @@ from utils.data_preprocessing import preprocess_dataset_get_data_loader, generat
 from structure.generic_structure import CustomSimpleDataset
 from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net, get_model_instance, get_model_instance_from_dataset
 from adversarial_attacks_tester import load_or_generate_adv_examples
+from configs.dlgn_conv_config import HardRelu
 
 
 def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_analysis_on_train,
@@ -46,6 +47,7 @@ def obtain_kernel_overlap(net, analyse_dataset):
         Y = torch.from_numpy(Y)
     X, Y = X.to(
         device), Y.to(device)
+    # Replace the lesser class index with -1 and another with +1
     Y = torch.where(Y == 0, -1, 1)
     Y = torch.unsqueeze(Y, 1)
     Y = Y.type(torch.float32)
@@ -64,8 +66,9 @@ def obtain_kernel_overlap(net, analyse_dataset):
     npk_kernel = torch.matmul(X, torch.transpose(X, 0, 1))
     print("Norm XTX", torch.norm(npk_kernel))
     for each_conv_out in conv_outs:
+        gate_out = HardRelu()(each_conv_out)
         npk_kernel = npk_kernel * \
-            (torch.matmul(each_conv_out,  torch.transpose(each_conv_out, 0, 1)))
+            (torch.matmul(gate_out,  torch.transpose(gate_out, 0, 1)))
         print("Norm npk_kernel", torch.norm(npk_kernel))
 
     print("Size of npk kernel is:{} , dtype:{}".format(
@@ -243,7 +246,7 @@ if __name__ == '__main__':
 
         if(is_log_wandb):
             wandb_group_name = "DS_"+str(dataset_str) + \
-                "ST_"+str(torch_seed)+"_NSAMP_" + \
+                "ST_"+str(torch_seed)+"_PROB_"+str(percentage_of_dataset_for_analysis)+"_NSAMP_" + \
                 str(number_of_samples_used_for_analysis) + \
                 "_K_OV_"+str(model_arch_type)
             wandb_run_name = "DS_"+str(dataset_str) + \
