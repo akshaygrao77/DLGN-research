@@ -16,6 +16,7 @@ from structure.generic_structure import CustomSimpleDataset
 from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net, get_model_instance, get_model_instance_from_dataset
 from adversarial_attacks_tester import load_or_generate_adv_examples
 from configs.dlgn_conv_config import HardRelu
+from statistics import mean
 
 
 def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_analysis_on_train,
@@ -120,7 +121,7 @@ if __name__ == '__main__':
     adv_target = None
     # K_OVERLAP
     exp_type = "K_OVERLAP"
-    percentage_of_dataset_for_analysis = 10
+    percentage_of_dataset_for_analysis = 100
     eps_step_size = 0.01
     eps = 0.06
 
@@ -214,6 +215,8 @@ if __name__ == '__main__':
         eval_loader = testloader
 
     if(exp_type == "K_OVERLAP"):
+        number_of_trails = 1
+
         orig_dataset = generate_dataset_from_loader(eval_loader)
         if(isinstance(orig_dataset.list_of_x[0], torch.Tensor)):
             orig_dataset = torch.stack(
@@ -231,19 +234,6 @@ if __name__ == '__main__':
         print("Total number of filtered samples for analysis",
               number_of_samples_used_for_analysis)
 
-        np.random.seed(torch_seed)
-
-        indices = np.arange(0, number_of_samples)
-        np.random.shuffle(indices)
-
-        filtered_indices = indices[:number_of_samples_used_for_analysis]
-
-        print("Orig dataset size: X=>{},Y=>{}".format(
-            orig_dataset[0].shape, orig_dataset[1].shape))
-        analyse_orig_dataset = orig_dataset[0][filtered_indices], orig_dataset[1][filtered_indices]
-        print("Analyse orig dataset size: X=>{},Y=>{}".format(
-            analyse_orig_dataset[0].shape, analyse_orig_dataset[1].shape))
-
         if(is_log_wandb):
             wandb_group_name = "DS_"+str(dataset_str) + \
                 "ST_"+str(torch_seed)+"_PROB_"+str(percentage_of_dataset_for_analysis)+"_NSAMP_" + \
@@ -259,61 +249,87 @@ if __name__ == '__main__':
             wandb_config["total_sampls"] = number_of_samples
             wandb_config["sampl_for_analysis"] = number_of_samples_used_for_analysis
             wandb_config["mtype_paths_map"] = map_of_mtype_paths
+            wandb_config["number_of_trails"] = number_of_trails
             wandb.init(
                 project=f"{wand_project_name}",
                 name=f"{wandb_run_name}",
                 group=f"{wandb_group_name}",
                 config=wandb_config,
             )
+
+        np.random.seed(torch_seed)
+        indices = np.arange(0, number_of_samples)
+
+        orig_overlap_map = dict()
+        adv_overlap_map = dict()
+        for key in map_of_mtype_paths:
+            orig_overlap_map[key] = []
+            adv_overlap_map[key] = []
+
+        for trail_num in range(number_of_trails):
+            np.random.shuffle(indices)
+
+            filtered_indices = indices[:number_of_samples_used_for_analysis]
+
+            print("Orig dataset size: X=>{},Y=>{}".format(
+                orig_dataset[0].shape, orig_dataset[1].shape))
+            analyse_orig_dataset = orig_dataset[0][filtered_indices], orig_dataset[1][filtered_indices]
+            print("Analyse orig dataset size: X=>{},Y=>{}".format(
+                analyse_orig_dataset[0].shape, analyse_orig_dataset[1].shape))
+
+            for current_model_type in map_of_mtype_paths:
+                current_direct_model_path = map_of_mtype_paths[current_model_type]
+
+                isExist = os.path.exists(current_direct_model_path)
+                assert isExist == True, 'Model path does not have saved model'
+
+                custom_temp_model = torch.load(current_direct_model_path)
+                net.load_state_dict(custom_temp_model.state_dict())
+
+                net = net.to(device)
+
+                if('CLEAN' in current_direct_model_path):
+                    model_and_data_save_prefix = current_direct_model_path[0:current_direct_model_path.rfind(
+                        ".pt")]
+                else:
+                    model_and_data_save_prefix = current_direct_model_path[0:current_direct_model_path.rfind(
+                        "/")+1]
+
+                adv_dataset = load_or_generate_adv_examples(eval_loader, model_and_data_save_prefix, is_analysis_on_train, net, eps, adv_attack_type,
+                                                            number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=True)
+                print("Adv dataset size: X=>{},Y=>{}".format(
+                    adv_dataset.list_of_x[0].shape, adv_dataset.list_of_y[0].shape))
+                print("Adv dataset size: X=>{},Y=>{}".format(
+                    adv_dataset.list_of_x.shape, adv_dataset.list_of_y.shape))
+                if(not isinstance(adv_dataset.list_of_x, torch.Tensor) and isinstance(adv_dataset.list_of_x[0], torch.Tensor)):
+                    adv_dataset = torch.stack(
+                        adv_dataset.list_of_x), torch.stack(adv_dataset.list_of_y)
+                elif(isinstance(adv_dataset.list_of_x, torch.Tensor) and isinstance(adv_dataset.list_of_x[0], torch.Tensor)):
+                    adv_dataset = adv_dataset.list_of_x, adv_dataset.list_of_y
+                else:
+                    adv_dataset = np.array(adv_dataset.list_of_x), np.array(
+                        adv_dataset.list_of_y)
+
+                print("Adv dataset size: X=>{},Y=>{}".format(
+                    adv_dataset[0].shape, adv_dataset[1].shape))
+                analyse_adv_dataset = adv_dataset[0][filtered_indices], adv_dataset[1][filtered_indices]
+                print("Analyse adv dataset size: X=>{},Y=>{}".format(
+                    analyse_adv_dataset[0].shape, analyse_adv_dataset[1].shape))
+
+                orig_overlap = obtain_kernel_overlap(net, analyse_orig_dataset)
+                print("current_model_type:{}=>orig_overlap:{}".format(
+                    current_model_type, orig_overlap))
+                orig_overlap_map[current_model_type].append(
+                    orig_overlap.item())
+                adv_overlap = obtain_kernel_overlap(net, analyse_adv_dataset)
+                print("current_model_type:{}=>adv_overlap:{}".format(
+                    current_model_type, adv_overlap))
+                adv_overlap_map[current_model_type].append(adv_overlap.item())
+
         for current_model_type in map_of_mtype_paths:
-            current_direct_model_path = map_of_mtype_paths[current_model_type]
-
-            isExist = os.path.exists(current_direct_model_path)
-            assert isExist == True, 'Model path does not have saved model'
-
-            custom_temp_model = torch.load(current_direct_model_path)
-            net.load_state_dict(custom_temp_model.state_dict())
-
-            net = net.to(device)
-
-            if('CLEAN' in current_direct_model_path):
-                model_and_data_save_prefix = current_direct_model_path[0:current_direct_model_path.rfind(
-                    ".pt")]
-            else:
-                model_and_data_save_prefix = current_direct_model_path[0:current_direct_model_path.rfind(
-                    "/")+1]
-
-            adv_dataset = load_or_generate_adv_examples(eval_loader, model_and_data_save_prefix, is_analysis_on_train, net, eps, adv_attack_type,
-                                                        number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=True)
-            print("Adv dataset size: X=>{},Y=>{}".format(
-                adv_dataset.list_of_x[0].shape, adv_dataset.list_of_y[0].shape))
-            print("Adv dataset size: X=>{},Y=>{}".format(
-                adv_dataset.list_of_x.shape, adv_dataset.list_of_y.shape))
-            if(not isinstance(adv_dataset.list_of_x, torch.Tensor) and isinstance(adv_dataset.list_of_x[0], torch.Tensor)):
-                adv_dataset = torch.stack(
-                    adv_dataset.list_of_x), torch.stack(adv_dataset.list_of_y)
-            elif(isinstance(adv_dataset.list_of_x, torch.Tensor) and isinstance(adv_dataset.list_of_x[0], torch.Tensor)):
-                adv_dataset = adv_dataset.list_of_x, adv_dataset.list_of_y
-            else:
-                adv_dataset = np.array(adv_dataset.list_of_x), np.array(
-                    adv_dataset.list_of_y)
-
-            print("Adv dataset size: X=>{},Y=>{}".format(
-                adv_dataset[0].shape, adv_dataset[1].shape))
-            analyse_adv_dataset = adv_dataset[0][filtered_indices], adv_dataset[1][filtered_indices]
-            print("Analyse adv dataset size: X=>{},Y=>{}".format(
-                analyse_adv_dataset[0].shape, analyse_adv_dataset[1].shape))
-
-            orig_overlap = obtain_kernel_overlap(net, analyse_orig_dataset)
-            print("current_model_type:{}=>orig_overlap:{}".format(
-                current_model_type, orig_overlap))
-            adv_overlap = obtain_kernel_overlap(net, analyse_adv_dataset)
-            print("current_model_type:{}=>adv_overlap:{}".format(
-                current_model_type, adv_overlap))
-
             if(is_log_wandb):
-                wandb.log({str(current_model_type)+"_or_k_lap": orig_overlap,
-                           str(current_model_type)+"_ad_k_lap": adv_overlap})
+                wandb.log({str(current_model_type)+"_or_k_lap": mean(orig_overlap_map[current_model_type]),
+                           str(current_model_type)+"_ad_k_lap": mean(adv_overlap_map[current_model_type])})
 
         if(is_log_wandb):
             wandb.finish()

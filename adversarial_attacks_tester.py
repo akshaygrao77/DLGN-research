@@ -345,6 +345,7 @@ def generate_adversarial_perturbation_from_adv_orig(orig_dataloader, adv_dataloa
 
 
 def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=False, save_path=None):
+    print("Adversarial will be saved at:", save_path)
     cpudevice = torch.device("cpu")
     is_targetted = adv_target is not None
     list_of_adv_images = None
@@ -591,10 +592,10 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3, 8]
+    list_of_classes_to_train_on = [4, 9]
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_4_9/ST_2022/fc_dnn_W_128_D_4_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
     if(dataset == "cifar10"):
         inp_channel = 3
