@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torch
 import tqdm
-import time
+import math
 import os
 import wandb
 from structure.dlgn_conv_config_structure import DatasetConfig
@@ -328,8 +328,14 @@ if __name__ == '__main__':
 
         for current_model_type in map_of_mtype_paths:
             if(is_log_wandb):
-                wandb.log({str(current_model_type)+"_or_k_lap": mean(orig_overlap_map[current_model_type]),
-                           str(current_model_type)+"_ad_k_lap": mean(adv_overlap_map[current_model_type])})
+                mean_current_orig_overlap = mean(
+                    orig_overlap_map[current_model_type])
+                mean_current_adv_overlap = mean(
+                    adv_overlap_map[current_model_type])
+                wandb.log({str(current_model_type)+"_or_k_lap": mean_current_orig_overlap,
+                           str(current_model_type)+"_ad_k_lap": mean_current_adv_overlap,
+                           "L10_"+str(current_model_type)+"_or_k_lap": math.log10(mean_current_orig_overlap),
+                           "L10_"+str(current_model_type)+"_ad_k_lap": math.log10(mean_current_adv_overlap)})
 
         if(is_log_wandb):
             wandb.finish()
