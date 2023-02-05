@@ -520,7 +520,7 @@ class RawActivationAnalyser():
         if(is_class_segregation_on_ground_truth):
             seg_over_what_str = 'GT'
 
-        self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+        self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset_str)+"/"+list_of_classes_to_train_on_str+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
             seg_over_what_str)+"/TMP_COLL_BS_"+str(activation_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/_torch_seed_"+str(torch_seed)+"/" + str(final_postfix_for_save) + "/"
 
         if not os.path.exists(self.image_save_prefix_folder):
@@ -529,7 +529,7 @@ class RawActivationAnalyser():
         wandb_run_name = self.image_save_prefix_folder.replace(
             "/", "").replace(root_save_prefix, class_label)
         self.wandb_run_name = wandb_run_name
-        wandb_config = get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_act_collection_on_train,
+        wandb_config = get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset_str, is_act_collection_on_train,
                                         is_class_segregation_on_ground_truth,
                                         activation_calculation_batch_size, torch_seed, analysed_model_path,
                                         number_of_batch_to_collect=number_of_batch_to_collect)
@@ -638,9 +638,7 @@ def run_raw_activation_analysis_on_config(dataset, model_arch_type, is_template_
     if(final_postfix_for_save is None):
         final_postfix_for_save = ""
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print("Running for "+str(dataset))
-    classes, num_classes, ret_config = get_preprocessing_and_other_configs(
-        dataset, valid_split_size)
+    print("Running for "+str(dataset_str))
 
     coll_seed_gen = torch.Generator()
     coll_seed_gen.manual_seed(torch_seed)
@@ -661,7 +659,7 @@ def run_raw_activation_analysis_on_config(dataset, model_arch_type, is_template_
                                                  shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
     print("Preprocessing and dataloader process completed of type:{} for dataset:{}".format(
-        model_arch_type, dataset))
+        model_arch_type, dataset_str))
 
     if(custom_model is None):
         model, analysed_model_path = get_model_from_loader(
@@ -726,12 +724,12 @@ def load_and_save_activation_analysis_on_config(dataset, valid_split_size, model
                                                 class_indx_to_visualize=None, is_save_graph_visualizations=True):
     is_log_wandb = not(wand_project_name is None)
 
-    print("Running for "+str(dataset))
+    print("Running for "+str(dataset_str))
     classes, _, _ = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
 
     print("load_and_save_activation_analysis_on_config of type:{} for dataset:{}".format(
-        model_arch_type, dataset))
+        model_arch_type, dataset_str))
 
     if(class_indx_to_visualize is None):
         class_indx_to_visualize = [i for i in range(len(classes))]
@@ -795,7 +793,13 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
             list_of_save_postfixes = [None]
     else:
         list_of_model_paths = [direct_model_path]
-        models_base_path = direct_model_path[0:direct_model_path.rfind("/")+1]
+        if('CLEAN' in direct_model_path):
+            models_base_path = direct_model_path[0:direct_model_path.rfind(
+                ".pt")]
+        else:
+            models_base_path = direct_model_path[0:direct_model_path.rfind(
+                "/")+1]
+
         temp_base_path = models_base_path
         if("CLEAN_TRAINING" in direct_model_path or 'epoch' in direct_model_path or 'aug' in direct_model_path):
             temp_base_path = direct_model_path[0:direct_model_path.rfind(
@@ -990,16 +994,17 @@ def generate_class_combination_statistics(list_of_list_of_act_analyser, class_co
                 if not os.path.exists(save_folder):
                     os.makedirs(save_folder)
 
-                print("Writing class combination:{} under path:{}".format(
-                    each_class_combination, save_folder))
-                generate_plain_image(common_class_pos_hrelu_difference,
-                                     save_folder+"c_Diff_Positive_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
-                generate_plain_image(common_class_neg_hrelu_difference,
-                                     save_folder+"c_Diff_Negative_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
-                generate_plain_image(pos_hrelu_entr_per_pixel,
-                                     save_folder+"c_PosHrelu_Entropy.jpg", is_standarize=False, is_standarize_01=True)
-                generate_plain_image(neg_hrelu_entr_per_pixel,
-                                     save_folder+"c_NegHrelu_Entropy.jpg", is_standarize=False, is_standarize_01=True)
+                if(is_save_graph_visualizations):
+                    print("Writing class combination:{} under path:{}".format(
+                        each_class_combination, save_folder))
+                    generate_plain_image(common_class_pos_hrelu_difference,
+                                         save_folder+"c_Diff_Positive_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
+                    generate_plain_image(common_class_neg_hrelu_difference,
+                                         save_folder+"c_Diff_Negative_HRelu_counts.jpg", is_standarize=False, is_standarize_01=True)
+                    generate_plain_image(pos_hrelu_entr_per_pixel,
+                                         save_folder+"c_PosHrelu_Entropy.jpg", is_standarize=False, is_standarize_01=True)
+                    generate_plain_image(neg_hrelu_entr_per_pixel,
+                                         save_folder+"c_NegHrelu_Entropy.jpg", is_standarize=False, is_standarize_01=True)
 
                 write_stats_to_file(save_folder+"c_Diff_Positive_HRelu_counts.txt",
                                     common_class_pos_hrelu_difference, "Diff PHrelu Count")
@@ -1292,7 +1297,7 @@ if __name__ == '__main__':
     # Try it with a smaller image
     print("Start")
     # mnist , cifar10 , fashion_mnist
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -1302,7 +1307,8 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net_n16_small
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    # fc_dnn , fc_dlgn , fc_dgn
+    model_arch_type = 'fc_dnn'
     is_save_video_data = False
     # If False, then on test
     is_act_collection_on_train = True
@@ -1325,16 +1331,49 @@ if __name__ == '__main__':
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE , ADV_VS_ORIG_REPORT , CLASS_WISE_REPORT
-    scheme_type = "GENERATE_MERGE_AND_SAVE"
+    scheme_type = "CLASS_WISE_REPORT"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
     merge_scheme_type = "OVER_ORIGINAL_VS_ADVERSARIAL"
 
+    # None means that train on all classes
+    list_of_classes_to_train_on = None
+    list_of_classes_to_train_on = [3, 8]
+
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
+    ret_config.list_of_classes = list_of_classes_to_train_on
     trainloader, _, testloader = preprocess_dataset_get_data_loader(
         ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
+
+    dataset_str = dataset
+
+    list_of_classes_to_train_on_str = ""
+    if(list_of_classes_to_train_on is not None):
+        for each_class_to_train_on in list_of_classes_to_train_on:
+            list_of_classes_to_train_on_str += \
+                str(each_class_to_train_on)+"_"
+        dataset_str += "_"+str(list_of_classes_to_train_on_str)
+        list_of_classes_to_train_on_str = "TR_ON_" + \
+            list_of_classes_to_train_on_str[0:-1]
+        num_classes = len(list_of_classes_to_train_on)
+        temp_classes = []
+        for ea_c in list_of_classes_to_train_on:
+            temp_classes.append(classes[ea_c])
+        classes = temp_classes
+
+    model_arch_type_str = model_arch_type
+    if("masked" in model_arch_type):
+        mask_percentage = 90
+        model_arch_type_str = model_arch_type_str + \
+            "_PRC_"+str(mask_percentage)
+    elif("fc" in model_arch_type):
+        fc_width = 128
+        fc_depth = 4
+        nodes_in_each_layer_list = [fc_width] * fc_depth
+        model_arch_type_str = model_arch_type_str + \
+            "_W_"+str(fc_width)+"_D_"+str(fc_depth)
 
     class_combination_tuple_list = None
     class_combination_tuple_list = [
@@ -1585,11 +1624,11 @@ if __name__ == '__main__':
         eps_step_size = 0.01
         adv_target = None
         class_ind_visualize = None
-        is_save_graph_visualizations = True
+        is_save_graph_visualizations = False
         current_it_start = 1
         models_base_path = None
-        std_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
-        adv_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+        std_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir.pt"
+        adv_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
         tmp_image_over_what_str = 'test'
         if(is_act_collection_on_train):
@@ -1599,11 +1638,24 @@ if __name__ == '__main__':
         if(is_class_segregation_on_ground_truth):
             seg_over_what_str = 'GT'
 
-        first_prefix = std_model_path[0:std_model_path.rfind("/")+1]
+        if('CLEAN' in std_model_path):
+            first_prefix = std_model_path[0:std_model_path.rfind(
+                ".pt")]
+        else:
+            first_prefix = std_model_path[0:std_model_path.rfind(
+                "/")+1]
+
         final_postfix_for_save = "/{}/EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
             first_prefix, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size)
-        prefix = adv_model_path[0:adv_model_path.rfind("/")+1]
-        image_save_prefix_folder = str(prefix)+"/RAW_ACT_ANALYSIS/CLASS_PAIRWISE_REPORT/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+
+        if('CLEAN' in adv_model_path):
+            prefix = adv_model_path[0:adv_model_path.rfind(
+                ".pt")]
+        else:
+            prefix = adv_model_path[0:adv_model_path.rfind(
+                "/")+1]
+
+        image_save_prefix_folder = str(prefix)+"/RAW_ACT_ANALYSIS/CLASS_PAIRWISE_REPORT/"+str(dataset_str)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
             seg_over_what_str)+"/TMP_COLL_BS_"+str(activation_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/_torch_seed_"+str(torch_seed)+"/" + str(final_postfix_for_save) + "/"
 
         if not os.path.exists(image_save_prefix_folder):
@@ -1698,11 +1750,11 @@ if __name__ == '__main__':
         eps_step_size = 0.01
         adv_target = None
         class_ind_visualize = None
-        is_save_graph_visualizations = True
+        is_save_graph_visualizations = False
         current_it_start = 1
         models_base_path = None
-        std_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
-        adv_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+        std_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir.pt"
+        adv_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
         tmp_image_over_what_str = 'test'
         if(is_act_collection_on_train):
@@ -1712,11 +1764,22 @@ if __name__ == '__main__':
         if(is_class_segregation_on_ground_truth):
             seg_over_what_str = 'GT'
 
-        first_prefix = std_model_path[0:std_model_path.rfind("/")+1]
+        if('CLEAN' in std_model_path):
+            first_prefix = std_model_path[0:std_model_path.rfind(
+                ".pt")]
+        else:
+            first_prefix = std_model_path[0:std_model_path.rfind(
+                "/")+1]
         final_postfix_for_save = "/{}/EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
             first_prefix, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size)
-        prefix = adv_model_path[0:adv_model_path.rfind("/")+1]
-        image_save_prefix_folder = str(prefix)+"/RAW_ACT_ANALYSIS/ADV_VS_ORIG_REPORT/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+
+        if('CLEAN' in adv_model_path):
+            prefix = adv_model_path[0:adv_model_path.rfind(
+                ".pt")]
+        else:
+            prefix = adv_model_path[0:adv_model_path.rfind(
+                "/")+1]
+        image_save_prefix_folder = str(prefix)+"/RAW_ACT_ANALYSIS/ADV_VS_ORIG_REPORT/"+str(dataset_str)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
             seg_over_what_str)+"/TMP_COLL_BS_"+str(activation_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/_torch_seed_"+str(torch_seed)+"/" + str(final_postfix_for_save) + "/"
 
         if not os.path.exists(image_save_prefix_folder):
@@ -1762,7 +1825,7 @@ if __name__ == '__main__':
                 models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=std_model_path)
             orig_ex_stats = np.array(generate_all_class_stats(
                 list_of_list_of_act_analyser_orig[0]))
-            is_save_graph_visualizations = True
+            is_save_graph_visualizations = False
             list_of_merged_act1_act2 = diff_merge_two_activation_analysis(
                 merge_type, list_of_list_of_act_analyser_adv[0], list_of_list_of_act_analyser_orig[0], wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
             std_model_adv_vs_orig_ex_stats = np.array(generate_all_class_stats(
@@ -1783,7 +1846,7 @@ if __name__ == '__main__':
                 models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=adv_model_path)
             orig_ex_stats = np.array(generate_all_class_stats(
                 list_of_list_of_act_analyser_orig[0]))
-            is_save_graph_visualizations = True
+            is_save_graph_visualizations = False
             list_of_merged_act1_act2 = diff_merge_two_activation_analysis(
                 merge_type, list_of_list_of_act_analyser_adv[0], list_of_list_of_act_analyser_orig[0], wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
             adv_model_adv_vs_orig_ex_stats = np.array(generate_all_class_stats(
@@ -1816,5 +1879,6 @@ if __name__ == '__main__':
               np.array(all_model_adv_vs_orig_ex_stats).shape)
         generate_all_classes_only_diff_excel_report(
             only_diff_xls_save_location, all_model_adv_vs_orig_ex_stats)
+        print("xls_save_location", xls_save_location)
 
     print("Finished execution!!!")
