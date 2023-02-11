@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from structure.fc_models import DLGN_FC_Network, DNN_FC_Network,DGN_FC_Network
+from structure.fc_models import DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network
+from utils.visualise_utils import determine_row_col_from_features
+from sklearn.decomposition import PCA
 
 
 def replace_percent_of_values(inp_np, const_value, percentage):
@@ -23,10 +25,53 @@ def replace_percent_of_values_with_exact_percentages(inp_np, const_value, percen
     return ret
 
 
+class CONV_PCA_Layer(nn.Module):
+    def __init__(self, input_channel, data, explained_var_required):
+        super(CONV_PCA_Layer, self).__init__()
+        self.input_channel = input_channel
+        device = torch.device(
+            "cuda:0" if torch.cuda.is_available() else "cpu")
+        if(isinstance(data, torch.Tensor)):
+            flattened_data = torch.flatten(data, 1)
+        else:
+            flattened_data = data.reshape(
+                data.shape[0], data.shape[1]*data.shape[2])
+        pca = PCA().fit(flattened_data)
+        k = 0
+        current_variance = 0
+        while(current_variance < explained_var_required):
+            current_variance = sum(pca.explained_variance_ratio_[:k])
+            k = k + 1
+
+        print("Number of PCA components used is:", k)
+        self.k = k
+        self.k_pca = PCA(n_components=k)
+        self.k_pca.fit(flattened_data)
+
+        d1, d2 = determine_row_col_from_features(self.k)
+        self.input_size_list = [d1, d2]
+
+        pc_mean = torch.from_numpy(self.k_pca.mean_)
+        self.pc_mean = pc_mean.to(device)
+        pc_comp = torch.from_numpy(self.k_pca.components_.T)
+        self.pc_comp = pc_comp.to(device)
+
+    def forward(self, inp):
+        temp_size = inp.size()
+        inp = torch.flatten(inp, 1)
+        m_data = inp - self.pc_mean
+        inp = torch.matmul(m_data, self.pc_comp).type(torch.float32)
+        inp = torch.reshape(
+            inp, (temp_size[0], self.input_channel, self.input_size_list[0], self.input_size_list[1]))
+
+        return inp
+
+
 class Mask_Conv4_DLGN_Net(nn.Module):
     def __init__(self, input_channel, random_inp_percent=40, beta=4, seed=2022, num_classes=10):
         super().__init__()
         torch.manual_seed(seed)
+        self.input_channel = input_channel
         self.beta = beta
         self.seed = seed
         self.random_inp_percent = random_inp_percent
@@ -43,9 +88,21 @@ class Mask_Conv4_DLGN_Net(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(128, num_classes)
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
     def forward(self, inp):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
+
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
         if(self.prev_inp_size is None or self.prev_inp_size != inp.size()):
             self.prev_inp_size = inp.size()
             np.random.seed(self.seed)
@@ -141,6 +198,7 @@ class Mask_Conv4_DLGN_Net_N16_Small(nn.Module):
         self.seed = seed
         self.random_inp_percent = random_inp_percent
         self.prev_inp_size = None
+        self.input_channel = input_channel
 
         self.conv1_g = nn.Conv2d(input_channel, 16, 3, padding=1)
         self.conv2_g = nn.Conv2d(16, 16, 3, padding=1)
@@ -153,9 +211,21 @@ class Mask_Conv4_DLGN_Net_N16_Small(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(16, num_classes)
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
     def forward(self, inp):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
+
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
         if(self.prev_inp_size is None or self.prev_inp_size != inp.size()):
             self.prev_inp_size = inp.size()
             np.random.seed(self.seed)
@@ -247,6 +317,7 @@ class Plain_CONV4_Net(nn.Module):
     def __init__(self, input_channel, seed=2022, num_classes=10):
         super().__init__()
         torch.manual_seed(seed)
+        self.input_channel = input_channel
         self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
         self.conv2_g = nn.Conv2d(128, 128, 3, padding=1)
         self.conv3_g = nn.Conv2d(128, 128, 3, padding=1)
@@ -257,7 +328,19 @@ class Plain_CONV4_Net(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(128, num_classes)
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
     def forward(self, inp):
+        device = torch.device(
+            "cuda:0" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -301,6 +384,7 @@ class Plain_CONV4_Net_N16_Small(nn.Module):
     def __init__(self, input_channel, seed=2022, num_classes=10):
         super().__init__()
         torch.manual_seed(seed)
+        self.input_channel = input_channel
         self.conv1_g = nn.Conv2d(input_channel, 16, 3, padding=1)
         self.conv2_g = nn.Conv2d(16, 16, 3, padding=1)
         self.conv3_g = nn.Conv2d(16, 16, 3, padding=1)
@@ -311,7 +395,19 @@ class Plain_CONV4_Net_N16_Small(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(16, num_classes)
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
     def forward(self, inp):
+        device = torch.device(
+            "cuda:0" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -355,6 +451,7 @@ class Conv4_DLGN_Net(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         torch.manual_seed(seed)
+        self.input_channel = input_channel
         self.beta = beta
 
         self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
@@ -368,9 +465,20 @@ class Conv4_DLGN_Net(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(128, num_classes)
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
     def forward(self, inp):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         conv_outs.append(x_g1)
@@ -431,6 +539,7 @@ class Conv4_DeepGated_Net(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
+        self.input_channel = input_channel
         torch.manual_seed(seed)
 
         self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
@@ -444,9 +553,21 @@ class Conv4_DeepGated_Net(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(128, num_classes)
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
     def forward(self, inp):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
+
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         g1 = nn.Sigmoid()(self.beta * x_g1)
@@ -513,6 +634,7 @@ class Conv4_DeepGated_Net_N16_Small(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
+        self.input_channel = input_channel
         torch.manual_seed(seed)
 
         self.conv1_g = nn.Conv2d(input_channel, 16, 3, padding=1)
@@ -526,9 +648,21 @@ class Conv4_DeepGated_Net_N16_Small(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(16, num_classes)
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
     def forward(self, inp):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
+
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         g1 = nn.Sigmoid()(self.beta * x_g1)
@@ -853,6 +987,7 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         self.beta = beta
+        self.input_channel = input_channel
         torch.manual_seed(seed)
 
         self.conv1_g = nn.Conv2d(input_channel, 16, 3, padding=1)
@@ -866,9 +1001,20 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(16, num_classes)
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
     def forward(self, inp):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         conv_outs.append(x_g1)

@@ -11,7 +11,6 @@ from sklearn.model_selection import train_test_split
 import torchvision.transforms as transforms
 from structure.generic_structure import CustomSimpleDataset, CustomMergedDataset
 import random
-from sklearn.decomposition import PCA
 
 
 def seed_worker(worker_id):
@@ -172,38 +171,6 @@ def segregate_classes(model, trainloader, testloader, num_classes, is_template_i
             input_data_list_per_class = test_predicted_input_data_list_per_class
 
     return input_data_list_per_class
-
-
-def get_PCA_object(data, explained_var_required):
-    if(isinstance(data, torch.Tensor)):
-        flattened_data = torch.flatten(data, 1)
-    else:
-        flattened_data = data.reshape(
-            data.shape[0], data.shape[1]*data.shape[2])
-    pca = PCA().fit(flattened_data)
-    k = 0
-    current_variance = 0
-    while(current_variance < explained_var_required):
-        current_variance = sum(pca.explained_variance_ratio_[:k])
-        k = k + 1
-
-    print("Number of PCA components used is:", k)
-    k_pca = PCA(n_components=k)
-    k_pca.fit(flattened_data)
-    return k_pca, k
-
-
-def do_PCA_transform(pca_obj, data):
-    device = torch.device(
-        "cuda:0" if torch.cuda.is_available() else "cpu")
-    pc_mean = torch.from_numpy(pca_obj.mean_)
-    pc_mean = pc_mean.to(device)
-    m_data = data - pc_mean
-    pc_comp = torch.from_numpy(pca_obj.components_.T)
-    pc_comp = pc_comp.to(device)
-    X_transformed = torch.matmul(
-        m_data, pc_comp)
-    return X_transformed
 
 
 def filter_dataset_to_contain_certain_classes(X, Y, list_of_classes):

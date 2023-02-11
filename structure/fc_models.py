@@ -1,8 +1,53 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from utils.data_preprocessing import get_PCA_object, do_PCA_transform
 from utils.visualise_utils import determine_row_col_from_features
+from sklearn.decomposition import PCA
+
+
+class PCA_Layer(nn.Module):
+    def __init__(self, data, explained_var_required):
+        super(PCA_Layer, self).__init__()
+        device = torch.device(
+            "cuda:0" if torch.cuda.is_available() else "cpu")
+        if(isinstance(data, torch.Tensor)):
+            flattened_data = torch.flatten(data, 1)
+        else:
+            flattened_data = data.reshape(
+                data.shape[0], data.shape[1]*data.shape[2])
+        pca = PCA().fit(flattened_data)
+        k = 0
+        current_variance = 0
+        while(current_variance < explained_var_required):
+            current_variance = sum(pca.explained_variance_ratio_[:k])
+            k = k + 1
+
+        print("Number of PCA components used is:", k)
+        self.k = k
+        self.k_pca = PCA(n_components=k)
+        self.k_pca.fit(flattened_data)
+
+        d1, d2 = determine_row_col_from_features(self.k)
+        self.input_size_list = [d1, d2]
+
+        pc_mean = torch.from_numpy(self.k_pca.mean_)
+        self.pc_mean = pc_mean.to(device)
+        pc_comp = torch.from_numpy(self.k_pca.components_.T)
+        self.pc_comp = pc_comp.to(device)
+
+    def forward(self, inp):
+        temp_size = inp.size()
+        inp = torch.flatten(inp, 1)
+        m_data = inp - self.pc_mean
+        inp = torch.matmul(m_data, self.pc_comp).type(torch.float32)
+        if hasattr(super, 'input_channel'):
+            inp = torch.reshape(
+                inp, (temp_size[0], super.input_channel, self.input_size_list[0], self.input_size_list[1]))
+        else:
+            inp = torch.reshape(
+                inp, (temp_size[0], self.input_size_list[0], self.input_size_list[1]))
+
+        return inp
 
 
 class DLGN_FC_Network(nn.Module):
@@ -33,22 +78,18 @@ class DLGN_FC_Network(nn.Module):
               for p in self.value_network.parameters()))
 
     def initialize_PCA_transformation(self, data, explained_var_required):
-        self.k_pca, self.k = get_PCA_object(data, explained_var_required)
-        d1, d2 = determine_row_col_from_features(self.k)
+        self.pca_layer = PCA_Layer(data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
         self.input_size_list = [d1, d2]
         self.initialize_network()
-        return self.k
+        return self.pca_layer.k
 
     def forward(self, inp, verbose=2):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
 
-        if hasattr(self, 'k_pca'):
-            temp_size = inp.size()
-            inp = do_PCA_transform(
-                self.k_pca, torch.flatten(inp, 1)).type(torch.float32)
-            torch.reshape(
-                inp, (temp_size[0], self.input_size_list[0], self.input_size_list[1]))
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)
 
         inp_gating = torch.ones(inp.size(),
@@ -176,22 +217,18 @@ class DGN_FC_Network(nn.Module):
               for p in self.value_network.parameters()))
 
     def initialize_PCA_transformation(self, data, explained_var_required):
-        self.k_pca, self.k = get_PCA_object(data, explained_var_required)
-        d1, d2 = determine_row_col_from_features(self.k)
+        self.pca_layer = PCA_Layer(data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
         self.input_size_list = [d1, d2]
         self.initialize_network()
-        return self.k
+        return self.pca_layer.k
 
     def forward(self, inp, verbose=2):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
 
-        if hasattr(self, 'k_pca'):
-            temp_size = inp.size()
-            inp = do_PCA_transform(
-                self.k_pca, torch.flatten(inp, 1)).type(torch.float32)
-            torch.reshape(
-                inp, (temp_size[0], self.input_size_list[0], self.input_size_list[1]))
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)
 
         inp_gating = torch.ones(inp.size(),
@@ -268,7 +305,7 @@ class DNN_FC_Network(nn.Module):
         self.num_classes = num_classes
         self.input_size_list = input_size_list
         self.initialize_network()
-    
+
     def initialize_network(self):
         list_of_modules = []
         input_size = self.input_size_list[0]
@@ -288,21 +325,17 @@ class DNN_FC_Network(nn.Module):
         self.relu = nn.ReLU()
 
     def initialize_PCA_transformation(self, data, explained_var_required):
-        self.k_pca, self.k = get_PCA_object(data, explained_var_required)
-        d1, d2 = determine_row_col_from_features(self.k)
+        self.pca_layer = PCA_Layer(data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
         self.input_size_list = [d1, d2]
         self.initialize_network()
-        return self.k
+        return self.pca_layer.k
 
     def forward(self, inp, verbose=2):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
-        if hasattr(self, 'k_pca'):
-            temp_size = inp.size()
-            inp = do_PCA_transform(
-                self.k_pca, torch.flatten(inp, 1)).type(torch.float32)
-            torch.reshape(
-                inp, (temp_size[0], self.input_size_list[0], self.input_size_list[1]))
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)
         prev_out = torch.flatten(inp, 1)
         num_layers = len(self.list_of_modules)

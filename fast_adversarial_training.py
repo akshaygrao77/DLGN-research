@@ -10,7 +10,7 @@ import wandb
 import torch.backends.cudnn as cudnn
 
 from external_utils import format_time
-from utils.data_preprocessing import preprocess_dataset_get_data_loader
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from adversarial_attacks_tester import evaluate_model, evaluate_model_via_reconstructed, plain_evaluate_model_via_reconstructed
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'fc_dgn'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # batch_size = 128
     wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "common_model_init_exps"
@@ -178,7 +178,11 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3, 8]
+    # list_of_classes_to_train_on = [3, 8]
+
+    # Percentage of information retention during PCA (values between 0-1)
+    pca_exp_percent = None
+    pca_exp_percent = 0.95
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -255,14 +259,28 @@ if __name__ == '__main__':
             net = get_model_instance(model_arch_type, inp_channel,
                                      seed=torch_seed, num_classes=num_classes_trained_on)
 
+        if(pca_exp_percent is not None):
+            dataset_for_pca = generate_dataset_from_loader(trainloader)
+            if(isinstance(dataset_for_pca.list_of_x[0], torch.Tensor)):
+                dataset_for_pca = torch.stack(
+                    dataset_for_pca.list_of_x), torch.stack(dataset_for_pca.list_of_y)
+            else:
+                dataset_for_pca = np.array(dataset_for_pca.list_of_x), np.array(
+                    dataset_for_pca.list_of_y)
+            number_of_components_for_pca = net.initialize_PCA_transformation(
+                dataset_for_pca[0], pca_exp_percent)
+            model_arch_type_str = model_arch_type_str + \
+                "_PCA_K"+str(number_of_components_for_pca) + \
+                "_P_"+str(pca_exp_percent)
+
         start_net_path = None
 
-        # start_net_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir.pt"
         if(start_net_path is not None):
             custom_temp_model = torch.load(start_net_path)
             net.load_state_dict(custom_temp_model.state_dict())
             stop_at_adv_test_acc = None
-            stop_at_adv_test_acc = 70.9
+            stop_at_adv_test_acc = 97
 
         net = net.to(device)
 
@@ -320,6 +338,9 @@ if __name__ == '__main__':
                             wandb_config["eps_step_size"] = eps_step_size
                             wandb_config["model_save_path"] = model_save_path
                             wandb_config["start_net_path"] = start_net_path
+                            if(pca_exp_percent is not None):
+                                wandb_config["pca_exp_percent"] = pca_exp_percent
+                                wandb_config["num_comp_pca"] = number_of_components_for_pca
 
                             wandb.init(
                                 project=f"{wand_project_name}",
@@ -357,6 +378,9 @@ if __name__ == '__main__':
                             wandb_config["fast_adv_attack_type"] = fast_adv_attack_type
                             wandb_config["eps_step_size"] = eps_step_size
                             wandb_config["model_save_path"] = model_save_path
+                            if(pca_exp_percent is not None):
+                                wandb_config["pca_exp_percent"] = pca_exp_percent
+                                wandb_config["num_comp_pca"] = number_of_components_for_pca
 
                         if(is_log_wandb):
                             wandb_run_name = str(
@@ -400,6 +424,9 @@ if __name__ == '__main__':
                             wandb_config["fast_adv_attack_type"] = fast_adv_attack_type
                             wandb_config["eps_step_size"] = eps_step_size
                             wandb_config["model_save_path"] = model_save_path
+                            if(pca_exp_percent is not None):
+                                wandb_config["pca_exp_percent"] = pca_exp_percent
+                                wandb_config["num_comp_pca"] = number_of_components_for_pca
 
                         for is_template_image_on_train in [True]:
                             wandb_config["is_template_image_on_train"] = is_template_image_on_train
