@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 import torchvision.transforms as transforms
 from structure.generic_structure import CustomSimpleDataset, CustomMergedDataset
 import random
+from sklearn.decomposition import PCA
 
 
 def seed_worker(worker_id):
@@ -173,6 +174,38 @@ def segregate_classes(model, trainloader, testloader, num_classes, is_template_i
     return input_data_list_per_class
 
 
+def get_PCA_object(data, explained_var_required):
+    if(isinstance(data, torch.Tensor)):
+        flattened_data = torch.flatten(data, 1)
+    else:
+        flattened_data = data.reshape(
+            data.shape[0], data.shape[1]*data.shape[2])
+    pca = PCA().fit(flattened_data)
+    k = 0
+    current_variance = 0
+    while(current_variance < explained_var_required):
+        current_variance = sum(pca.explained_variance_ratio_[:k])
+        k = k + 1
+
+    print("Number of PCA components used is:", k)
+    k_pca = PCA(n_components=k)
+    k_pca.fit(flattened_data)
+    return k_pca, k
+
+
+def do_PCA_transform(pca_obj, data):
+    device = torch.device(
+        "cuda:0" if torch.cuda.is_available() else "cpu")
+    pc_mean = torch.from_numpy(pca_obj.mean_)
+    pc_mean = pc_mean.to(device)
+    m_data = data - pc_mean
+    pc_comp = torch.from_numpy(pca_obj.components_.T)
+    pc_comp = pc_comp.to(device)
+    X_transformed = torch.matmul(
+        m_data, pc_comp)
+    return X_transformed
+
+
 def filter_dataset_to_contain_certain_classes(X, Y, list_of_classes):
     list_of_classes.sort()
     value_ind_map = dict()
@@ -194,6 +227,36 @@ def filter_dataset_to_contain_certain_classes(X, Y, list_of_classes):
 
 def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):
     valid_data_loader = None
+    if(dataset_config.name == 'cifar10'):
+        trainset, val_set, testset = preprocess_dataset_get_dataset(
+            dataset_config, model_arch_type, verbose=verbose, dataset_folder=dataset_folder, is_split_validation=is_split_validation)
+
+        trainloader = torch.utils.data.DataLoader(trainset, batch_size=dataset_config.batch_size,
+                                                  shuffle=False, num_workers=2)
+        if(is_split_validation):
+            valid_data_loader = torch.utils.data.DataLoader(val_set, batch_size=dataset_config.batch_size,
+                                                            shuffle=False, num_workers=2)
+
+        testloader = torch.utils.data.DataLoader(testset, batch_size=dataset_config.batch_size,
+                                                 shuffle=False, num_workers=2)
+
+        return trainloader, valid_data_loader, testloader
+    elif(dataset_config.name == 'mnist' or dataset_config.name == 'fashion_mnist'):
+        filtered_X_train, filtered_y_train, X_valid, y_valid, filtered_X_test, filtered_y_test = preprocess_dataset_get_dataset(
+            dataset_config, model_arch_type, verbose=verbose, dataset_folder=dataset_folder, is_split_validation=is_split_validation)
+
+        train_data_loader = get_data_loader(
+            filtered_X_train, filtered_y_train, dataset_config.batch_size)
+        if(is_split_validation):
+            valid_data_loader = get_data_loader(
+                X_valid, y_valid, dataset_config.batch_size)
+        test_data_loader = get_data_loader(
+            filtered_X_test, filtered_y_test, dataset_config.batch_size)
+
+        return train_data_loader, valid_data_loader, test_data_loader
+
+
+def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):
     transform = None
     if(dataset_config.name == 'cifar10'):
         if(model_arch_type == 'cifar10_vgg_dlgn_16'):
@@ -304,7 +367,7 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             # transform = transforms.Compose([
             #     transforms.ToTensor()])
 
-        validloader = None
+        val_set = None
         if(transform is None):
             return None, None, None
         trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
@@ -313,20 +376,14 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             trainset, val_set = torch.utils.data.random_split(trainset, [math.ceil(
                 0.9 * len(trainset)), len(trainset) - (math.ceil(0.9 * len(trainset)))])
 
-        trainloader = torch.utils.data.DataLoader(trainset, batch_size=dataset_config.batch_size,
-                                                  shuffle=False, num_workers=2)
-        if(is_split_validation):
-            validloader = torch.utils.data.DataLoader(val_set, batch_size=dataset_config.batch_size,
-                                                      shuffle=False, num_workers=2)
-
         testset = torchvision.datasets.CIFAR10(root='./data', train=False,
                                                download=False, transform=transform)
 
-        testloader = torch.utils.data.DataLoader(testset, batch_size=dataset_config.batch_size,
-                                                 shuffle=False, num_workers=2)
+        return trainset, val_set, testset
 
-        return trainloader, validloader, testloader
     elif(dataset_config.name == 'mnist' or dataset_config.name == 'fashion_mnist'):
+        X_valid = None
+        y_valid = None
         if(dataset_config.name == 'mnist'):
             (X_train, y_train), (X_test, y_test) = mnist.load_data()
         elif(dataset_config.name == 'fashion_mnist'):
@@ -373,12 +430,4 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             filtered_X_train, X_valid, filtered_y_train, y_valid = train_test_split(
                 filtered_X_train, filtered_y_train, test_size=dataset_config.valid_split_size, random_state=42)
 
-        train_data_loader = get_data_loader(
-            filtered_X_train, filtered_y_train, dataset_config.batch_size)
-        if(is_split_validation):
-            valid_data_loader = get_data_loader(
-                X_valid, y_valid, dataset_config.batch_size)
-        test_data_loader = get_data_loader(
-            filtered_X_test, filtered_y_test, dataset_config.batch_size)
-
-        return train_data_loader, valid_data_loader, test_data_loader
+        return filtered_X_train, filtered_y_train, X_valid, y_valid, filtered_X_test, filtered_y_test

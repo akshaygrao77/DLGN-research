@@ -1,31 +1,55 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from utils.data_preprocessing import get_PCA_object, do_PCA_transform
+from utils.visualise_utils import determine_row_col_from_features
 
 
 class DLGN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, beta=4, input_size_list=[28, 28], seed=2022, num_classes=10):
         super(DLGN_FC_Network, self).__init__()
         torch.manual_seed(seed)
+        self.nodes_in_each_layer_list = nodes_in_each_layer_list
+        self.seed = seed
         self.beta = beta
-        input_size = input_size_list[0]
-        for ind in range(1, len(input_size_list)):
-            input_size *= input_size_list[ind]
+        self.num_classes = num_classes
+        self.input_size_list = input_size_list
+        self.initialize_network()
+
+    def initialize_network(self):
+        input_size = self.input_size_list[0]
+        for ind in range(1, len(self.input_size_list)):
+            input_size *= self.input_size_list[ind]
 
         self.gating_network = DLGN_FC_Gating_Network(
-            nodes_in_each_layer_list, input_size, seed=seed)
+            self.nodes_in_each_layer_list, input_size, seed=self.seed)
         print("self.gating_network", self.gating_network)
         print("Gating net params:", sum(p.numel()
               for p in self.gating_network.parameters()))
         self.value_network = ALLONES_FC_Value_Network(
-            nodes_in_each_layer_list, input_size, seed=seed, num_classes=num_classes)
+            self.nodes_in_each_layer_list, input_size, seed=self.seed, num_classes=self.num_classes)
         print("self.value_network", self.value_network)
         print("Value net params:", sum(p.numel()
               for p in self.value_network.parameters()))
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.k_pca, self.k = get_PCA_object(data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.k)
+        self.input_size_list = [d1, d2]
+        self.initialize_network()
+        return self.k
+
     def forward(self, inp, verbose=2):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
+
+        if hasattr(self, 'k_pca'):
+            temp_size = inp.size()
+            inp = do_PCA_transform(
+                self.k_pca, torch.flatten(inp, 1)).type(torch.float32)
+            torch.reshape(
+                inp, (temp_size[0], self.input_size_list[0], self.input_size_list[1]))
+            inp = inp.to(device=device, non_blocking=True)
 
         inp_gating = torch.ones(inp.size(),
                                 requires_grad=True, device=device)
@@ -49,7 +73,7 @@ class DLGN_FC_Network(nn.Module):
             inp_gating, self.gating_node_outputs, verbose=verbose)
 
         return final_layer_out
-    
+
     def get_layer_object(self, network_type, layer_num):
         if(network_type == "GATE_NET"):
             return self.gating_network.list_of_modules[layer_num]
@@ -128,25 +152,47 @@ class DGN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, beta=4, input_size_list=[28, 28], seed=2022, num_classes=10):
         super(DGN_FC_Network, self).__init__()
         torch.manual_seed(seed)
+        self.nodes_in_each_layer_list = nodes_in_each_layer_list
+        self.seed = seed
         self.beta = beta
-        input_size = input_size_list[0]
-        for ind in range(1, len(input_size_list)):
-            input_size *= input_size_list[ind]
+        self.num_classes = num_classes
+        self.input_size_list = input_size_list
+        self.initialize_network()
+
+    def initialize_network(self):
+        input_size = self.input_size_list[0]
+        for ind in range(1, len(self.input_size_list)):
+            input_size *= self.input_size_list[ind]
 
         self.gating_network = DGN_FC_Gating_Network(
-            nodes_in_each_layer_list, input_size, seed=seed)
+            self.nodes_in_each_layer_list, input_size, seed=self.seed)
         print("self.gating_network", self.gating_network)
         print("Gating net params:", sum(p.numel()
               for p in self.gating_network.parameters()))
         self.value_network = ALLONES_FC_Value_Network(
-            nodes_in_each_layer_list, input_size, seed=seed, num_classes=num_classes)
+            self.nodes_in_each_layer_list, input_size, seed=self.seed, num_classes=self.num_classes)
         print("self.value_network", self.value_network)
         print("Value net params:", sum(p.numel()
               for p in self.value_network.parameters()))
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.k_pca, self.k = get_PCA_object(data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.k)
+        self.input_size_list = [d1, d2]
+        self.initialize_network()
+        return self.k
+
     def forward(self, inp, verbose=2):
         device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
+
+        if hasattr(self, 'k_pca'):
+            temp_size = inp.size()
+            inp = do_PCA_transform(
+                self.k_pca, torch.flatten(inp, 1)).type(torch.float32)
+            torch.reshape(
+                inp, (temp_size[0], self.input_size_list[0], self.input_size_list[1]))
+            inp = inp.to(device=device, non_blocking=True)
 
         inp_gating = torch.ones(inp.size(),
                                 requires_grad=True, device=device)
@@ -217,25 +263,47 @@ class DNN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, input_size_list=[28, 28], seed=2022, num_classes=10):
         super(DNN_FC_Network, self).__init__()
         torch.manual_seed(seed)
+        self.nodes_in_each_layer_list = nodes_in_each_layer_list
+        self.seed = seed
+        self.num_classes = num_classes
+        self.input_size_list = input_size_list
+        self.initialize_network()
+    
+    def initialize_network(self):
         list_of_modules = []
-
-        input_size = input_size_list[0]
-        for ind in range(1, len(input_size_list)):
-            input_size *= input_size_list[ind]
+        input_size = self.input_size_list[0]
+        for ind in range(1, len(self.input_size_list)):
+            input_size *= self.input_size_list[ind]
 
         previous_layer_size = input_size
-        for indx in range(len(nodes_in_each_layer_list)):
-            each_current_layer_size = nodes_in_each_layer_list[indx]
+        for indx in range(len(self.nodes_in_each_layer_list)):
+            each_current_layer_size = self.nodes_in_each_layer_list[indx]
             list_of_modules.append(nn.Linear(
                 previous_layer_size, each_current_layer_size))
             previous_layer_size = each_current_layer_size
 
         self.list_of_modules = nn.ModuleList(list_of_modules)
         self.output_layer = nn.Linear(
-            previous_layer_size, num_classes)
+            previous_layer_size, self.num_classes)
         self.relu = nn.ReLU()
 
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.k_pca, self.k = get_PCA_object(data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.k)
+        self.input_size_list = [d1, d2]
+        self.initialize_network()
+        return self.k
+
     def forward(self, inp, verbose=2):
+        device = torch.device(
+            "cuda:0" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'k_pca'):
+            temp_size = inp.size()
+            inp = do_PCA_transform(
+                self.k_pca, torch.flatten(inp, 1)).type(torch.float32)
+            torch.reshape(
+                inp, (temp_size[0], self.input_size_list[0], self.input_size_list[1]))
+            inp = inp.to(device=device, non_blocking=True)
         prev_out = torch.flatten(inp, 1)
         num_layers = len(self.list_of_modules)
         layer_outs = []

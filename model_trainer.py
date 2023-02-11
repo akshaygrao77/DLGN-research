@@ -10,7 +10,7 @@ import wandb
 import torch.backends.cudnn as cudnn
 
 from external_utils import format_time
-from utils.data_preprocessing import preprocess_dataset_get_data_loader
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
 from conv4_models import get_model_instance, get_model_save_path, get_model_instance_from_dataset
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'fc_dlgn'
+    model_arch_type = 'fc_dnn'
     # iterative_augmenting , nil
     scheme_type = 'nil'
     # scheme_type = ''
@@ -178,6 +178,10 @@ if __name__ == '__main__':
     wand_project_name = "common_model_init_exps"
     # wand_project_name = "V2_template_visualisation_augmentation"
 
+    # Percentage of information retention during PCA (values between 0-1)
+    pca_exp_percent = None
+    pca_exp_percent = 0.95
+
     # None means that train on all classes
     list_of_classes_to_train_on = None
     # list_of_classes_to_train_on = [3, 8]
@@ -188,22 +192,22 @@ if __name__ == '__main__':
                    'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
         num_classes = len(classes)
 
-        cifar10_config = DatasetConfig(
+        data_config = DatasetConfig(
             'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
-            cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+            data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     elif(dataset == "mnist"):
         inp_channel = 1
         classes = [str(i) for i in range(0, 10)]
         num_classes = len(classes)
 
-        mnist_config = DatasetConfig(
+        data_config = DatasetConfig(
             'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
-            mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+            data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     elif(dataset == "fashion_mnist"):
         inp_channel = 1
@@ -211,11 +215,11 @@ if __name__ == '__main__':
                    'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle-boot')
         num_classes = len(classes)
 
-        fashion_mnist_config = DatasetConfig(
+        data_config = DatasetConfig(
             'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
-            fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+            data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     print("Training over "+dataset)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -254,6 +258,20 @@ if __name__ == '__main__':
     else:
         net = get_model_instance(model_arch_type, inp_channel,
                                  seed=torch_seed, num_classes=num_classes_trained_on)
+
+    if(pca_exp_percent is not None):
+        dataset_for_pca = generate_dataset_from_loader(trainloader)
+        if(isinstance(dataset_for_pca.list_of_x[0], torch.Tensor)):
+            dataset_for_pca = torch.stack(
+                dataset_for_pca.list_of_x), torch.stack(dataset_for_pca.list_of_y)
+        else:
+            dataset_for_pca = np.array(dataset_for_pca.list_of_x), np.array(
+                dataset_for_pca.list_of_y)
+        number_of_components_for_pca = net.initialize_PCA_transformation(
+            dataset_for_pca[0], pca_exp_percent)
+        model_arch_type_str = model_arch_type_str + \
+            "_PCA_K"+str(number_of_components_for_pca) + \
+            "_P_"+str(pca_exp_percent)
 
     final_model_save_path = get_model_save_path(
         model_arch_type_str, dataset, torch_seed, list_of_classes_to_train_on_str)
@@ -383,6 +401,9 @@ if __name__ == '__main__':
                                                     collect_threshold=collect_threshold, number_of_batch_to_collect=number_of_batch_to_collect)
                     wandb_config["current_aug_iter_num"] = current_aug_iter_num
                     wandb_config["epochs"] = current_epoch
+                    if(pca_exp_percent is not None):
+                        wandb_config["pca_exp_percent"] = pca_exp_percent
+                        wandb_config["num_comp_pca"] = number_of_components_for_pca
                     wandb.init(
                         project=f"{wand_project_name}",
                         name=f"{wandb_run_name}",
@@ -530,6 +551,9 @@ if __name__ == '__main__':
             wandb_config["criterion"] = criterion
             wandb_config["lr"] = lr
             wandb_config["batch_size"] = batch_size
+            if(pca_exp_percent is not None):
+                wandb_config["pca_exp_percent"] = pca_exp_percent
+                wandb_config["num_comp_pca"] = number_of_components_for_pca
 
             wandb.init(
                 project=f"{wand_project_name}",
