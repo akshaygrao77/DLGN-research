@@ -10,7 +10,7 @@ import wandb
 import torch.backends.cudnn as cudnn
 
 from external_utils import format_time
-from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_merged_dataset_from_two_loader
+from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_merged_dataset_from_two_loader, generate_dataset_from_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 
 from visualization import recreate_image, save_image,  PerClassDataset, TemplateImageGenerator, seed_worker, quick_visualization_on_config
@@ -583,7 +583,7 @@ if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'fc_dnn'
+    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -592,10 +592,14 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [4, 9]
+    # list_of_classes_to_train_on = [4, 9]
+
+    # Percentage of information retention during PCA (values between 0-1)
+    pca_exp_percent = None
+    pca_exp_percent = 0.95
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_4_9/ST_2022/fc_dnn_W_128_D_4_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_dnn_W_128_D_4_PCA_K155_P_0.95_dir.pt"
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -671,6 +675,20 @@ if __name__ == '__main__':
         net = get_model_instance(model_arch_type, inp_channel,
                                  seed=torch_seed, num_classes=num_classes_trained_on)
 
+    if(pca_exp_percent is not None):
+        dataset_for_pca = generate_dataset_from_loader(trainloader)
+        if(isinstance(dataset_for_pca.list_of_x[0], torch.Tensor)):
+            dataset_for_pca = torch.stack(
+                dataset_for_pca.list_of_x), torch.stack(dataset_for_pca.list_of_y)
+        else:
+            dataset_for_pca = np.array(dataset_for_pca.list_of_x), np.array(
+                dataset_for_pca.list_of_y)
+        number_of_components_for_pca = net.initialize_PCA_transformation(
+            dataset_for_pca[0], pca_exp_percent)
+        model_arch_type_str = model_arch_type_str + \
+            "_PCA_K"+str(number_of_components_for_pca) + \
+            "_P_"+str(pca_exp_percent)
+
     if(scheme_type == 'iterative_augmented_model_attack'):
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "adv_attack_for_active_pixels_on_reconst_augmentation"
@@ -685,7 +703,7 @@ if __name__ == '__main__':
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST , ADV_ATTACK_PER_CLASS
         exp_type = "ADV_ATTACK_PER_CLASS"
-        is_adv_attack_on_train = True
+        is_adv_attack_on_train = False
         eps_step_size = 0.01
 
         model_and_data_save_prefix = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/"
@@ -751,14 +769,17 @@ if __name__ == '__main__':
                 save_folder = model_and_data_save_prefix + final_postfix_for_save
                 if(exp_type == "ADV_ATTACK"):
                     wandb_group_name = "DS_"+str(dataset_str) + \
-                        "_adv_attack_over_aug_"+str(model_arch_type)
+                        "_adv_attack_over_aug_"+str(model_arch_type_str)
 
                     if(is_log_wandb):
                         wandb_run_name = str(
-                            model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
-                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset_str, is_adv_attack_on_train,
+                            model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
                                                         eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
                         wandb_config["aug_iter_num"] = current_aug_iter_num
+                        if(pca_exp_percent is not None):
+                            wandb_config["pca_exp_percent"] = pca_exp_percent
+                            wandb_config["num_comp_pca"] = number_of_components_for_pca
                         wandb.init(
                             project=f"{wand_project_name}",
                             name=f"{wandb_run_name}",
@@ -851,16 +872,19 @@ if __name__ == '__main__':
                         per_class_tobe_analysed_dataset = PerClassDataset(
                             true_tobe_analysed_dataset_per_class[c_indx], c_indx)
                         wandb_group_name = "DS_"+str(dataset_str) + \
-                            "_adv_attack_over_aug_"+str(model_arch_type)
+                            "_adv_attack_over_aug_"+str(model_arch_type_str)
 
                         if(is_log_wandb):
                             wandb_run_name = str(
-                                model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
-                            wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset_str, is_adv_attack_on_train,
+                                model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                            wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
                                                             eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
                             wandb_config["aug_iter_num"] = current_aug_iter_num
                             wandb_config["class_label"] = class_label
                             wandb_config["c_indx"] = c_indx
+                            if(pca_exp_percent is not None):
+                                wandb_config["pca_exp_percent"] = pca_exp_percent
+                                wandb_config["num_comp_pca"] = number_of_components_for_pca
                             wandb.init(
                                 project=f"{wand_project_name}",
                                 name=f"{wandb_run_name}",
@@ -899,20 +923,23 @@ if __name__ == '__main__':
                             wandb.finish()
                 elif(exp_type == "ADV_ATTACK_EVAL_VIA_RECONST"):
                     wandb_group_name = "DS_"+str(dataset_str) + \
-                        "_adv_attack_over_aug_"+str(model_arch_type)
+                        "_adv_attack_over_aug_"+str(model_arch_type_str)
                     number_of_image_optimization_steps = 141
                     template_initial_image_type = 'zero_init_image'
                     template_loss_type = "TEMP_LOSS"
 
                     if(is_log_wandb):
                         wandb_run_name = str(
-                            model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
-                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset_str, is_adv_attack_on_train,
+                            model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                        wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
                                                         eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
                         wandb_config["aug_iter_num"] = current_aug_iter_num
                         wandb_config["number_of_image_optimization_steps"] = number_of_image_optimization_steps
                         wandb_config["template_initial_image_type"] = template_initial_image_type
                         wandb_config["template_loss_type"] = template_loss_type
+                        if(pca_exp_percent is not None):
+                            wandb_config["pca_exp_percent"] = pca_exp_percent
+                            wandb_config["num_comp_pca"] = number_of_components_for_pca
                         wandb.init(
                             project=f"{wand_project_name}",
                             name=f"{wandb_run_name}",
@@ -962,10 +989,10 @@ if __name__ == '__main__':
                     torch_seed = 2022
 
                     wandb_group_name = "DS_"+str(dataset_str) + "_EXP_"+str(exp_type) +\
-                        "_adv_attack_over_aug_"+str(model_arch_type)
+                        "_adv_attack_over_aug_"+str(model_arch_type_str)
                     wandb_run_name = str(
-                        model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
-                    wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset_str, is_adv_attack_on_train,
+                        model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                    wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
                                                     eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
                     wandb_config["template_image_calculation_batch_size"] = template_image_calculation_batch_size
                     wandb_config["number_of_batch_to_collect"] = number_of_batch_to_collect
@@ -987,12 +1014,12 @@ if __name__ == '__main__':
                     torch_seed = 2022
 
                     wandb_group_name = "DS_"+str(dataset_str) + "_EXP_"+str(exp_type) +\
-                        "_adv_attack_over_aug_"+str(model_arch_type)
+                        "_adv_attack_over_aug_"+str(model_arch_type_str)
                     wandb_run_name = str(
-                        model_arch_type)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                        model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
                     wandb_config = dict()
                     wandb_config["exp_type"] = exp_type
-                    wandb_config["model_arch_type"] = model_arch_type
+                    wandb_config["model_arch_type"] = model_arch_type_str
                     wandb_config["dataset"] = dataset_str
                     wandb_config["template_image_calculation_batch_size"] = template_image_calculation_batch_size
                     wandb_config["number_of_batch_to_collect"] = number_of_batch_to_collect
