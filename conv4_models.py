@@ -4,6 +4,8 @@ import numpy as np
 from structure.fc_models import DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network
 from utils.visualise_utils import determine_row_col_from_features
 from sklearn.decomposition import PCA
+from collections import OrderedDict
+import torchvision.models as models
 
 
 def replace_percent_of_values(inp_np, const_value, percentage):
@@ -23,6 +25,14 @@ def replace_percent_of_values_with_exact_percentages(inp_np, const_value, percen
     npr = npr.reshape(inp_np.shape)
     ret = np.where(npr >= percentage, inp_np, const_value)
     return ret
+
+
+def convert_relu_to_identity(model):
+    for child_name, child in model.named_children():
+        if isinstance(child, nn.ReLU):
+            setattr(model, child_name, nn.Identity())
+        else:
+            convert_relu_to_identity(child)
 
 
 class CONV_PCA_Layer(nn.Module):
@@ -1071,6 +1081,199 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
                 return self.fc1
 
 
+class ResNet_DLGN(nn.Module):
+    def __init__(self, resnet_type, input_channel, beta=4, seed=2022, num_classes=1000):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.num_classes = num_classes
+        self.resnet_type = resnet_type
+        self.input_channel = input_channel
+        self.beta = beta
+        self.seed = seed
+
+        self.initialize_network()
+
+    def initialize_network(self):
+        self.gating_network = ResNet_Gating_Network(
+            self.resnet_type, self.input_channel, seed=self.seed)
+        print("self.gating_network", self.gating_network)
+        print("Gating net params:", sum(p.numel()
+              for p in self.gating_network.parameters()))
+        self.value_network = ALLONES_ResNet_Value_Network(
+            self.resnet_type, self.input_channel, seed=self.seed, num_classes=self.num_classes)
+        print("self.value_network", self.value_network)
+        print("Value net params:", sum(p.numel()
+              for p in self.value_network.parameters()))
+
+    def initialize_hooks(self):
+        self.gating_network.initialize_hooks()
+        self.value_network.initialize_hooks()
+
+    def clear_hooks(self):
+        self.gating_network.clear_hooks()
+        self.value_network.clear_hooks()
+
+    def forward(self, inp, verbose=2):
+        device = torch.device(
+            "cuda:0" if torch.cuda.is_available() else "cpu")
+
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
+        inp_gating = torch.ones(inp.size(),
+                                requires_grad=True, device=device)
+
+        before_relu_outputs, _ = self.gating_network(inp, verbose=verbose)
+
+        self.gating_node_outputs = OrderedDict()
+
+        if(verbose > 3):
+            print("before_relu_outputs keys")
+
+        for key, value in before_relu_outputs.items():
+            if(verbose > 3):
+                print("key:{},value:{}".format(key, value.size()))
+
+            self.gating_node_outputs[key] = nn.Sigmoid()(
+                self.beta * value)
+
+        if(verbose > 3):
+            print("gating_node_outputs keys")
+            for key, value in self.gating_node_outputs.items():
+                print("key:{},value:{}".format(key, value.size()))
+
+        final_layer_out = self.value_network(
+            inp_gating, self.gating_node_outputs, verbose=verbose)
+
+        return final_layer_out
+
+
+class ResNet_Gating_Network(nn.Module):
+    def __init__(self, resnet_type, input_channel, seed=2022):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.resnet_type = resnet_type
+        self.input_channel = input_channel
+
+        self.initialize_network()
+
+    def initialize_network(self):
+        self.f_id_hooks = []
+        self.list_of_modules = []
+        # Extracts the resnet type between "__"
+        resnet_arch_type = self.resnet_type[self.resnet_type.index(
+            "__")+2:self.resnet_type.rindex("__")]
+        # Load the resnet model architecture
+        self.resnet_instance = models.__dict__[resnet_arch_type]()
+        # Replace relu activations with Identity functions
+        convert_relu_to_identity(self.resnet_instance)
+
+        self.list_of_modules.append(self.resnet_instance)
+
+        self.list_of_modules = nn.ModuleList(self.list_of_modules)
+        self.initialize_hooks()
+
+    def initialize_hooks(self):
+        self.clear_hooks()
+        self.layer_outs = OrderedDict()
+        prev_layer = None
+        # Capture outputs of Identity module (earlier input to Relu module)
+        for i, (name, layer) in enumerate(self.resnet_instance.named_modules()):
+            if isinstance(layer, nn.Identity):
+                self.f_id_hooks.append(prev_layer.register_forward_hook(
+                    self.forward_identity_hook(name)))
+            prev_layer = layer
+
+    def forward_identity_hook(self, layer_name):
+        def hook(module, input, output):
+            self.layer_outs[layer_name] = output
+        return hook
+
+    def forward(self, inp, verbose=2):
+        prev_out = inp
+        for each_module in self.list_of_modules:
+            prev_out = each_module(prev_out)
+
+        return self.layer_outs, prev_out
+
+    def clear_hooks(self):
+        for each_hook in self.f_id_hooks:
+            each_hook.remove()
+        self.f_id_hooks = []
+
+    def __str__(self):
+        ret = "Gate network "+" \n module_list:"
+        for each_module in self.list_of_modules:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+
+        return ret
+
+
+class ALLONES_ResNet_Value_Network(nn.Module):
+    def __init__(self, resnet_type, input_channel, seed=2022, num_classes=1000):
+        super(ALLONES_ResNet_Value_Network, self).__init__()
+        torch.manual_seed(seed)
+        self.list_of_modules = []
+        self.f_relu_hooks = []
+        self.resnet_type = resnet_type
+        # Extracts the resnet type between "__"
+        resnet_arch_type = self.resnet_type[self.resnet_type.index(
+            "__")+2:self.resnet_type.rindex("__")]
+        # Load the resnet model architecture
+        self.resnet_instance = models.__dict__[resnet_arch_type]()
+
+        # Replace relu activations with Identity functions
+        convert_relu_to_identity(self.resnet_instance)
+
+        num_ftrs = self.resnet_instance.fc.in_features
+        self.resnet_instance.fc = nn.Linear(num_ftrs, num_classes)
+
+        self.list_of_modules.append(self.resnet_instance)
+
+        self.list_of_modules = nn.ModuleList(self.list_of_modules)
+        self.initialize_hooks()
+
+    def initialize_hooks(self):
+        self.clear_hooks()
+        self.gating_signals = None
+        prev_layer = None
+        # Attaches hook to Identity and modify its inputs
+        for i, (name, layer) in enumerate(self.resnet_instance.named_modules()):
+            if isinstance(layer, nn.Identity):
+                self.f_relu_hooks.append(
+                    prev_layer.register_forward_hook(self.forward_hook(name)))
+            prev_layer = layer
+
+    def forward_hook(self, layer_name):
+        def hook(module, input, output):
+            temp = self.gating_signals[layer_name]
+            return output * temp
+        return hook
+
+    def forward(self, inp, gating_signals, verbose=2):
+        self.gating_signals = gating_signals
+        prev_out = inp
+        for each_module in self.list_of_modules:
+            prev_out = each_module(prev_out)
+
+        return prev_out
+
+    def clear_hooks(self):
+        for each_hook in self.f_relu_hooks:
+            each_hook.remove()
+        self.f_relu_hooks = []
+
+    def __str__(self):
+        ret = "Value network "+" \n module_list:"
+        for each_module in self.list_of_modules:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+
+        return ret
+
+
 def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[]):
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -1081,6 +1284,9 @@ def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_pe
     elif(dataset == "fashion_mnist"):
         inp_channel = 1
         input_size_list = [28, 28]
+    elif(dataset == "imagenet_1000"):
+        inp_channel = 3
+        input_size_list = [224, 224]
 
     return get_model_instance(model_arch_type, inp_channel, seed=seed, mask_percentage=mask_percentage, num_classes=num_classes, input_size_list=input_size_list, nodes_in_each_layer_list=nodes_in_each_layer_list)
 
@@ -1130,6 +1336,9 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
     elif(model_arch_type == "fc_dgn"):
         net = DGN_FC_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
+    elif('resnet' in model_arch_type and 'dlgn' in model_arch_type):
+        net = ResNet_DLGN(
+            model_arch_type, inp_channel, seed=seed, num_classes=num_classes)
 
     return net
 
