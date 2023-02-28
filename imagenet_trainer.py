@@ -5,6 +5,7 @@ import shutil
 import time
 import warnings
 from enum import Enum
+import wandb
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -130,6 +131,8 @@ def main():
 
 def main_worker(gpu, ngpus_per_node, args):
     dataset = "imagenet_1000"
+    wand_project_name = "resnet_exp"
+    args.wand_project_name = wand_project_name
     global best_acc1
     args.gpu = gpu
 
@@ -154,7 +157,7 @@ def main_worker(gpu, ngpus_per_node, args):
     #     model = models.__dict__[args.arch]()
 
     model = get_model_instance_from_dataset(
-        dataset=dataset, model_arch_type=args.arch, num_classes=1000)
+        dataset=dataset, model_arch_type=args.arch, num_classes=1000, pretrained=args.pretrained)
 
     if not torch.cuda.is_available() and not torch.backends.mps.is_available():
         print('using CPU, this will be slow')
@@ -288,6 +291,31 @@ def main_worker(gpu, ngpus_per_node, args):
         validate(val_loader, model, criterion, args)
         return
 
+    is_log_wandb = not(wand_project_name is None)
+    if(is_log_wandb):
+        wandb_group_name = "DS_"+str(dataset) + \
+            "_MT_"+str(args.arch)+"_SEED_"+str(args.seed)
+        wandb_run_name = "MT_" + \
+            str(args.arch)+"/SEED_"+str(args.seed)+"/EP_"+str(args.epochs)+"/OPT_"+str(optimizer)+"/LOSS_TYPE_" + \
+            str(criterion)+"/BS_"+str(args.batch_size) + \
+            "/pretrained"+str(args.pretrained)
+        wandb_run_name = wandb_run_name.replace("/", "")
+
+        wandb_config = dict()
+        wandb_config["dataset"] = dataset
+        wandb_config["model_arch_type"] = args.arch
+        wandb_config["epochs"] = args.epochs
+        wandb_config["optimizer"] = optimizer
+        wandb_config["criterion"] = criterion
+        wandb_config["batch_size"] = args.batch_size
+        wandb_config["pretrained"] = args.pretrained
+
+        wandb.init(
+            project=f"{wand_project_name}",
+            name=f"{wandb_run_name}",
+            group=f"{wandb_group_name}",
+            config=wandb_config,
+        )
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
@@ -303,6 +331,8 @@ def main_worker(gpu, ngpus_per_node, args):
         # remember best acc@1 and save checkpoint
         is_best = acc1 > best_acc1
         best_acc1 = max(acc1, best_acc1)
+        if(is_log_wandb):
+            wandb.log({"cur_epoch": epoch+1, "best_valid_acc1": best_acc1})
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                                                     and args.rank % ngpus_per_node == 0):
@@ -315,8 +345,12 @@ def main_worker(gpu, ngpus_per_node, args):
                 'scheduler': scheduler.state_dict()
             }, is_best)
 
+    if(is_log_wandb):
+        wandb.finish()
+
 
 def train(train_loader, model, criterion, optimizer, epoch, device, args):
+    is_log_wandb = not(args.wand_project_name is None)
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -359,6 +393,9 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         end = time.time()
 
         if i % args.print_freq == 0:
+            if(is_log_wandb):
+                wandb.log({"loss_tr": loss.item(),
+                          "tr_acc_1": acc1[0], "tr_acc_5": acc5[0]})
             progress.display(i + 1)
 
 

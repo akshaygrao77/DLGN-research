@@ -1083,7 +1083,7 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
 
 
 class ResNet_DLGN(nn.Module):
-    def __init__(self, resnet_type, input_channel, beta=4, seed=2022, num_classes=1000):
+    def __init__(self, resnet_type, input_channel, beta=4, seed=2022, num_classes=1000, pretrained=False):
         super().__init__()
         torch.manual_seed(seed)
         self.num_classes = num_classes
@@ -1091,17 +1091,18 @@ class ResNet_DLGN(nn.Module):
         self.input_channel = input_channel
         self.beta = beta
         self.seed = seed
+        self.pretrained = pretrained
 
         self.initialize_network()
 
     def initialize_network(self):
         self.gating_network = ResNet_Gating_Network(
-            self.resnet_type, self.input_channel, seed=self.seed)
+            self.resnet_type, self.input_channel, seed=self.seed, pretrained=self.pretrained)
         print("self.gating_network", self.gating_network)
         print("Gating net params:", sum(p.numel()
               for p in self.gating_network.parameters()))
         self.value_network = ALLONES_ResNet_Value_Network(
-            self.resnet_type, self.input_channel, seed=self.seed, num_classes=self.num_classes)
+            self.resnet_type, self.input_channel, seed=self.seed, num_classes=self.num_classes, pretrained=self.pretrained)
         print("self.value_network", self.value_network)
         print("Value net params:", sum(p.numel()
               for p in self.value_network.parameters()))
@@ -1149,11 +1150,12 @@ class ResNet_DLGN(nn.Module):
 
 
 class ResNet_Gating_Network(nn.Module):
-    def __init__(self, resnet_type, input_channel, seed=2022):
+    def __init__(self, resnet_type, input_channel, seed=2022, pretrained=False):
         super().__init__()
         torch.manual_seed(seed)
         self.resnet_type = resnet_type
         self.input_channel = input_channel
+        self.pretrained = pretrained
 
         self.initialize_network()
 
@@ -1164,7 +1166,8 @@ class ResNet_Gating_Network(nn.Module):
         resnet_arch_type = self.resnet_type[self.resnet_type.index(
             "__")+2:self.resnet_type.rindex("__")]
         # Load the resnet model architecture
-        self.resnet_instance = models.__dict__[resnet_arch_type]()
+        self.resnet_instance = models.__dict__[
+            resnet_arch_type](pretrained=self.pretrained)
         # Replace relu activations with Identity functions
         convert_relu_to_identity(self.resnet_instance)
 
@@ -1211,7 +1214,7 @@ class ResNet_Gating_Network(nn.Module):
 
 
 class ALLONES_ResNet_Value_Network(nn.Module):
-    def __init__(self, resnet_type, input_channel, seed=2022, num_classes=1000):
+    def __init__(self, resnet_type, input_channel, seed=2022, num_classes=1000, pretrained=False):
         super(ALLONES_ResNet_Value_Network, self).__init__()
         torch.manual_seed(seed)
         self.list_of_modules = []
@@ -1221,7 +1224,8 @@ class ALLONES_ResNet_Value_Network(nn.Module):
         resnet_arch_type = self.resnet_type[self.resnet_type.index(
             "__")+2:self.resnet_type.rindex("__")]
         # Load the resnet model architecture
-        self.resnet_instance = models.__dict__[resnet_arch_type]()
+        self.resnet_instance = models.__dict__[
+            resnet_arch_type](pretrained=pretrained)
 
         # Replace relu activations with Identity functions
         convert_relu_to_identity(self.resnet_instance)
@@ -1292,7 +1296,7 @@ class ALLONES_ResNet_Value_Network(nn.Module):
         return ret
 
 
-def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[]):
+def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], pretrained=False):
     if(dataset == "cifar10"):
         inp_channel = 3
         input_size_list = [32, 32]
@@ -1306,10 +1310,10 @@ def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_pe
         inp_channel = 3
         input_size_list = [224, 224]
 
-    return get_model_instance(model_arch_type, inp_channel, seed=seed, mask_percentage=mask_percentage, num_classes=num_classes, input_size_list=input_size_list, nodes_in_each_layer_list=nodes_in_each_layer_list)
+    return get_model_instance(model_arch_type, inp_channel, seed=seed, mask_percentage=mask_percentage, num_classes=num_classes, input_size_list=input_size_list, nodes_in_each_layer_list=nodes_in_each_layer_list, pretrained=pretrained)
 
 
-def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], input_size_list=[]):
+def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], input_size_list=[], pretrained=False):
     if(seed == ""):
         seed = 2022
 
@@ -1356,7 +1360,7 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
     elif('resnet' in model_arch_type and 'dlgn' in model_arch_type):
         net = ResNet_DLGN(
-            model_arch_type, inp_channel, seed=seed, num_classes=num_classes)
+            model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained)
 
     return net
 
