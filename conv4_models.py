@@ -6,6 +6,7 @@ from utils.visualise_utils import determine_row_col_from_features
 from sklearn.decomposition import PCA
 from collections import OrderedDict
 import torchvision.models as models
+from torch._utils import _get_all_device_indices
 
 
 def replace_percent_of_values(inp_np, const_value, percentage):
@@ -1114,15 +1115,13 @@ class ResNet_DLGN(nn.Module):
         self.value_network.clear_hooks()
 
     def forward(self, inp, verbose=2):
-        device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
-
+        ip_device = inp.get_device()
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=ip_device, non_blocking=True)
 
         inp_gating = torch.ones(inp.size(),
-                                requires_grad=True, device=device)
+                                requires_grad=True, device=ip_device)
 
         before_relu_outputs, _ = self.gating_network(inp, verbose=verbose)
 
@@ -1239,21 +1238,40 @@ class ALLONES_ResNet_Value_Network(nn.Module):
         self.clear_hooks()
         self.gating_signals = None
         prev_layer = None
+
+        all_devices = _get_all_device_indices()
         # Attaches hook to Identity and modify its inputs
         for i, (name, layer) in enumerate(self.resnet_instance.named_modules()):
             if isinstance(layer, nn.Identity):
+                for each_device in all_devices:
+                    buffer_name = "gating_signals" + \
+                        str(each_device) + "__" + name
+                    buffer_name = buffer_name.replace(".", "_")
+
+                    self.register_buffer(buffer_name, torch.zeros(1))
+                    print("Created ---buffer_name----", buffer_name)
+
                 self.f_relu_hooks.append(
                     prev_layer.register_forward_hook(self.forward_hook(name)))
             prev_layer = layer
 
     def forward_hook(self, layer_name):
         def hook(module, input, output):
-            temp = self.gating_signals[layer_name]
+            buffer_name = "gating_signals" + \
+                str(torch.cuda.current_device()) + "__" + layer_name
+            buffer_name = buffer_name.replace(".", "_")
+            temp = self.get_buffer(buffer_name).to(device=output.get_device())
             return output * temp
         return hook
 
     def forward(self, inp, gating_signals, verbose=2):
-        self.gating_signals = gating_signals
+        # iterating over the ordereddict
+        for key, value in gating_signals.items():
+            buffer_name = "gating_signals" + \
+                str(torch.cuda.current_device()) + "__" + key
+            buffer_name = buffer_name.replace(".", "_")
+            self.buffer_name = value
+
         prev_out = inp
         for each_module in self.list_of_modules:
             prev_out = each_module(prev_out)
