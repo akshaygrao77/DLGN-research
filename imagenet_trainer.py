@@ -293,6 +293,8 @@ def main_worker(gpu, ngpus_per_node, args):
 
     is_log_wandb = not(wand_project_name is None)
     if(is_log_wandb):
+        if args.distributed:
+            wandb.require("service")
         wandb_group_name = "DS_"+str(dataset) + \
             "_MT_"+str(args.arch)+"_SEED_"+str(args.seed)
         wandb_run_name = "MT_" + \

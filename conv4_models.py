@@ -36,6 +36,33 @@ def convert_relu_to_identity(model):
             convert_relu_to_identity(child)
 
 
+def get_last_relu(model, root_name=""):
+    curr_last = None
+    for child_name, child in model.named_children():
+        if isinstance(child, nn.ReLU):
+            curr_last = root_name + child_name
+        else:
+            c = get_last_relu(child, root_name+child_name+".")
+            if(c is not None):
+                curr_last = c
+    return curr_last
+
+
+def convert_layers_after_last_relu_to_identity(model, last_relu_layer_name, is_replace=False, root_name=""):
+    for child_name, child in model.named_children():
+        if (root_name + child_name) == last_relu_layer_name:
+            is_replace = True
+        elif(is_replace):
+            print("Nodes replaced are", root_name + child_name)
+            setattr(model, child_name, nn.Identity())
+            # replace_leaf_with_identity(child,root_name+child_name)
+        else:
+            is_replace = is_replace or convert_layers_after_last_relu_to_identity(
+                child, last_relu_layer_name, is_replace, root_name+child_name+".")
+
+    return is_replace
+
+
 class CONV_PCA_Layer(nn.Module):
     def __init__(self, input_channel, data, explained_var_required):
         super(CONV_PCA_Layer, self).__init__()
@@ -1124,7 +1151,7 @@ class ResNet_DLGN(nn.Module):
         inp_gating = torch.ones(inp.size(),
                                 requires_grad=True, device=ip_device)
 
-        before_relu_outputs, _ = self.gating_network(inp, verbose=verbose)
+        before_relu_outputs = self.gating_network(inp, verbose=verbose)
 
         self.gating_node_outputs = OrderedDict()
 
@@ -1168,6 +1195,10 @@ class ResNet_Gating_Network(nn.Module):
         # Load the resnet model architecture
         self.resnet_instance = models.__dict__[
             resnet_arch_type](pretrained=self.pretrained)
+
+        last_relu_name = get_last_relu(self.resnet_instance)
+        convert_layers_after_last_relu_to_identity(
+            self.resnet_instance, last_relu_name)
         # Replace relu activations with Identity functions
         convert_relu_to_identity(self.resnet_instance)
 
@@ -1197,7 +1228,7 @@ class ResNet_Gating_Network(nn.Module):
         for each_module in self.list_of_modules:
             prev_out = each_module(prev_out)
 
-        return self.layer_outs, prev_out
+        return self.layer_outs
 
     def clear_hooks(self):
         for each_hook in self.f_id_hooks:
@@ -1274,7 +1305,7 @@ class ALLONES_ResNet_Value_Network(nn.Module):
             buffer_name = "gating_signals" + \
                 str(torch.cuda.current_device()) + "__" + key
             buffer_name = buffer_name.replace(".", "_")
-            self.buffer_name = value
+            setattr(self, buffer_name, value)
 
         prev_out = inp
         for each_module in self.list_of_modules:
