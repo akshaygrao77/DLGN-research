@@ -21,7 +21,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset
-from conv4_models import get_model_instance_from_dataset
+from conv4_models import get_model_instance_from_dataset,get_model_save_path
 
 temp_names = sorted(name for name in models.__dict__
                     if name.islower() and not name.startswith("__")
@@ -291,12 +291,16 @@ def main_worker(gpu, ngpus_per_node, args):
         validate(val_loader, model, criterion, args)
         return
 
+    final_model_save_path = get_model_save_path(
+        args.arch, dataset, args.seed)
+
     is_log_wandb = not(wand_project_name is None)
     if(is_log_wandb):
         if args.distributed:
             wandb.require("service")
         wandb_group_name = "DS_"+str(dataset) + \
-            "_MT_"+str(args.arch)+"_SEED_"+str(args.seed)
+            "_MT_"+str(args.arch)+"_PRET_"+str(args.pretrained) + \
+            "_SEED_"+str(args.seed)
         wandb_run_name = "MT_" + \
             str(args.arch)+"/SEED_"+str(args.seed)+"/EP_"+str(args.epochs)+"/OPT_"+str(optimizer)+"/LOSS_TYPE_" + \
             str(criterion)+"/BS_"+str(args.batch_size) + \
@@ -344,8 +348,9 @@ def main_worker(gpu, ngpus_per_node, args):
                 'state_dict': model.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict()
-            }, is_best)
+                'scheduler': scheduler.state_dict(),
+                'pretrained':args.pretrained
+            }, is_best,final_model_save_path)
 
     if(is_log_wandb):
         wandb.finish()
@@ -410,9 +415,9 @@ def validate(val_loader, model, criterion, args):
                 i = base_progress + i
                 if args.gpu is not None and torch.cuda.is_available():
                     images = images.cuda(args.gpu, non_blocking=True)
-                if torch.backends.mps.is_available():
-                    images = images.to('mps')
-                    target = target.to('mps')
+                # if torch.backends.mps.is_available():
+                #     images = images.to('mps')
+                #     target = target.to('mps')
                 if torch.cuda.is_available():
                     target = target.cuda(args.gpu, non_blocking=True)
 
@@ -464,10 +469,13 @@ def validate(val_loader, model, criterion, args):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename):
+    sfolder = filename[0:filename.rfind("/")+1]
+    if not os.path.exists(sfolder):
+        os.makedirs(sfolder)
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.pth.tar')
+        shutil.copyfile(filename, sfolder+'/model_best.pth.tar')
 
 
 class Summary(Enum):
