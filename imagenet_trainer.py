@@ -148,16 +148,20 @@ def main_worker(gpu, ngpus_per_node, args):
             args.rank = args.rank * ngpus_per_node + gpu
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
-    # # create model
-    # if args.pretrained:
-    #     print("=> using pre-trained model '{}'".format(args.arch))
-    #     model = models.__dict__[args.arch](pretrained=True)
-    # else:
-    #     print("=> creating model '{}'".format(args.arch))
-    #     model = models.__dict__[args.arch]()
-
-    model = get_model_instance_from_dataset(
-        dataset=dataset, model_arch_type=args.arch, num_classes=1000, pretrained=args.pretrained)
+    # create model
+    if("dnn" in args.arch):
+        arch_type = args.arch[args.arch.index(
+            "__")+2:args.arch.rindex("__")]
+        if args.pretrained:
+            print("=> using pre-trained model '{}'".format(arch_type))
+            model = models.__dict__[arch_type](pretrained=True)
+        else:
+            print("=> creating model '{}'".format(arch_type))
+            model = models.__dict__[arch_type]()
+        print(model)
+    else:
+        model = get_model_instance_from_dataset(
+            dataset=dataset, model_arch_type=args.arch, num_classes=1000, pretrained=args.pretrained)
 
     if not torch.cuda.is_available() and not torch.backends.mps.is_available():
         print('using CPU, this will be slow')
