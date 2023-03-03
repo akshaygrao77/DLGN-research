@@ -36,16 +36,31 @@ def convert_relu_to_identity(model):
             convert_relu_to_identity(child)
 
 
-def get_last_relu(model, root_name=""):
+def get_last_layer_instance(model, layer, root_name=""):
     curr_last = None
+    curr_last_layer = None
     for child_name, child in model.named_children():
-        if isinstance(child, nn.ReLU):
+        if isinstance(child, layer):
             curr_last = root_name + child_name
+            curr_last_layer = child
         else:
-            c = get_last_relu(child, root_name+child_name+".")
+            c, cl = get_last_layer_instance(
+                child, layer, root_name+child_name+".")
             if(c is not None):
                 curr_last = c
-    return curr_last
+                curr_last_layer = cl
+    return curr_last, curr_last_layer
+
+
+def replace_given_layer_name_with_layer(model, given_layer_name, replacement_layer_obj, root_name=""):
+    for child_name, child in model.named_children():
+        current_child_name = root_name + child_name
+        if given_layer_name == current_child_name:
+            setattr(model, child_name, replacement_layer_obj)
+            return
+        else:
+            c = replace_given_layer_name_with_layer(
+                child, given_layer_name, replacement_layer_obj, root_name+child_name+".")
 
 
 def convert_layers_after_last_relu_to_identity(model, last_relu_layer_name, is_replace=False, root_name=""):
@@ -1109,6 +1124,230 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
                 return self.fc1
 
 
+class TorchVision_DLGN(nn.Module):
+    def __init__(self, arch_type, input_channel, beta=4, seed=2022, num_classes=1000, pretrained=False):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.num_classes = num_classes
+        self.arch_type = arch_type
+        self.input_channel = input_channel
+        self.beta = beta
+        self.seed = seed
+        self.pretrained = pretrained
+
+        self.initialize_network()
+
+    def initialize_network(self):
+        self.gating_network = TorchVision_Gating_Network(
+            self.arch_type, self.input_channel, pretrained=self.pretrained)
+        print("self.gating_network", self.gating_network)
+        print("Gating net params:", sum(p.numel()
+              for p in self.gating_network.parameters()))
+        self.value_network = ALLONES_TorchVision_Value_Network(
+            self.arch_type, self.input_channel, num_classes=self.num_classes, pretrained=self.pretrained)
+        print("self.value_network", self.value_network)
+        print("Value net params:", sum(p.numel()
+              for p in self.value_network.parameters()))
+
+    def initialize_hooks(self):
+        self.gating_network.initialize_hooks()
+        self.value_network.initialize_hooks()
+
+    def clear_hooks(self):
+        self.gating_network.clear_hooks()
+        self.value_network.clear_hooks()
+
+    def forward(self, inp, verbose=2):
+        ip_device = inp.get_device()
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=ip_device, non_blocking=True)
+
+        inp_gating = torch.ones(inp.size(),
+                                requires_grad=True, device=ip_device)
+
+        before_relu_outputs = self.gating_network(inp, verbose=verbose)
+
+        self.gating_node_outputs = OrderedDict()
+
+        if(verbose > 3):
+            print("before_relu_outputs keys")
+
+        for key, value in before_relu_outputs.items():
+            if(verbose > 3):
+                print("key:{},value:{}".format(key, value.size()))
+
+            self.gating_node_outputs[key] = nn.Sigmoid()(
+                self.beta * value)
+
+        if(verbose > 3):
+            print("gating_node_outputs keys")
+            for key, value in self.gating_node_outputs.items():
+                print("key:{},value:{}".format(key, value.size()))
+
+        final_layer_out = self.value_network(
+            inp_gating, self.gating_node_outputs, verbose=verbose)
+
+        return final_layer_out
+
+
+class TorchVision_Gating_Network(nn.Module):
+    def __init__(self, arch_type, input_channel, pretrained=False):
+        super().__init__()
+        self.arch_type = arch_type
+        self.input_channel = input_channel
+        self.pretrained = pretrained
+
+        self.initialize_network()
+
+    def initialize_network(self):
+        self.f_id_hooks = []
+        self.list_of_modules = []
+        # Extracts the arch type between "__"
+        arch_type = self.arch_type[self.arch_type.index(
+            "__")+2:self.arch_type.rindex("__")]
+        # Load the model architecture
+        self.model_instance = models.__dict__[
+            arch_type](pretrained=self.pretrained)
+
+        last_relu_name, _ = get_last_layer_instance(
+            self.model_instance, layer=nn.ReLU)
+        convert_layers_after_last_relu_to_identity(
+            self.model_instance, last_relu_name)
+        # Replace relu activations with Identity functions
+        convert_relu_to_identity(self.model_instance)
+
+        self.list_of_modules.append(self.model_instance)
+
+        self.list_of_modules = nn.ModuleList(self.list_of_modules)
+        self.initialize_hooks()
+
+    def initialize_hooks(self):
+        self.clear_hooks()
+        self.layer_outs = OrderedDict()
+        prev_layer = None
+        # Capture outputs of Identity module (earlier input to Relu module)
+        for i, (name, layer) in enumerate(self.model_instance.named_modules()):
+            if isinstance(layer, nn.Identity):
+                self.f_id_hooks.append(prev_layer.register_forward_hook(
+                    self.forward_identity_hook(name)))
+            prev_layer = layer
+
+    def forward_identity_hook(self, layer_name):
+        def hook(module, input, output):
+            self.layer_outs[layer_name] = output
+        return hook
+
+    def forward(self, inp, verbose=2):
+        prev_out = inp
+        for each_module in self.list_of_modules:
+            prev_out = each_module(prev_out)
+
+        return self.layer_outs
+
+    def clear_hooks(self):
+        for each_hook in self.f_id_hooks:
+            each_hook.remove()
+        self.f_id_hooks = []
+
+    def __str__(self):
+        ret = "Gate network pretrained?:" + \
+            str(self.pretrained)+" \n module_list:"
+        for each_module in self.list_of_modules:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+
+        return ret
+
+
+class ALLONES_TorchVision_Value_Network(nn.Module):
+    def __init__(self, arch_type, input_channel, num_classes=1000, pretrained=False):
+        super(ALLONES_TorchVision_Value_Network, self).__init__()
+        self.pretrained = pretrained
+        self.list_of_modules = []
+        self.f_relu_hooks = []
+        self.arch_type = arch_type
+        # Extracts the arch type between "__"
+        arch_type = self.arch_type[self.arch_type.index(
+            "__")+2:self.arch_type.rindex("__")]
+        # Load the model architecture
+        self.model_instance = models.__dict__[
+            arch_type](pretrained=pretrained)
+
+        # Replace relu activations with Identity functions
+        convert_relu_to_identity(self.model_instance)
+
+        last_linear_layer_name, last_linear_layer = get_last_layer_instance(
+            self.model_instance, nn.Linear)
+        num_ftrs = last_linear_layer.in_features
+        replacement_layer_obj = nn.Linear(num_ftrs, num_classes)
+        replace_given_layer_name_with_layer(
+            self.model_instance, last_linear_layer_name, replacement_layer_obj)
+
+        self.list_of_modules.append(self.model_instance)
+
+        self.list_of_modules = nn.ModuleList(self.list_of_modules)
+        self.initialize_hooks()
+
+    def initialize_hooks(self):
+        self.clear_hooks()
+        self.gating_signals = None
+        prev_layer = None
+
+        all_devices = _get_all_device_indices()
+        # Attaches hook to Identity and modify its inputs
+        for i, (name, layer) in enumerate(self.model_instance.named_modules()):
+            if isinstance(layer, nn.Identity):
+                for each_device in all_devices:
+                    buffer_name = "gating_signals" + \
+                        str(each_device) + "__" + name
+                    buffer_name = buffer_name.replace(".", "_")
+
+                    self.register_buffer(buffer_name, torch.zeros(1))
+                    print("Created ---buffer_name----", buffer_name)
+
+                self.f_relu_hooks.append(
+                    prev_layer.register_forward_hook(self.forward_hook(name)))
+            prev_layer = layer
+
+    def forward_hook(self, layer_name):
+        def hook(module, input, output):
+            buffer_name = "gating_signals" + \
+                str(torch.cuda.current_device()) + "__" + layer_name
+            buffer_name = buffer_name.replace(".", "_")
+            temp = self.get_buffer(buffer_name).to(device=output.get_device())
+            return output * temp
+        return hook
+
+    def forward(self, inp, gating_signals, verbose=2):
+        # iterating over the ordereddict
+        for key, value in gating_signals.items():
+            buffer_name = "gating_signals" + \
+                str(torch.cuda.current_device()) + "__" + key
+            buffer_name = buffer_name.replace(".", "_")
+            setattr(self, buffer_name, value)
+
+        prev_out = inp
+        for each_module in self.list_of_modules:
+            prev_out = each_module(prev_out)
+
+        return prev_out
+
+    def clear_hooks(self):
+        for each_hook in self.f_relu_hooks:
+            each_hook.remove()
+        self.f_relu_hooks = []
+
+    def __str__(self):
+        ret = "Value network pretrained?" + \
+            str(self.pretrained)+" \n module_list:"
+        for each_module in self.list_of_modules:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+
+        return ret
+
+
 class ResNet_DLGN(nn.Module):
     def __init__(self, resnet_type, input_channel, beta=4, seed=2022, num_classes=1000, pretrained=False):
         super().__init__()
@@ -1195,7 +1434,8 @@ class ResNet_Gating_Network(nn.Module):
         self.resnet_instance = models.__dict__[
             resnet_arch_type](pretrained=self.pretrained)
 
-        last_relu_name = get_last_relu(self.resnet_instance)
+        last_relu_name, _ = get_last_layer_instance(
+            self.resnet_instance, layer=nn.ReLU)
         convert_layers_after_last_relu_to_identity(
             self.resnet_instance, last_relu_name)
         # Replace relu activations with Identity functions
@@ -1328,6 +1568,140 @@ class ALLONES_ResNet_Value_Network(nn.Module):
         return ret
 
 
+class ResNet_DeepGatedNetwork(nn.Module):
+    def __init__(self, resnet_type, input_channel, beta=4, seed=2022, num_classes=1000, pretrained=False):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.num_classes = num_classes
+        self.resnet_type = resnet_type
+        self.input_channel = input_channel
+        self.beta = beta
+        self.seed = seed
+        self.pretrained = pretrained
+
+        self.initialize_network()
+
+    def initialize_network(self):
+        self.gating_network = ResNet_DeepGated_Gating_Network(
+            self.resnet_type, self.input_channel, pretrained=self.pretrained)
+        print("self.gating_network", self.gating_network)
+        print("Gating net params:", sum(p.numel()
+              for p in self.gating_network.parameters()))
+        self.value_network = ALLONES_ResNet_Value_Network(
+            self.resnet_type, self.input_channel, num_classes=self.num_classes, pretrained=self.pretrained)
+        print("self.value_network", self.value_network)
+        print("Value net params:", sum(p.numel()
+              for p in self.value_network.parameters()))
+
+    def initialize_hooks(self):
+        self.gating_network.initialize_hooks()
+        self.value_network.initialize_hooks()
+
+    def clear_hooks(self):
+        self.gating_network.clear_hooks()
+        self.value_network.clear_hooks()
+
+    def forward(self, inp, verbose=2):
+        ip_device = inp.get_device()
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=ip_device, non_blocking=True)
+
+        inp_gating = torch.ones(inp.size(),
+                                requires_grad=True, device=ip_device)
+
+        before_relu_outputs = self.gating_network(inp, verbose=verbose)
+
+        self.gating_node_outputs = OrderedDict()
+
+        if(verbose > 3):
+            print("before_relu_outputs keys")
+
+        for key, value in before_relu_outputs.items():
+            if(verbose > 3):
+                print("key:{},value:{}".format(key, value.size()))
+
+            self.gating_node_outputs[key] = nn.Sigmoid()(
+                self.beta * value)
+
+        if(verbose > 3):
+            print("gating_node_outputs keys")
+            for key, value in self.gating_node_outputs.items():
+                print("key:{},value:{}".format(key, value.size()))
+
+        final_layer_out = self.value_network(
+            inp_gating, self.gating_node_outputs, verbose=verbose)
+
+        return final_layer_out
+
+
+class ResNet_DeepGated_Gating_Network(nn.Module):
+    def __init__(self, resnet_type, input_channel, pretrained=False):
+        super().__init__()
+        self.resnet_type = resnet_type
+        self.input_channel = input_channel
+        self.pretrained = pretrained
+
+        self.initialize_network()
+
+    def initialize_network(self):
+        self.f_id_hooks = []
+        self.list_of_modules = []
+        # Extracts the resnet type between "__"
+        resnet_arch_type = self.resnet_type[self.resnet_type.index(
+            "__")+2:self.resnet_type.rindex("__")]
+        # Load the resnet model architecture
+        self.resnet_instance = models.__dict__[
+            resnet_arch_type](pretrained=self.pretrained)
+
+        last_relu_name, _ = get_last_layer_instance(
+            self.resnet_instance, layer=nn.ReLU)
+        convert_layers_after_last_relu_to_identity(
+            self.resnet_instance, last_relu_name)
+
+        self.list_of_modules.append(self.resnet_instance)
+
+        self.list_of_modules = nn.ModuleList(self.list_of_modules)
+        self.initialize_hooks()
+
+    def initialize_hooks(self):
+        self.clear_hooks()
+        self.layer_outs = OrderedDict()
+        prev_layer = None
+        # Capture outputs of Identity module (earlier input to Relu module)
+        for i, (name, layer) in enumerate(self.resnet_instance.named_modules()):
+            if isinstance(layer, nn.ReLU):
+                self.f_id_hooks.append(prev_layer.register_forward_hook(
+                    self.forward_identity_hook(name)))
+            prev_layer = layer
+
+    def forward_identity_hook(self, layer_name):
+        def hook(module, input, output):
+            self.layer_outs[layer_name] = output
+        return hook
+
+    def forward(self, inp, verbose=2):
+        prev_out = inp
+        for each_module in self.list_of_modules:
+            prev_out = each_module(prev_out)
+
+        return self.layer_outs
+
+    def clear_hooks(self):
+        for each_hook in self.f_id_hooks:
+            each_hook.remove()
+        self.f_id_hooks = []
+
+    def __str__(self):
+        ret = "Gate network pretrained?:" + \
+            str(self.pretrained)+" \n module_list:"
+        for each_module in self.list_of_modules:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+
+        return ret
+
+
 def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], pretrained=False):
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -1348,6 +1722,10 @@ def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_pe
 def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], input_size_list=[], pretrained=False):
     if(seed == ""):
         seed = 2022
+
+    torchvision_model_names = sorted(name for name in models.__dict__
+                                     if name.islower() and not name.startswith("__")
+                                     and callable(models.__dict__[name]))
 
     net = None
     if(model_arch_type == 'plain_pure_conv4_dnn'):
@@ -1393,6 +1771,18 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
     elif('resnet' in model_arch_type and 'dlgn' in model_arch_type):
         net = ResNet_DLGN(
             model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained)
+    elif('resnet' in model_arch_type and 'dgn' in model_arch_type):
+        net = ResNet_DeepGatedNetwork(
+            model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained)
+
+    # If no specific implementation was found for model arch type, then try to instantiate from torchvision
+    if(net is None):
+        arch_type_extracted_from_model_arch = model_arch_type[model_arch_type.index(
+            "__")+2:model_arch_type.rindex("__")]
+        if(arch_type_extracted_from_model_arch in torchvision_model_names and 'dlgn' in model_arch_type):
+            print("Instantiating torchvision architecture")
+            net = TorchVision_DLGN(
+                model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained)
 
     return net
 
