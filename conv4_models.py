@@ -1124,12 +1124,12 @@ class ResNet_DLGN(nn.Module):
 
     def initialize_network(self):
         self.gating_network = ResNet_Gating_Network(
-            self.resnet_type, self.input_channel, seed=self.seed, pretrained=self.pretrained)
+            self.resnet_type, self.input_channel, pretrained=self.pretrained)
         print("self.gating_network", self.gating_network)
         print("Gating net params:", sum(p.numel()
               for p in self.gating_network.parameters()))
         self.value_network = ALLONES_ResNet_Value_Network(
-            self.resnet_type, self.input_channel, seed=self.seed, num_classes=self.num_classes, pretrained=self.pretrained)
+            self.resnet_type, self.input_channel, num_classes=self.num_classes, pretrained=self.pretrained)
         print("self.value_network", self.value_network)
         print("Value net params:", sum(p.numel()
               for p in self.value_network.parameters()))
@@ -1177,9 +1177,8 @@ class ResNet_DLGN(nn.Module):
 
 
 class ResNet_Gating_Network(nn.Module):
-    def __init__(self, resnet_type, input_channel, seed=2022, pretrained=False):
+    def __init__(self, resnet_type, input_channel, pretrained=False):
         super().__init__()
-        torch.manual_seed(seed)
         self.resnet_type = resnet_type
         self.input_channel = input_channel
         self.pretrained = pretrained
@@ -1236,7 +1235,8 @@ class ResNet_Gating_Network(nn.Module):
         self.f_id_hooks = []
 
     def __str__(self):
-        ret = "Gate network "+" \n module_list:"
+        ret = "Gate network pretrained?:" + \
+            str(self.pretrained)+" \n module_list:"
         for each_module in self.list_of_modules:
             ret += str(each_module)+" \n Params in module is:" + \
                 str(sum(p.numel() for p in each_module.parameters()))+"\n"
@@ -1245,9 +1245,9 @@ class ResNet_Gating_Network(nn.Module):
 
 
 class ALLONES_ResNet_Value_Network(nn.Module):
-    def __init__(self, resnet_type, input_channel, seed=2022, num_classes=1000, pretrained=False):
+    def __init__(self, resnet_type, input_channel, num_classes=1000, pretrained=False):
         super(ALLONES_ResNet_Value_Network, self).__init__()
-        torch.manual_seed(seed)
+        self.pretrained = pretrained
         self.list_of_modules = []
         self.f_relu_hooks = []
         self.resnet_type = resnet_type
@@ -1319,7 +1319,8 @@ class ALLONES_ResNet_Value_Network(nn.Module):
         self.f_relu_hooks = []
 
     def __str__(self):
-        ret = "Value network "+" \n module_list:"
+        ret = "Value network pretrained?" + \
+            str(self.pretrained)+" \n module_list:"
         for each_module in self.list_of_modules:
             ret += str(each_module)+" \n Params in module is:" + \
                 str(sum(p.numel() for p in each_module.parameters()))+"\n"

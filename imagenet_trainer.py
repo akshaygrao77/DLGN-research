@@ -21,7 +21,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset
-from conv4_models import get_model_instance_from_dataset,get_model_save_path
+from conv4_models import get_model_instance_from_dataset, get_model_save_path
 
 temp_names = sorted(name for name in models.__dict__
                     if name.islower() and not name.startswith("__")
@@ -292,7 +292,7 @@ def main_worker(gpu, ngpus_per_node, args):
         return
 
     final_model_save_path = get_model_save_path(
-        args.arch, dataset, args.seed)
+        args.arch+"_PRET_"+str(args.pretrained), dataset, args.seed)
 
     is_log_wandb = not(wand_project_name is None)
     if(is_log_wandb):
@@ -349,8 +349,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 'best_acc1': best_acc1,
                 'optimizer': optimizer.state_dict(),
                 'scheduler': scheduler.state_dict(),
-                'pretrained':args.pretrained
-            }, is_best,final_model_save_path)
+                'pretrained': args.pretrained
+            }, is_best, final_model_save_path)
 
     if(is_log_wandb):
         wandb.finish()
