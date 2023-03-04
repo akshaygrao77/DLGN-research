@@ -1309,28 +1309,20 @@ class ALLONES_TorchVision_Value_Network(nn.Module):
         self.clear_hooks()
         self.gating_signals = None
         prev_layer = None
+        prev_layer_name = None
 
         all_devices = _get_all_device_indices()
         # Attaches hook to Identity and modify its inputs
         for i, (name, layer) in enumerate(self.model_instance.named_modules()):
             if isinstance(layer, nn.Identity):
-                for each_device in all_devices:
-                    buffer_name = "gating_signals" + \
-                        str(each_device) + "__" + name
-                    buffer_name = buffer_name.replace(".", "_")
-
-                    self.register_buffer(buffer_name, torch.zeros(1))
-                    print("Created ---buffer_name----", buffer_name)
-
+                print("Hook added to layer name", prev_layer_name)
                 self.f_relu_hooks.append(
                     prev_layer.register_forward_hook(self.forward_hook(name)))
             prev_layer = layer
+            prev_layer_name = name
 
     def forward_hook(self, layer_name):
         def hook(module, input, output):
-            buffer_name = "gating_signals" + \
-                str(torch.cuda.current_device()) + "__" + layer_name
-            buffer_name = buffer_name.replace(".", "_")
             temp = self.gating_node_outputs[str(
                 output.get_device())][layer_name]
             # if(layer_name == 'relu'):
@@ -1545,30 +1537,22 @@ class ALLONES_ResNet_Value_Network(nn.Module):
     def initialize_hooks(self):
         self.clear_hooks()
         prev_layer = None
+        prev_layer_name = None
 
         all_devices = _get_all_device_indices()
         # Attaches hook to Identity and modify its inputs
         for i, (name, layer) in enumerate(self.resnet_instance.named_modules()):
             if isinstance(layer, nn.Identity):
-                for each_device in all_devices:
-                    buffer_name = "gating_signals" + \
-                        str(each_device) + "__" + name
-                    buffer_name = buffer_name.replace(".", "_")
-
-                    self.register_buffer(buffer_name, torch.zeros(1))
-                    print("Created ---buffer_name----", buffer_name)
-
+                print("Hook added to layer name", prev_layer_name)
                 self.f_relu_hooks.append(
                     prev_layer.register_forward_hook(self.forward_hook(name)))
             prev_layer = layer
+            prev_layer_name = name
 
     def forward_hook(self, layer_name):
         def hook(module, input, output):
             assert input[0].get_device(
             ) == output.get_device(), 'Not on same device'
-            buffer_name = "gating_signals" + \
-                str(torch.cuda.current_device()) + "__" + layer_name
-            buffer_name = buffer_name.replace(".", "_")
             temp = self.gating_node_outputs[str(
                 output.get_device())][layer_name]
             # if(layer_name == 'relu'):
@@ -1579,13 +1563,6 @@ class ALLONES_ResNet_Value_Network(nn.Module):
         return hook
 
     def forward(self, inp, gating_signals, verbose=2):
-        # iterating over the ordereddict
-        for key, value in gating_signals.items():
-            buffer_name = "gating_signals" + \
-                str(torch.cuda.current_device()) + "__" + key
-            buffer_name = buffer_name.replace(".", "_")
-            setattr(self, buffer_name, value)
-
         prev_out = inp
         for each_module in self.list_of_modules:
             prev_out = each_module(prev_out)
@@ -1723,12 +1700,15 @@ class ResNet_Gating_Network(nn.Module):
     def initialize_hooks(self):
         self.clear_hooks()
         prev_layer = None
+        prev_layer_name = None
         # Capture outputs of Identity module (earlier input to Relu module)
         for i, (name, layer) in enumerate(self.resnet_instance.named_modules()):
             if isinstance(layer, nn.Identity):
+                print("Hook added to layer name", prev_layer_name)
                 self.f_id_hooks.append(prev_layer.register_forward_hook(
                     self.forward_identity_hook(name)))
             prev_layer = layer
+            prev_layer_name = name
 
     def forward_identity_hook(self, layer_name):
         def hook(module, input, output):
@@ -1827,9 +1807,6 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
     elif(model_arch_type == "fc_dgn"):
         net = DGN_FC_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
-    # elif('resnet' in model_arch_type and 'dlgn' in model_arch_type):
-    #     net = ResNet_DLGN(
-    #         model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained)
 
     # If no specific implementation was found for model arch type, then try to instantiate from torchvision
     if(net is None):
