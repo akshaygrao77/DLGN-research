@@ -1243,7 +1243,7 @@ class TorchVision_Gating_Network(nn.Module):
         prev_layer = None
         # Capture outputs of Identity module (earlier input to Relu module)
         for i, (name, layer) in enumerate(self.model_instance.named_modules()):
-            if isinstance(layer, nn.Identity):
+            if (isinstance(layer, nn.Identity) and (prev_layer is None or not isinstance(prev_layer, nn.Linear))):
                 self.f_id_hooks.append(prev_layer.register_forward_hook(
                     self.forward_identity_hook(name)))
             prev_layer = layer
@@ -1314,7 +1314,7 @@ class ALLONES_TorchVision_Value_Network(nn.Module):
         all_devices = _get_all_device_indices()
         # Attaches hook to Identity and modify its inputs
         for i, (name, layer) in enumerate(self.model_instance.named_modules()):
-            if isinstance(layer, nn.Identity):
+            if (isinstance(layer, nn.Identity) and (prev_layer is None or not isinstance(prev_layer, nn.Linear))):
                 print("Hook added to layer name", prev_layer_name)
                 self.f_relu_hooks.append(
                     prev_layer.register_forward_hook(self.forward_hook(name)))
