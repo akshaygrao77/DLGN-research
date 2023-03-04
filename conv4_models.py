@@ -1138,13 +1138,18 @@ class TorchVision_DLGN(nn.Module):
         self.initialize_network()
 
     def initialize_network(self):
+        self.gating_node_outputs = dict()
+        all_devices = _get_all_device_indices()
+        for each_device in all_devices:
+            self.gating_node_outputs[str(each_device)] = OrderedDict()
+
         self.gating_network = TorchVision_Gating_Network(
             self.arch_type, self.input_channel, pretrained=self.pretrained)
         print("self.gating_network", self.gating_network)
         print("Gating net params:", sum(p.numel()
               for p in self.gating_network.parameters()))
         self.value_network = ALLONES_TorchVision_Value_Network(
-            self.arch_type, self.input_channel, num_classes=self.num_classes, pretrained=self.pretrained)
+            self.arch_type, self.input_channel, num_classes=self.num_classes, pretrained=self.pretrained, gating_node_outputs=self.gating_node_outputs)
         print("self.value_network", self.value_network)
         print("Value net params:", sum(p.numel()
               for p in self.value_network.parameters()))
@@ -1158,32 +1163,37 @@ class TorchVision_DLGN(nn.Module):
         self.value_network.clear_hooks()
 
     def forward(self, inp, verbose=2):
-        ip_device = inp.get_device()
+        idevice = inp.get_device()
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=ip_device, non_blocking=True)
-
-        inp_gating = torch.ones(inp.size(),
-                                requires_grad=True, device=ip_device)
+            inp = inp.to(device=idevice, non_blocking=True)
 
         before_relu_outputs = self.gating_network(inp, verbose=verbose)
-
-        self.gating_node_outputs = OrderedDict()
 
         if(verbose > 3):
             print("before_relu_outputs keys")
 
-        for key, value in before_relu_outputs.items():
+        for key, value in before_relu_outputs[str(idevice)].items():
+            ip_device = value.get_device()
             if(verbose > 3):
                 print("key:{},value:{}".format(key, value.size()))
 
-            self.gating_node_outputs[key] = nn.Sigmoid()(
+            temp = nn.Sigmoid()(
                 self.beta * value)
+            self.gating_node_outputs[str(ip_device)][key] = temp
+            if(key == 'relu' and verbose > 3):
+                print("Generated Gate signal Dev:{},input device:{},layer_name:{},gs.size():{}, gs:{}".format(
+                    str(ip_device), str(idevice), key, temp.size(), temp))
+            assert self.gating_node_outputs[str(ip_device)][key].get_device(
+            ) == ip_device, 'Gating signal generated moved to different device'
 
         if(verbose > 3):
             print("gating_node_outputs keys")
-            for key, value in self.gating_node_outputs.items():
+            for key, value in self.gating_node_outputs[str(ip_device)].items():
                 print("key:{},value:{}".format(key, value.size()))
+
+        inp_gating = torch.ones(inp.size(),
+                                requires_grad=True, device=ip_device)
 
         final_layer_out = self.value_network(
             inp_gating, self.gating_node_outputs, verbose=verbose)
@@ -1197,6 +1207,11 @@ class TorchVision_Gating_Network(nn.Module):
         self.arch_type = arch_type
         self.input_channel = input_channel
         self.pretrained = pretrained
+
+        self.layer_outs = dict()
+        all_devices = _get_all_device_indices()
+        for each_device in all_devices:
+            self.layer_outs[str(each_device)] = OrderedDict()
 
         self.initialize_network()
 
@@ -1224,7 +1239,7 @@ class TorchVision_Gating_Network(nn.Module):
 
     def initialize_hooks(self):
         self.clear_hooks()
-        self.layer_outs = OrderedDict()
+
         prev_layer = None
         # Capture outputs of Identity module (earlier input to Relu module)
         for i, (name, layer) in enumerate(self.model_instance.named_modules()):
@@ -1235,7 +1250,7 @@ class TorchVision_Gating_Network(nn.Module):
 
     def forward_identity_hook(self, layer_name):
         def hook(module, input, output):
-            self.layer_outs[layer_name] = output
+            self.layer_outs[str(output.get_device())][layer_name] = output
         return hook
 
     def forward(self, inp, verbose=2):
@@ -1261,8 +1276,9 @@ class TorchVision_Gating_Network(nn.Module):
 
 
 class ALLONES_TorchVision_Value_Network(nn.Module):
-    def __init__(self, arch_type, input_channel, num_classes=1000, pretrained=False):
+    def __init__(self, arch_type, input_channel, num_classes=1000, pretrained=False, gating_node_outputs=None):
         super(ALLONES_TorchVision_Value_Network, self).__init__()
+        self.gating_node_outputs = gating_node_outputs
         self.pretrained = pretrained
         self.list_of_modules = []
         self.f_relu_hooks = []
@@ -1315,18 +1331,16 @@ class ALLONES_TorchVision_Value_Network(nn.Module):
             buffer_name = "gating_signals" + \
                 str(torch.cuda.current_device()) + "__" + layer_name
             buffer_name = buffer_name.replace(".", "_")
-            temp = self.get_buffer(buffer_name).to(device=output.get_device())
+            temp = self.gating_node_outputs[str(
+                output.get_device())][layer_name]
+            # if(layer_name == 'relu'):
+            #     print("Forward Gate signal Dev:{},output device:{},layer_name:{},input[0].size():{},temp.size():{}, temp:{}".format(
+            #         str(temp.get_device()), str(input[0].get_device()), layer_name, input[0].size(), temp.size(), temp))
+            del self.gating_node_outputs[str(output.get_device())][layer_name]
             return output * temp
         return hook
 
     def forward(self, inp, gating_signals, verbose=2):
-        # iterating over the ordereddict
-        for key, value in gating_signals.items():
-            buffer_name = "gating_signals" + \
-                str(torch.cuda.current_device()) + "__" + key
-            buffer_name = buffer_name.replace(".", "_")
-            setattr(self, buffer_name, value)
-
         prev_out = inp
         for each_module in self.list_of_modules:
             prev_out = each_module(prev_out)
@@ -1413,7 +1427,7 @@ class ResNet_DLGN(nn.Module):
 
         if(verbose > 3):
             print("gating_node_outputs keys")
-            for key, value in self.gating_node_outputs.items():
+            for key, value in self.gating_node_outputs[str(ip_device)].items():
                 print("key:{},value:{}".format(key, value.size()))
 
         inp_gating = torch.ones(inp.size(),
@@ -1593,7 +1607,7 @@ class ALLONES_ResNet_Value_Network(nn.Module):
         return ret
 
 
-class ResNet_DeepGatedNetwork(nn.Module):
+class ResNet_DLGN(nn.Module):
     def __init__(self, resnet_type, input_channel, beta=4, seed=2022, num_classes=1000, pretrained=False):
         super().__init__()
         torch.manual_seed(seed)
@@ -1607,13 +1621,18 @@ class ResNet_DeepGatedNetwork(nn.Module):
         self.initialize_network()
 
     def initialize_network(self):
-        self.gating_network = ResNet_DeepGated_Gating_Network(
+        self.gating_node_outputs = dict()
+        all_devices = _get_all_device_indices()
+        for each_device in all_devices:
+            self.gating_node_outputs[str(each_device)] = OrderedDict()
+
+        self.gating_network = ResNet_Gating_Network(
             self.resnet_type, self.input_channel, pretrained=self.pretrained)
         print("self.gating_network", self.gating_network)
         print("Gating net params:", sum(p.numel()
               for p in self.gating_network.parameters()))
         self.value_network = ALLONES_ResNet_Value_Network(
-            self.resnet_type, self.input_channel, num_classes=self.num_classes, pretrained=self.pretrained)
+            self.resnet_type, self.input_channel, num_classes=self.num_classes, pretrained=self.pretrained, gating_node_outputs=self.gating_node_outputs)
         print("self.value_network", self.value_network)
         print("Value net params:", sum(p.numel()
               for p in self.value_network.parameters()))
@@ -1627,32 +1646,37 @@ class ResNet_DeepGatedNetwork(nn.Module):
         self.value_network.clear_hooks()
 
     def forward(self, inp, verbose=2):
-        ip_device = inp.get_device()
+        idevice = inp.get_device()
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=ip_device, non_blocking=True)
-
-        inp_gating = torch.ones(inp.size(),
-                                requires_grad=True, device=ip_device)
+            inp = inp.to(device=idevice, non_blocking=True)
 
         before_relu_outputs = self.gating_network(inp, verbose=verbose)
-
-        self.gating_node_outputs = OrderedDict()
 
         if(verbose > 3):
             print("before_relu_outputs keys")
 
-        for key, value in before_relu_outputs.items():
+        for key, value in before_relu_outputs[str(idevice)].items():
+            ip_device = value.get_device()
             if(verbose > 3):
                 print("key:{},value:{}".format(key, value.size()))
 
-            self.gating_node_outputs[key] = nn.Sigmoid()(
+            temp = nn.Sigmoid()(
                 self.beta * value)
+            self.gating_node_outputs[str(ip_device)][key] = temp
+            if(key == 'relu' and verbose > 3):
+                print("Generated Gate signal Dev:{},input device:{},layer_name:{},gs.size():{}, gs:{}".format(
+                    str(ip_device), str(idevice), key, temp.size(), temp))
+            assert self.gating_node_outputs[str(ip_device)][key].get_device(
+            ) == ip_device, 'Gating signal generated moved to different device'
 
         if(verbose > 3):
             print("gating_node_outputs keys")
-            for key, value in self.gating_node_outputs.items():
+            for key, value in self.gating_node_outputs[str(ip_device)].items():
                 print("key:{},value:{}".format(key, value.size()))
+
+        inp_gating = torch.ones(inp.size(),
+                                requires_grad=True, device=ip_device)
 
         final_layer_out = self.value_network(
             inp_gating, self.gating_node_outputs, verbose=verbose)
@@ -1660,12 +1684,17 @@ class ResNet_DeepGatedNetwork(nn.Module):
         return final_layer_out
 
 
-class ResNet_DeepGated_Gating_Network(nn.Module):
+class ResNet_Gating_Network(nn.Module):
     def __init__(self, resnet_type, input_channel, pretrained=False):
         super().__init__()
         self.resnet_type = resnet_type
         self.input_channel = input_channel
         self.pretrained = pretrained
+
+        self.layer_outs = dict()
+        all_devices = _get_all_device_indices()
+        for each_device in all_devices:
+            self.layer_outs[str(each_device)] = OrderedDict()
 
         self.initialize_network()
 
@@ -1683,6 +1712,8 @@ class ResNet_DeepGated_Gating_Network(nn.Module):
             self.resnet_instance, layer=nn.ReLU)
         convert_layers_after_last_relu_to_identity(
             self.resnet_instance, last_relu_name)
+        # Replace relu activations with Identity functions
+        convert_relu_to_identity(self.resnet_instance)
 
         self.list_of_modules.append(self.resnet_instance)
 
@@ -1691,18 +1722,21 @@ class ResNet_DeepGated_Gating_Network(nn.Module):
 
     def initialize_hooks(self):
         self.clear_hooks()
-        self.layer_outs = OrderedDict()
         prev_layer = None
         # Capture outputs of Identity module (earlier input to Relu module)
         for i, (name, layer) in enumerate(self.resnet_instance.named_modules()):
-            if isinstance(layer, nn.ReLU):
+            if isinstance(layer, nn.Identity):
                 self.f_id_hooks.append(prev_layer.register_forward_hook(
                     self.forward_identity_hook(name)))
             prev_layer = layer
 
     def forward_identity_hook(self, layer_name):
         def hook(module, input, output):
-            self.layer_outs[layer_name] = output
+            self.layer_outs[str(output.get_device())][layer_name] = output
+            # if(layer_name == 'relu'):
+            #     print("Gating network output device:{},input device:{}".format(
+            #         str(output.get_device()), str(input[0].get_device())))
+
         return hook
 
     def forward(self, inp, verbose=2):
@@ -1793,12 +1827,9 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
     elif(model_arch_type == "fc_dgn"):
         net = DGN_FC_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
-    elif('resnet' in model_arch_type and 'dlgn' in model_arch_type):
-        net = ResNet_DLGN(
-            model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained)
-    elif('resnet' in model_arch_type and 'dgn' in model_arch_type):
-        net = ResNet_DeepGatedNetwork(
-            model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained)
+    # elif('resnet' in model_arch_type and 'dlgn' in model_arch_type):
+    #     net = ResNet_DLGN(
+    #         model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained)
 
     # If no specific implementation was found for model arch type, then try to instantiate from torchvision
     if(net is None):
