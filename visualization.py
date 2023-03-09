@@ -123,6 +123,38 @@ def unroll_print_torch_3D_array(torch_arr):
         print("^^^^^^^^^^^^^^^^^^^^^^^^^")
 
 
+def replace_percent_of_tensor_values_with_exact_percentages(inp_tensor, const_value, percentage):
+    tpr = torch.arange(0, 100, step=100/inp_tensor.numel(),
+                       dtype=torch.float32)
+    indexes = torch.randperm(tpr.shape[0])
+    tpr = tpr[indexes]
+    tpr = torch.reshape(tpr, inp_tensor.size())
+    ret = torch.where(tpr >= percentage, inp_tensor, const_value)
+    return ret
+
+
+def replace_percent_of_source_values_with_target_values_with_exact_percentages(inp_tensor, source_value, const_value, percentage, seed_gen):
+    ft_inp_tensor = torch.flatten(inp_tensor)
+    temp = ft_inp_tensor == source_value
+    source_indices = temp.nonzero()
+    filtered_ft_inp_tensor = ft_inp_tensor[source_indices]
+    # print("filtered_ft_inp_tensor",filtered_ft_inp_tensor.size())
+    tpr = torch.arange(
+        0, 100, step=100/filtered_ft_inp_tensor.numel(), dtype=torch.float32, device=inp_tensor.get_device())
+    tpr = tpr[:filtered_ft_inp_tensor.numel()]
+    tpr = torch.unsqueeze(tpr, 1)
+    # print("tpr",tpr.size())
+    indexes = torch.randperm(tpr.shape[0], generator=seed_gen)
+    tpr = tpr[indexes]
+    target_replaced_tensor = torch.where(
+        tpr >= percentage, filtered_ft_inp_tensor, const_value)
+    # print("target_replaced_tensor",target_replaced_tensor.size())
+    ft_inp_tensor[source_indices] = target_replaced_tensor
+    ret = torch.reshape(ft_inp_tensor, inp_tensor.size())
+
+    return ret
+
+
 class SaveOutput:
     def __init__(self):
         self.outputs = []
@@ -304,8 +336,10 @@ class TemplateImageGenerator():
 
         self.update_y_lists()
 
-    def update_overall_y_maps(self, collect_threshold):
-
+    def update_overall_y_maps(self, collect_threshold, random_sample_gate_percent=None, coll_gate_sample_seed_gen=None):
+        temp_one = torch.tensor([1.], device=self.y_minus_list[0].get_device())
+        temp_zero = torch.tensor(
+            [0.], device=self.y_minus_list[0].get_device())
         with torch.no_grad():
             self.overall_y = []
             for indx in range(len(self.y_plus_list)):
@@ -314,8 +348,16 @@ class TemplateImageGenerator():
 
                 y_plus_passed_threshold = HardRelu()(each_y_plus - collect_threshold *
                                                      self.total_tcollect_img_count)
+                if(random_sample_gate_percent is not None):
+                    assert coll_gate_sample_seed_gen is not None, "When random sample gate is enabled we need seed generator"
+                    y_plus_passed_threshold = replace_percent_of_source_values_with_target_values_with_exact_percentages(
+                        y_plus_passed_threshold, temp_one, temp_zero, 100 - random_sample_gate_percent, coll_gate_sample_seed_gen)
                 y_minus_passed_threshold = HardRelu()(each_y_minus - collect_threshold *
                                                       self.total_tcollect_img_count)
+                if(random_sample_gate_percent is not None):
+                    assert coll_gate_sample_seed_gen is not None, "When random sample gate is enabled we need seed generator"
+                    y_minus_passed_threshold = replace_percent_of_source_values_with_target_values_with_exact_percentages(
+                        y_minus_passed_threshold, temp_one, temp_zero, 100 - random_sample_gate_percent, coll_gate_sample_seed_gen)
 
                 current_y_map = y_plus_passed_threshold - y_minus_passed_threshold
 
@@ -336,7 +378,7 @@ class TemplateImageGenerator():
 
         self.calculate_entropy_from_maps()
 
-    def collect_all_active_pixels_into_ymaps(self, per_class_data_loader, class_label, number_of_batch_to_collect, collect_threshold, is_save_original_image=True):
+    def collect_all_active_pixels_into_ymaps(self, per_class_data_loader, class_label, number_of_batch_to_collect, collect_threshold, is_save_original_image=True, random_sample_gate_percent=None, coll_gate_sample_seed_gen=None):
         self.reset_collection_state()
         self.model.train(False)
 
@@ -364,7 +406,8 @@ class TemplateImageGenerator():
             if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
                 break
 
-        self.update_overall_y_maps(collect_threshold)
+        self.update_overall_y_maps(
+            collect_threshold, random_sample_gate_percent, coll_gate_sample_seed_gen)
 
     def calculate_loss_for_output_class_max_image(self, outputs, labels):
         loss_fn = torch.nn.CrossEntropyLoss()
@@ -757,7 +800,9 @@ class TemplateImageGenerator():
                                                         is_class_segregation_on_ground_truth, template_initial_image_type,
                                                         template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                         exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
-                                                        plot_iteration_interval=None, root_save_prefix="root", final_postfix_for_save="", wandb_config_additional_dict=None, vis_version='V2'):
+                                                        plot_iteration_interval=None, root_save_prefix="root", final_postfix_for_save="", wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None):
+        coll_gate_sample_seed_gen = None
+        random_sample_gate_percent_str = ""
         list_of_reconst_images = None
         list_of_reconst_preds = None
         is_log_wandb = not(wand_project_name is None)
@@ -768,6 +813,12 @@ class TemplateImageGenerator():
 
         entr_seed_gen = torch.Generator()
         entr_seed_gen.manual_seed(torch_seed)
+
+        if(random_sample_gate_percent is not None):
+            random_sample_gate_percent_str = "RD_GT_PER_LAY_SAMPLE_" + \
+                str(random_sample_gate_percent)
+            coll_gate_sample_seed_gen = torch.Generator()
+            coll_gate_sample_seed_gen.manual_seed(torch_seed)
 
         per_class_per_batch_data_loader = torch.utils.data.DataLoader(per_class_dataset, batch_size=template_image_calculation_batch_size,
                                                                       shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
@@ -781,7 +832,7 @@ class TemplateImageGenerator():
 
         self.model.train(False)
         self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/Ver_"+str(vis_version)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/" + str(final_postfix_for_save) + "/"
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+"/" + str(final_postfix_for_save) + "/"
 
         per_class_per_batch_data_loader = tqdm(
             per_class_per_batch_data_loader, desc='Image being processed:'+str(class_label))
@@ -860,6 +911,7 @@ class TemplateImageGenerator():
                 wandb_config["end_sigma"] = end_sigma
                 wandb_config["start_step_size"] = start_step_size
                 wandb_config["end_step_size"] = end_step_size
+                wandb_config["per_layer_random_sample_gate_percent"] = random_sample_gate_percent
 
             if(wandb_config_additional_dict is not None):
                 wandb_config.update(wandb_config_additional_dict)
@@ -893,7 +945,8 @@ class TemplateImageGenerator():
             self.reset_collection_state()
             self.collect_active_pixel_per_batch(
                 per_class_data)
-            self.update_overall_y_maps(collect_threshold)
+            self.update_overall_y_maps(
+                collect_threshold, random_sample_gate_percent, coll_gate_sample_seed_gen)
 
             self.initial_image = preprocess_image(
                 self.original_image.cpu().clone().detach().numpy(), normalize_image)
@@ -1168,8 +1221,9 @@ class TemplateImageGenerator():
                         os.makedirs(save_folder)
                     reconst_im_path = save_folder+'/batch_indx_' + \
                         str(batch_indx)+'_no_optimizer_reconst_img_pred_c_' + \
-                        str(classes[reconst_pred])+'act_pred_'+str(class_label) + '.jpg'
-                    input_orig_im_path = save_folder+ '/batch_indx_' + \
+                        str(classes[reconst_pred]) + \
+                        'act_pred_'+str(class_label) + '.jpg'
+                    input_orig_im_path = save_folder + '/batch_indx_' + \
                         str(batch_indx)+'_minput_orig_img.jpg'
 
                     numpy_image = self.created_image
@@ -1406,7 +1460,10 @@ class TemplateImageGenerator():
     def generate_template_image_per_class(self, exp_type, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                           is_class_segregation_on_ground_truth, template_initial_image_type,
                                           template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold,
-                                          entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix="root", final_postfix_for_save="", wandb_config_additional_dict=None, vis_version='V2'):
+                                          entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix="root", final_postfix_for_save="",
+                                          wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None):
+        coll_gate_sample_seed_gen = None
+        random_sample_gate_percent_str = ""
         is_log_wandb = not(wand_project_name is None)
         plot_iteration_interval = 5
 
@@ -1416,6 +1473,12 @@ class TemplateImageGenerator():
 
         entr_seed_gen = torch.Generator()
         entr_seed_gen.manual_seed(torch_seed)
+
+        if(random_sample_gate_percent is not None):
+            random_sample_gate_percent_str = "RD_GT_PER_LAY_SAMPLE_" + \
+                str(random_sample_gate_percent)
+            coll_gate_sample_seed_gen = torch.Generator()
+            coll_gate_sample_seed_gen.manual_seed(torch_seed)
 
         self.model.train(False)
         per_class_data_loader = torch.utils.data.DataLoader(per_class_dataset, batch_size=template_image_calculation_batch_size,
@@ -1431,7 +1494,7 @@ class TemplateImageGenerator():
 
         alpha = 0
         self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/Ver_"+str(vis_version)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/" + str(final_postfix_for_save) + "/"
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+"/" + str(final_postfix_for_save) + "/"
 
         self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
         normalize_image = False
@@ -1443,7 +1506,7 @@ class TemplateImageGenerator():
                 entropy_per_class_data_loader, class_label, number_of_batch_to_collect=number_of_batches_to_calculate_entropy_on)
 
         self.collect_all_active_pixels_into_ymaps(
-            per_class_data_loader, class_label, number_of_batch_to_collect, collect_threshold)
+            per_class_data_loader, class_label, number_of_batch_to_collect, collect_threshold, random_sample_gate_percent=random_sample_gate_percent, coll_gate_sample_seed_gen=coll_gate_sample_seed_gen)
 
         class_image, _ = next(iter(per_class_data_loader))
         class_image = class_image.to(self.device, non_blocking=True)
@@ -1470,7 +1533,7 @@ class TemplateImageGenerator():
             if(repeat == 1):
                 alpha = 0.1
             self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/Ver_"+str(vis_version)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-                seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/" + str(final_postfix_for_save) + "/"
+                seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+"/" + str(final_postfix_for_save) + "/"
 
             self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
             if("ENTR" in template_loss_type):
@@ -1851,7 +1914,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
                                 entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix='root', final_postfix_for_save="aug_indx_1",
-                                custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, wandb_config_additional_dict=None, vis_version='V2'):
+                                custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None):
     output_template_list_per_class = None
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
@@ -1901,28 +1964,31 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                                       per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                                       is_class_segregation_on_ground_truth, template_initial_image_type,
                                                       template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold, entropy_calculation_batch_size,
-                                                      number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save, wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version)
+                                                      number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save, wandb_config_additional_dict=wandb_config_additional_dict,
+                                                      vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
 
         elif(exp_type == "TEMPLATE_ACC_WITH_CUSTOM_PLOTS"):
             tmp_gen.generate_accuracies_of_template_image_per_class(
                 per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                 is_class_segregation_on_ground_truth, template_initial_image_type,
                 template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
-                exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, plot_iteration_interval=10, wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version)
+                exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, plot_iteration_interval=10, wandb_config_additional_dict=wandb_config_additional_dict,
+                vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
 
         elif(exp_type == "TEMPLATE_ACC"):
             tmp_gen.generate_accuracies_of_template_image_per_class(
                 per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                 is_class_segregation_on_ground_truth, template_initial_image_type,
                 template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, exp_type,
-                collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version)
+                collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, wandb_config_additional_dict=wandb_config_additional_dict,
+                vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
         elif(exp_type == "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"):
             list_of_reconst_images = tmp_gen.generate_accuracies_of_template_image_per_class(per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                                                                              is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                                              template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                                                              exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
                                                                                              plot_iteration_interval=10, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save,
-                                                                                             wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version)
+                                                                                             wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
             output_template_list_per_class[c_indx] = list_of_reconst_images
 
     return output_template_list_per_class
@@ -1935,7 +2001,7 @@ if __name__ == '__main__':
     # Try it with a smaller image
     print("Start")
     # mnist , cifar10 , fashion_mnist
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -1946,14 +2012,14 @@ if __name__ == '__main__':
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
-    model_arch_type = 'plain_pure_conv4_dnn'
+    model_arch_type = 'conv4_dlgn'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     # uniform_init_image , zero_init_image , gaussian_init_image
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 1
+    template_image_calculation_batch_size = 32
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
     template_loss_type = "TANH_TEMP_LOSS"
@@ -1970,10 +2036,12 @@ if __name__ == '__main__':
     torch_seed = 2022
     number_of_image_optimization_steps = 161
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES
-    exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
+    exp_type = "GENERATE_TEMPLATE_IMAGES"
     collect_threshold = 0.73
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
+
+    random_per_layer_sample_gate_percent = 50
 
     if(not(wand_project_name is None)):
         wandb.login()
@@ -2004,7 +2072,7 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+    custom_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -2029,6 +2097,7 @@ if __name__ == '__main__':
     run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size,
-                                number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version=vis_version, root_save_prefix=root_save_prefix)
+                                number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version=vis_version,
+                                root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent)
 
     print("Execution completed")
