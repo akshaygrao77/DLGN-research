@@ -133,26 +133,26 @@ def replace_percent_of_tensor_values_with_exact_percentages(inp_tensor, const_va
     return ret
 
 
-def replace_percent_of_source_values_with_target_values_with_exact_percentages(inp_tensor, source_value, const_value, percentage, seed_gen):
+def replace_percent_of_source_values_with_target_values_with_exact_percentages(inp_tensor, source_value, const_value, percentage_or_number_not_to_replace, seed_gen):
     ft_inp_tensor = torch.flatten(inp_tensor)
     temp = ft_inp_tensor == source_value
     source_indices = temp.nonzero()
     filtered_ft_inp_tensor = ft_inp_tensor[source_indices]
-    # print("filtered_ft_inp_tensor",filtered_ft_inp_tensor.size())
-    tpr = torch.arange(
-        0, 100, step=100/filtered_ft_inp_tensor.numel(), dtype=torch.float32, device=inp_tensor.get_device())
-    tpr = tpr[:filtered_ft_inp_tensor.numel()]
-    tpr = torch.unsqueeze(tpr, 1)
-    # print("tpr",tpr.size())
-    indexes = torch.randperm(tpr.shape[0], generator=seed_gen)
-    tpr = tpr[indexes]
-    target_replaced_tensor = torch.where(
-        tpr >= percentage, filtered_ft_inp_tensor, const_value)
-    # print("target_replaced_tensor",target_replaced_tensor.size())
-    ft_inp_tensor[source_indices] = target_replaced_tensor
+    if(percentage_or_number_not_to_replace <= 1):
+        num_samples_to_be_replaced = int(
+            filtered_ft_inp_tensor.numel() * (1 - percentage_or_number_not_to_replace))
+    else:
+        num_samples_to_be_replaced = filtered_ft_inp_tensor.numel() - \
+            percentage_or_number_not_to_replace
+    indexes = torch.randperm(
+        filtered_ft_inp_tensor.numel(), generator=seed_gen)
+    indexes = indexes[:num_samples_to_be_replaced]
+    filtered_ft_inp_tensor[indexes] = const_value
+    ft_inp_tensor[source_indices] = filtered_ft_inp_tensor
     ret = torch.reshape(ft_inp_tensor, inp_tensor.size())
 
-    return ret
+    num_gates_sampled = filtered_ft_inp_tensor.numel() - num_samples_to_be_replaced
+    return ret, num_gates_sampled
 
 
 class SaveOutput:
@@ -350,15 +350,16 @@ class TemplateImageGenerator():
                                                      self.total_tcollect_img_count)
                 if(random_sample_gate_percent is not None):
                     assert coll_gate_sample_seed_gen is not None, "When random sample gate is enabled we need seed generator"
-                    y_plus_passed_threshold = replace_percent_of_source_values_with_target_values_with_exact_percentages(
-                        y_plus_passed_threshold, temp_one, temp_zero, 100 - random_sample_gate_percent, coll_gate_sample_seed_gen)
+                    y_plus_passed_threshold, num_positive_gates_sampled = replace_percent_of_source_values_with_target_values_with_exact_percentages(
+                        y_plus_passed_threshold, temp_one, temp_zero, random_sample_gate_percent, coll_gate_sample_seed_gen)
                 y_minus_passed_threshold = HardRelu()(each_y_minus - collect_threshold *
                                                       self.total_tcollect_img_count)
                 if(random_sample_gate_percent is not None):
                     assert coll_gate_sample_seed_gen is not None, "When random sample gate is enabled we need seed generator"
-                    y_minus_passed_threshold = replace_percent_of_source_values_with_target_values_with_exact_percentages(
-                        y_minus_passed_threshold, temp_one, temp_zero, 100 - random_sample_gate_percent, coll_gate_sample_seed_gen)
-
+                    y_minus_passed_threshold, num_negative_gates_sampled = replace_percent_of_source_values_with_target_values_with_exact_percentages(
+                        y_minus_passed_threshold, temp_one, temp_zero, random_sample_gate_percent, coll_gate_sample_seed_gen)
+                    print("num_positive_gates_sampled:{},num_negative_gates_sampled:{}".format(
+                        num_positive_gates_sampled, num_negative_gates_sampled))
                 current_y_map = y_plus_passed_threshold - y_minus_passed_threshold
 
                 self.overall_y.append(current_y_map)
@@ -1562,6 +1563,7 @@ class TemplateImageGenerator():
                     wandb_config["end_sigma"] = end_sigma
                     wandb_config["start_step_size"] = start_step_size
                     wandb_config["end_step_size"] = end_step_size
+                    wandb_config["per_layer_random_sample_gate_percent"] = random_sample_gate_percent
                 if(wandb_config_additional_dict is not None):
                     wandb_config.update(wandb_config_additional_dict)
                 wandb_config["alpha"] = alpha
@@ -2022,9 +2024,9 @@ if __name__ == '__main__':
     template_image_calculation_batch_size = 32
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
-    template_loss_type = "TANH_TEMP_LOSS"
+    template_loss_type = "TEMP_LOSS"
     number_of_batch_to_collect = None
-    vis_version = "V3"
+    vis_version = "V2"
     wand_project_name = "V3_template_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
     wand_project_name = "test_template_visualisation_augmentation"
@@ -2041,7 +2043,7 @@ if __name__ == '__main__':
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
-    random_per_layer_sample_gate_percent = 50
+    random_per_layer_sample_gate_percent = 10
 
     if(not(wand_project_name is None)):
         wandb.login()
