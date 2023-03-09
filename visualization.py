@@ -155,6 +155,14 @@ def replace_percent_of_source_values_with_target_values_with_exact_percentages(i
     return ret, num_gates_sampled
 
 
+def get_fft_phase_amp_vis_for_tensor(input_image):
+    raw_dft = torch.fft.fft2(input_image)
+    raw_centered_dft_out = torch.fft.fftshift(raw_dft)
+    for_vis_dft_amp_out = torch.log(1+torch.abs(raw_centered_dft_out))
+    for_vis_dft_phase_out = torch.angle(raw_centered_dft_out)
+    return for_vis_dft_amp_out, for_vis_dft_phase_out
+
+
 class SaveOutput:
     def __init__(self):
         self.outputs = []
@@ -935,6 +943,8 @@ class TemplateImageGenerator():
                 entropy_per_class_data_loader, class_label, number_of_batch_to_collect=number_of_batches_to_calculate_entropy_on)
 
         batch_count = 0
+        num_correct = 0
+        num_incorrect = 0
         for batch_indx, per_class_data in enumerate(per_class_per_batch_data_loader):
             batch_count += 1
             torch.cuda.empty_cache()
@@ -1206,14 +1216,21 @@ class TemplateImageGenerator():
                 else:
                     list_of_reconst_preds = np.vstack(
                         (list_of_reconst_preds, temp_reconst_pred))
+                is_out_image = False
                 # This means it was correctly classified
                 if(temp_var > 0):
+                    if(num_correct % 150 == 0):
+                        is_out_image = True
+                    num_correct += 1
                     save_folder = self.image_save_prefix_folder + \
                         "/corr_clssfied/true_class_"+str(class_label)+"/"
                 else:
+                    if(num_incorrect % 150 == 0):
+                        is_out_image = True
+                    num_incorrect += 1
                     save_folder = self.image_save_prefix_folder + \
                         "/in_corr_clssfied/true_class_"+str(class_label)+"/"
-                if(batch_indx % 40 == 0):
+                if(is_out_image):
                     self.created_image = recreate_image(
                         self.initial_image, normalize_image)
                     model_input_orig_image = recreate_image(
@@ -1230,6 +1247,37 @@ class TemplateImageGenerator():
                     numpy_image = self.created_image
                     save_image(numpy_image, reconst_im_path)
                     save_image(model_input_orig_image, input_orig_im_path)
+
+                    for_vis_dft_amp_out, for_vis_dft_phase_out = get_fft_phase_amp_vis_for_tensor(
+                        torch.from_numpy(self.created_image).to(device=self.initial_image.get_device()))
+                    reconst_std01_vis_dft_amp_out = recreate_image(
+                        for_vis_dft_amp_out, unnormalize=False)
+                    reconst_std01_vis_dft_phase_out = recreate_image(
+                        for_vis_dft_phase_out, unnormalize=False)
+
+                    reconst_dft_amp_im_path = save_folder + '/batch_indx_' + \
+                        str(batch_indx)+'_reconst_dft_amp.jpg'
+                    reconst_dft_phase_im_path = save_folder + '/batch_indx_' + \
+                        str(batch_indx)+'_reconst_dft_phase.jpg'
+                    save_image(reconst_std01_vis_dft_amp_out,
+                               reconst_dft_amp_im_path)
+                    save_image(reconst_std01_vis_dft_phase_out,
+                               reconst_dft_phase_im_path)
+
+                    for_vis_dft_amp_out, for_vis_dft_phase_out = get_fft_phase_amp_vis_for_tensor(
+                        image)
+                    orig_std01_vis_dft_amp_out = recreate_image(
+                        for_vis_dft_amp_out, unnormalize=False)
+                    orig_std01_vis_dft_phase_out = recreate_image(
+                        for_vis_dft_phase_out, unnormalize=False)
+                    orig_dft_amp_im_path = save_folder + '/batch_indx_' + \
+                        str(batch_indx)+'_orig_dft_amp.jpg'
+                    orig_dft_phase_im_path = save_folder + '/batch_indx_' + \
+                        str(batch_indx)+'_orig_dft_phase.jpg'
+                    save_image(orig_std01_vis_dft_amp_out,
+                               orig_dft_amp_im_path)
+                    save_image(orig_std01_vis_dft_phase_out,
+                               orig_dft_phase_im_path)
 
             if(is_log_wandb):
                 wandb.log(
@@ -1318,7 +1366,7 @@ class TemplateImageGenerator():
         print("Reconstructed images written at:",
               self.image_save_prefix_folder)
         current_y_s = np.full(
-            list_of_reconst_images.shape[0], original_label)
+            list_of_reconst_images.shape[0], original_label.cpu().clone().detach().numpy())
 
         with open(np_save_filename, 'wb') as file:
             np.savez(
@@ -1685,12 +1733,36 @@ class TemplateImageGenerator():
                                     "class_"+str(class_label)+"/"
                                 if not os.path.exists(save_folder):
                                     os.makedirs(save_folder)
-                                im_path = save_folder+'/no_optimizer_actual_c_' + \
-                                    str(class_label)+'_iter' + \
-                                    str(step_iter) + '.jpg'
+                                im_path = save_folder+'/iter_' + \
+                                    str(step_iter)+'_no_optimizer_actual_c_' + \
+                                    str(class_label)+'.jpg'
+
+                                dft_im_path = save_folder+'/iter_' + \
+                                    str(step_iter)+'_centered_dft_amp_' + \
+                                    str(class_label)+'.jpg'
+
+                                dft_phase_im_path = save_folder+'/iter_' + \
+                                    str(step_iter)+'_centered_dft_phase_' + \
+                                    str(class_label)+'.jpg'
+
+                                raw_dft = np.fft.fft2(self.created_image)
+                                raw_centered_dft_out = np.fft.fftshift(raw_dft)
+                                for_vis_dft_amp_out = np.log(
+                                    1+np.abs(raw_centered_dft_out))
+                                std01_vis_dft_amp_out = recreate_image(
+                                    for_vis_dft_amp_out, unnormalize=False)
+
+                                for_vis_dft_phase_out = np.angle(
+                                    raw_centered_dft_out)
+                                std01_vis_dft_phase_out = recreate_image(
+                                    for_vis_dft_phase_out, unnormalize=False)
 
                                 numpy_image = self.created_image
                                 save_image(numpy_image, im_path)
+
+                                save_image(std01_vis_dft_amp_out, dft_im_path)
+                                save_image(std01_vis_dft_phase_out,
+                                           dft_phase_im_path)
 
                         cur_time = time.time()
                         tot_time = cur_time - begin_time
@@ -2014,7 +2086,7 @@ if __name__ == '__main__':
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'plain_pure_conv4_dnn'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
@@ -2024,12 +2096,12 @@ if __name__ == '__main__':
     template_image_calculation_batch_size = 32
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
-    template_loss_type = "TEMP_LOSS"
+    template_loss_type = "TANH_TEMP_LOSS"
     number_of_batch_to_collect = None
     vis_version = "V2"
-    wand_project_name = "V3_template_visualisation_augmentation"
+    wand_project_name = "fresh_template_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
-    wand_project_name = "test_template_visualisation_augmentation"
+    # wand_project_name = "test_template_visualisation_augmentation"
     # wand_project_name = None
     wandb_group_name = "TP_"+str(template_loss_type) + \
         "_DS_"+str(dataset)+"_MT_"+str(model_arch_type)
@@ -2038,12 +2110,12 @@ if __name__ == '__main__':
     torch_seed = 2022
     number_of_image_optimization_steps = 161
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES
-    exp_type = "GENERATE_TEMPLATE_IMAGES"
+    exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
     collect_threshold = 0.73
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
-    random_per_layer_sample_gate_percent = 10
+    random_per_layer_sample_gate_percent = None
 
     if(not(wand_project_name is None)):
         wandb.login()
@@ -2074,7 +2146,7 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+    custom_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
