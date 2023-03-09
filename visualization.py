@@ -759,6 +759,7 @@ class TemplateImageGenerator():
                                                         exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
                                                         plot_iteration_interval=None, root_save_prefix="root", final_postfix_for_save="", wandb_config_additional_dict=None, vis_version='V2'):
         list_of_reconst_images = None
+        list_of_reconst_preds = None
         is_log_wandb = not(wand_project_name is None)
 
         # torch.manual_seed(torch_seed)
@@ -794,14 +795,28 @@ class TemplateImageGenerator():
         max_percent_active_pixels = 0.
         min_percent_active_pixels = 100.
 
+        np_save_filename = self.image_save_prefix_folder + \
+            '/class_'+str(class_label) + '.npy'
+        is_current_aug_available = os.path.exists(np_save_filename)
+        if(is_current_aug_available):
+            with open(np_save_filename, 'rb') as file:
+                npzfile = np.load(np_save_filename)
+                each_class_output_template_list = npzfile['x']
+                return each_class_output_template_list
+
         if(vis_version == 'V2' or vis_version == 'V3'):
             if('conv4_deep_gated_net' in model_arch_type):
                 number_of_image_optimization_steps = 301
             else:
                 number_of_image_optimization_steps = 161
 
-            start_sigma = 0.75
-            end_sigma = 0.1
+            if(vis_version == 'V2'):
+                start_sigma = 0.75
+                end_sigma = 0.1
+            elif(vis_version == 'V3'):
+                start_sigma = 0.1
+                end_sigma = 0.75
+
             if('conv4_deep_gated_net' in model_arch_type):
                 start_step_size = 1
                 end_step_size = 0.5
@@ -1086,27 +1101,6 @@ class TemplateImageGenerator():
                         self.initial_image.requires_grad_()
                         overall_step += 1
 
-            with torch.no_grad():
-                init_img_np = self.initial_image.cpu().clone().detach().numpy()
-                if(list_of_reconst_images is None):
-                    list_of_reconst_images = init_img_np
-                else:
-                    list_of_reconst_images = np.vstack(
-                        (list_of_reconst_images, init_img_np))
-                if(batch_indx % 160 == 0):
-                    self.created_image = recreate_image(
-                        self.initial_image, normalize_image)
-                    save_folder = self.image_save_prefix_folder + \
-                        "class_"+str(class_label)+"/"
-                    if not os.path.exists(save_folder):
-                        os.makedirs(save_folder)
-                    im_path = save_folder+'/no_optimizer_actual_c_' + \
-                        str(class_label)+'_batch_indx' + \
-                        str(batch_indx) + '.jpg'
-
-                    numpy_image = self.created_image
-                    save_image(numpy_image, im_path)
-
             reconst_outputs = self.model(self.initial_image)
             reconst_outputs_softmax = reconst_outputs.softmax(dim=1)
             print("Confidence over Reconstructed image with alpha:", alpha)
@@ -1120,7 +1114,8 @@ class TemplateImageGenerator():
                   classes[reconst_pred])
 
             total += original_label.size()[0]
-            reconst_correct += reconst_pred.eq(original_label).sum().item()
+            temp_var = reconst_pred.eq(original_label).sum().item()
+            reconst_correct += temp_var
 
             image = preprocess_image(
                 class_image[0].cpu().clone().detach().numpy(), normalize_image)
@@ -1143,6 +1138,43 @@ class TemplateImageGenerator():
 
             per_class_per_batch_data_loader.set_postfix(rec_acc=100. * reconst_correct/total,
                                                         orig_acc=100.*original_correct/total, rec_ratio="{}/{}".format(reconst_correct, total), orig_ratio="{}/{}".format(original_correct, total))
+
+            with torch.no_grad():
+                init_img_np = self.initial_image.cpu().clone().detach().numpy()
+                temp_reconst_pred = reconst_pred.cpu().clone().detach().numpy()
+                if(list_of_reconst_images is None):
+                    list_of_reconst_images = init_img_np
+                else:
+                    list_of_reconst_images = np.vstack(
+                        (list_of_reconst_images, init_img_np))
+                if(list_of_reconst_preds is None):
+                    list_of_reconst_preds = temp_reconst_pred
+                else:
+                    list_of_reconst_preds = np.vstack(
+                        (list_of_reconst_preds, temp_reconst_pred))
+                # This means it was correctly classified
+                if(temp_var > 0):
+                    save_folder = self.image_save_prefix_folder + \
+                        "/corr_clssfied/true_class_"+str(class_label)+"/"
+                else:
+                    save_folder = self.image_save_prefix_folder + \
+                        "/in_corr_clssfied/true_class_"+str(class_label)+"/"
+                if(batch_indx % 40 == 0):
+                    self.created_image = recreate_image(
+                        self.initial_image, normalize_image)
+                    model_input_orig_image = recreate_image(
+                        image, normalize_image)
+                    if not os.path.exists(save_folder):
+                        os.makedirs(save_folder)
+                    reconst_im_path = save_folder+'/batch_indx_' + \
+                        str(batch_indx)+'_no_optimizer_reconst_img_pred_c_' + \
+                        str(classes[reconst_pred])+'act_pred_'+str(class_label) + '.jpg'
+                    input_orig_im_path = save_folder+ '/batch_indx_' + \
+                        str(batch_indx)+'_minput_orig_img.jpg'
+
+                    numpy_image = self.created_image
+                    save_image(numpy_image, reconst_im_path)
+                    save_image(model_input_orig_image, input_orig_im_path)
 
             if(is_log_wandb):
                 wandb.log(
@@ -1230,6 +1262,12 @@ class TemplateImageGenerator():
             wandb.finish()
         print("Reconstructed images written at:",
               self.image_save_prefix_folder)
+        current_y_s = np.full(
+            list_of_reconst_images.shape[0], original_label)
+
+        with open(np_save_filename, 'wb') as file:
+            np.savez(
+                file, x=list_of_reconst_images, y=current_y_s, y_pred=list_of_reconst_preds)
         return list_of_reconst_images
 
     def generate_template_image_over_given_image(self, model_arch_type, image_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version='V2'):
@@ -1254,8 +1292,12 @@ class TemplateImageGenerator():
             else:
                 number_of_image_optimization_steps = 161
 
-            start_sigma = 0.75
-            end_sigma = 0.1
+            if(vis_version == 'V2'):
+                start_sigma = 0.75
+                end_sigma = 0.1
+            elif(vis_version == 'V3'):
+                start_sigma = 0.1
+                end_sigma = 0.75
             if('conv4_deep_gated_net' in model_arch_type):
                 start_step_size = 1
                 end_step_size = 0.5
@@ -1410,9 +1452,12 @@ class TemplateImageGenerator():
                 number_of_image_optimization_steps = 301
             else:
                 number_of_image_optimization_steps = 161
-
-            start_sigma = 0.75
-            end_sigma = 0.1
+            if(vis_version == 'V2'):
+                start_sigma = 0.75
+                end_sigma = 0.1
+            elif(vis_version == 'V3'):
+                start_sigma = 0.1
+                end_sigma = 0.75
             if('conv4_deep_gated_net' in model_arch_type):
                 start_step_size = 1
                 end_step_size = 0.5
@@ -1890,7 +1935,7 @@ if __name__ == '__main__':
     # Try it with a smaller image
     print("Start")
     # mnist , cifar10 , fashion_mnist
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -1901,7 +1946,7 @@ if __name__ == '__main__':
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
-    model_arch_type = 'conv4_deep_gated_net'
+    model_arch_type = 'plain_pure_conv4_dnn'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
@@ -1913,9 +1958,10 @@ if __name__ == '__main__':
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
     template_loss_type = "TANH_TEMP_LOSS"
     number_of_batch_to_collect = None
-    wand_project_name = "V2_template_visualisation_augmentation"
+    vis_version = "V3"
+    wand_project_name = "V3_template_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
-    # wand_project_name = "test_template_visualisation_augmentation"
+    wand_project_name = "test_template_visualisation_augmentation"
     # wand_project_name = None
     wandb_group_name = "TP_"+str(template_loss_type) + \
         "_DS_"+str(dataset)+"_MT_"+str(model_arch_type)
@@ -1958,7 +2004,7 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/fashion_mnist/adversarial_training/MT_conv4_deep_gated_net_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    custom_model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -1974,12 +2020,15 @@ if __name__ == '__main__':
         custom_model.load_state_dict(temp_model.state_dict())
 
         custom_model = custom_model.to(device)
+        root_save_prefix = custom_model_path[0:custom_model_path.rfind(
+            ".pt")]+"/"+"RECONST_IMAGES/"
     else:
+        root_save_prefix = None
         custom_model = None
 
     run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size,
-                                number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version="V2")
+                                number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version=vis_version, root_save_prefix=root_save_prefix)
 
     print("Execution completed")
