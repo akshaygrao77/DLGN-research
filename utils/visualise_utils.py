@@ -220,7 +220,8 @@ def gallery_into_3D_array(array, nrows, ncols):
 
 
 def gallery(array, nrows, ncols):
-
+    if(nrows is None or ncols is None):
+        return array
     if(len(array.shape) == 3):
         nindex, height, width = array.shape
         nrows = nindex//ncols
@@ -283,6 +284,8 @@ def generate_plain_3DImage(image_data, save_path, is_standarize=True):
 
 
 def generate_plain_image_data(image_data):
+    row = None
+    col = None
     if(isinstance(image_data, torch.Tensor)):
         image_data = copy.copy(image_data.cpu().clone().detach().numpy())
     if(len(image_data.shape) == 3):
@@ -320,7 +323,7 @@ def generate_list_of_plain_images_from_data(full_heatmap_data, start=None, end=N
         os.makedirs(sfolder)
 
     for i in range(num_frames):
-        if(i % 2 == 0):
+        if(i % 1 == 0):
             if(i % 50 == 0):
                 print("Writing image:", i)
             if(save_each_img_path is not None):

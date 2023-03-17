@@ -373,11 +373,35 @@ def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
                       current_final_postfix_for_save)
 
 
+def torch_stack(inp, update):
+    if(isinstance(update, np.ndarray)):
+        update = torch.from_numpy(update)
+
+    if(inp is None):
+        inp = update
+    else:
+        inp = torch.vstack((inp, update))
+    return inp
+
+
+def update_mean(inp, n, update):
+    if(n == 0):
+        return update
+    return ((inp * (n-1))+update)/n
+
+
+def ind_normalize_in_range_01(inp):
+    for i in range(len(inp)):
+        inp[i] = normalize_in_range_01(inp[i])
+    return inp
+
+
 def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label, c_indx,
                                           per_class_dataset, save_prefix, num_batches_to_visualize, final_postfix_for_save):
+    stop_all_batch_lvl_vis = False
     is_vis_ind_conv_filter_out = False
     is_vis_ind_DFT_conv_filter_out = False
-    is_vis_ind_DFT_original = True
+    is_vis_ind_DFT_original = False
     is_vis_ind_hard_relu_filter_out = False
     is_print_ind_raw_filter_out = False
     is_print_ind_std_filter_out = False
@@ -391,6 +415,10 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
         str(final_postfix_for_save) + \
         "/GRID_SEQ_FILTER_OUTS/C_"+str(class_label)+"/"
 
+    avg_save_folder = save_prefix + "/DS_" + str(filter_vis_dataset)+"/" + \
+        str(final_postfix_for_save) + \
+        "/AVG_SEQ_FILTER_OUTS/C_"+str(class_label)+"/"
+
     per_class_data_loader = torch.utils.data.DataLoader(
         per_class_dataset, batch_size=batch_size, shuffle=False)
 
@@ -400,6 +428,9 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
     num_b = 0
     model = model.to(device)
     model.train(False)
+
+    sample_count = 0
+    num_layers = None
 
     for batch_idx, per_class_per_batch_data in enumerate(per_class_data_loader):
         num_b += 1
@@ -413,80 +444,140 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
         else:
             conv_outs = model.linear_conv_outputs
 
-        hard_relu_active_percentage = np.zeros(len(conv_outs))
+        num_layers = len(conv_outs)
+        if(sample_count == 0 and run_all_batches):
+            avg_channel_conv_norm_outs = [None]*num_layers
+            avg_chanl_conv_DFT_norm_outs = [None]*num_layers
+            avg_chanl_conv_DFT_phase_norm_outs = [None]*num_layers
+            avg_chanl_conv_DTimeFT_norm_outs = [None]*num_layers
+            avg_chanl_conv_DTimeFT_phase_norm_outs = [None]*num_layers
+
+            avg_chanl_orig_DFT_norm_outs = None
+            avg_chanl_orig_DFT_phase_norm_outs = None
+            avg_chanl_orig_DTimeFT_norm_outs = None
+            avg_chanl_orig_DTimeFT_phase_norm_outs = None
+
+        hard_relu_active_percentage = np.zeros(num_layers)
 
         with torch.no_grad():
-            for layer_num in range(len(conv_outs)):
+            for layer_num in range(num_layers):
                 current_layer_conv_output = conv_outs[layer_num]
                 current_layer_Hrelu_output = HardRelu()(current_layer_conv_output)
+                temp_count = sample_count
                 for each_batch_indx in range(len(current_layer_conv_output)):
                     batch_save_folder = save_folder + \
                         "/BTCH_IND_" + str(each_batch_indx)
                     current_batch_conv_output = current_layer_conv_output[each_batch_indx]
                     current_batch_HRelu_output = current_layer_Hrelu_output[each_batch_indx]
-                    current_orig_input = c_inputs[each_batch_indx]
+                    if(layer_num == 0):
+                        current_orig_input = c_inputs[each_batch_indx]
 
-                    for each_orig_img_ind in range(len(current_orig_input)):
-                        orig_input_chnl = current_orig_input[each_orig_img_ind]
-                        raw_dft_out = generate_centralized_DFT(
-                            orig_input_chnl)
-                        for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
-                        for_vis_dft_phase_out = torch.angle(raw_dft_out)
-                        std01_vis_dft_out = normalize_in_range_01(
-                            for_vis_dft_out)
-                        std01_vis_dft_out = std01_vis_dft_out[None, :]
+                        cur_chanl_orig_DFT_norm_outs = None
+                        cur_chanl_orig_DFT_phase_norm_outs = None
+                        cur_chanl_orig_DTimeFT_norm_outs = None
+                        cur_chanl_orig_DTimeFT_phase_norm_outs = None
+                        temp_c = sample_count
+                        for each_orig_img_ind in range(len(current_orig_input)):
+                            orig_input_chnl = current_orig_input[each_orig_img_ind]
+                            raw_dft_out = generate_centralized_DFT(
+                                orig_input_chnl)
+                            for_vis_dft_out = torch.log(
+                                1+torch.abs(raw_dft_out))
+                            for_vis_dft_phase_out = torch.angle(raw_dft_out)
 
-                        std01_vis_dft_phase_out = normalize_in_range_01(
-                            for_vis_dft_phase_out)
-                        std01_vis_dft_phase_out = std01_vis_dft_phase_out[None, :]
+                            if(run_all_batches):
+                                cur_chanl_orig_DFT_norm_outs = torch_stack(
+                                    cur_chanl_orig_DFT_norm_outs, for_vis_dft_out)
+                                cur_chanl_orig_DFT_phase_norm_outs = torch_stack(
+                                    cur_chanl_orig_DFT_phase_norm_outs, for_vis_dft_phase_out)
 
-                        raw_dtimeft_out = generate_centralized_DTimeFT(
-                            orig_input_chnl)
-                        for_vis_dtimeft_out = torch.log(
-                            1+torch.abs(raw_dtimeft_out))
-                        for_vis_dtimeft_phase_out = torch.angle(
-                            raw_dtimeft_out)
-                        std01_vis_dtimeft_out = normalize_in_range_01(
-                            for_vis_dtimeft_out)
-                        std01_vis_dtimeft_out = std01_vis_dtimeft_out[None, :]
+                            if(not stop_all_batch_lvl_vis):
+                                std01_vis_dft_out = normalize_in_range_01(
+                                    for_vis_dft_out)
+                                std01_vis_dft_out = std01_vis_dft_out[None, :]
 
-                        std01_vis_dtimeft_phase_out = normalize_in_range_01(
-                            for_vis_dtimeft_phase_out)
-                        std01_vis_dtimeft_phase_out = std01_vis_dtimeft_phase_out[None, :]
-                        if(is_vis_ind_DFT_original):
-                            if not os.path.exists(batch_save_folder):
-                                os.makedirs(batch_save_folder)
-                            current_filt_channel_save_path = batch_save_folder + \
-                                "/orig_img_DFT_"+str(each_orig_img_ind)+".jpg"
-                            std_filter_out_image = recreate_image(
-                                std01_vis_dft_out, unnormalize=False, is_standarize_to_01=False)
-                            save_image(std_filter_out_image,
-                                       current_filt_channel_save_path)
+                                std01_vis_dft_phase_out = normalize_in_range_01(
+                                    for_vis_dft_phase_out)
+                                std01_vis_dft_phase_out = std01_vis_dft_phase_out[None, :]
 
-                            current_filt_channel_save_path = batch_save_folder + \
-                                "/orig_img_DFT_phase_" + \
-                                str(each_orig_img_ind)+".jpg"
-                            std_filter_out_image = recreate_image(
-                                std01_vis_dft_phase_out, unnormalize=False, is_standarize_to_01=False)
-                            save_image(std_filter_out_image,
-                                       current_filt_channel_save_path)
+                            raw_dtimeft_out = generate_centralized_DTimeFT(
+                                orig_input_chnl)
+                            for_vis_dtimeft_out = torch.log(
+                                1+torch.abs(raw_dtimeft_out))
+                            for_vis_dtimeft_phase_out = torch.angle(
+                                raw_dtimeft_out)
 
-                            current_filt_channel_save_path = batch_save_folder + \
-                                "/orig_img_DTimeFT_phase_" + \
-                                str(each_orig_img_ind)+".jpg"
-                            std_filter_out_image = recreate_image(
-                                std01_vis_dtimeft_phase_out, unnormalize=False, is_standarize_to_01=False)
+                            if(run_all_batches):
+                                cur_chanl_orig_DTimeFT_norm_outs = torch_stack(
+                                    cur_chanl_orig_DTimeFT_norm_outs, for_vis_dtimeft_out)
+                                cur_chanl_orig_DTimeFT_phase_norm_outs = torch_stack(
+                                    cur_chanl_orig_DTimeFT_phase_norm_outs, for_vis_dtimeft_phase_out)
 
-                            save_image(std_filter_out_image,
-                                       current_filt_channel_save_path)
+                            if(not stop_all_batch_lvl_vis):
+                                std01_vis_dtimeft_out = normalize_in_range_01(
+                                    for_vis_dtimeft_out)
+                                std01_vis_dtimeft_out = std01_vis_dtimeft_out[None, :]
 
-                            current_filt_channel_save_path = batch_save_folder + \
-                                "/orig_img_DTimeFT_" + \
-                                str(each_orig_img_ind)+".jpg"
-                            std_filter_out_image = recreate_image(
-                                std01_vis_dtimeft_out, unnormalize=False, is_standarize_to_01=False)
-                            save_image(std_filter_out_image,
-                                       current_filt_channel_save_path)
+                                std01_vis_dtimeft_phase_out = normalize_in_range_01(
+                                    for_vis_dtimeft_phase_out)
+                                std01_vis_dtimeft_phase_out = std01_vis_dtimeft_phase_out[None, :]
+
+                            sample_count += 1
+                            if(is_vis_ind_DFT_original):
+                                if not os.path.exists(batch_save_folder):
+                                    os.makedirs(batch_save_folder)
+                                current_filt_channel_save_path = batch_save_folder + \
+                                    "/orig_img_DFT_" + \
+                                    str(each_orig_img_ind)+".jpg"
+                                std_filter_out_image = recreate_image(
+                                    std01_vis_dft_out, unnormalize=False, is_standarize_to_01=False)
+                                save_image(std_filter_out_image,
+                                           current_filt_channel_save_path)
+
+                                current_filt_channel_save_path = batch_save_folder + \
+                                    "/orig_img_DFT_phase_" + \
+                                    str(each_orig_img_ind)+".jpg"
+                                std_filter_out_image = recreate_image(
+                                    std01_vis_dft_phase_out, unnormalize=False, is_standarize_to_01=False)
+                                save_image(std_filter_out_image,
+                                           current_filt_channel_save_path)
+
+                                current_filt_channel_save_path = batch_save_folder + \
+                                    "/orig_img_DTimeFT_phase_" + \
+                                    str(each_orig_img_ind)+".jpg"
+                                std_filter_out_image = recreate_image(
+                                    std01_vis_dtimeft_phase_out, unnormalize=False, is_standarize_to_01=False)
+
+                                save_image(std_filter_out_image,
+                                           current_filt_channel_save_path)
+
+                                current_filt_channel_save_path = batch_save_folder + \
+                                    "/orig_img_DTimeFT_" + \
+                                    str(each_orig_img_ind)+".jpg"
+                                std_filter_out_image = recreate_image(
+                                    std01_vis_dtimeft_out, unnormalize=False, is_standarize_to_01=False)
+                                save_image(std_filter_out_image,
+                                           current_filt_channel_save_path)
+
+                        sample_count = temp_c
+                        if(run_all_batches):
+                            cur_chanl_orig_DFT_norm_outs = torch.squeeze(
+                                cur_chanl_orig_DFT_norm_outs)
+                            cur_chanl_orig_DFT_phase_norm_outs = torch.squeeze(
+                                cur_chanl_orig_DFT_phase_norm_outs)
+                            cur_chanl_orig_DTimeFT_norm_outs = torch.squeeze(
+                                cur_chanl_orig_DTimeFT_norm_outs)
+                            cur_chanl_orig_DTimeFT_phase_norm_outs = torch.squeeze(
+                                cur_chanl_orig_DTimeFT_phase_norm_outs)
+
+                            avg_chanl_orig_DFT_norm_outs = update_mean(
+                                avg_chanl_orig_DFT_norm_outs, sample_count, cur_chanl_orig_DFT_norm_outs)
+                            avg_chanl_orig_DFT_phase_norm_outs = update_mean(
+                                avg_chanl_orig_DFT_phase_norm_outs, sample_count, cur_chanl_orig_DFT_phase_norm_outs)
+                            avg_chanl_orig_DTimeFT_norm_outs = update_mean(
+                                avg_chanl_orig_DTimeFT_norm_outs, sample_count, cur_chanl_orig_DTimeFT_norm_outs)
+                            avg_chanl_orig_DTimeFT_phase_norm_outs = update_mean(
+                                avg_chanl_orig_DTimeFT_phase_norm_outs, sample_count, cur_chanl_orig_DTimeFT_phase_norm_outs)
 
                     total_pixel_points = torch.numel(
                         current_batch_HRelu_output)
@@ -495,26 +586,46 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                     hard_relu_active_percentage[layer_num] += (
                         current_active_pixel/total_pixel_points)
 
-                    current_channel_conv_norm_outs = None
-                    current_chanl_conv_DFT_norm_outs = None
-                    current_chanl_conv_DFT_phase_norm_outs = None
-                    current_chanl_conv_DTimeFT_norm_outs = None
-                    current_chanl_conv_DTimeFT_phase_norm_outs = None
+                    if(run_all_batches):
+                        cavg_channel_conv_norm_outs = None
+                        cavg_chanl_conv_DFT_norm_outs = None
+                        cavg_chanl_conv_DFT_phase_norm_outs = None
+                        cavg_chanl_conv_DTimeFT_norm_outs = None
+                        cavg_chanl_conv_DTimeFT_phase_norm_outs = None
+
+                    if(not stop_all_batch_lvl_vis):
+                        current_channel_conv_norm_outs = None
+                        current_chanl_conv_DFT_norm_outs = None
+                        current_chanl_conv_DFT_phase_norm_outs = None
+                        current_chanl_conv_DTimeFT_norm_outs = None
+                        current_chanl_conv_DTimeFT_phase_norm_outs = None
                     for channel_ind in range(len(current_batch_conv_output)):
                         current_channel_conv_output = current_batch_conv_output[channel_ind]
                         current_channel_conv_output = current_channel_conv_output[None, :]
+
+                        if(run_all_batches):
+                            cavg_channel_conv_norm_outs = torch_stack(
+                                cavg_channel_conv_norm_outs, current_channel_conv_output)
 
                         raw_dft_out = generate_centralized_DFT(
                             current_channel_conv_output[0])
                         for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
                         for_vis_dft_phase_out = torch.angle(raw_dft_out)
-                        std01_vis_dft_out = normalize_in_range_01(
-                            for_vis_dft_out)
-                        std01_vis_dft_out = std01_vis_dft_out[None, :]
 
-                        std01_vis_dft_phase_out = normalize_in_range_01(
-                            for_vis_dft_phase_out)
-                        std01_vis_dft_phase_out = std01_vis_dft_phase_out[None, :]
+                        if(run_all_batches):
+                            cavg_chanl_conv_DFT_phase_norm_outs = torch_stack(
+                                cavg_chanl_conv_DFT_phase_norm_outs, for_vis_dft_phase_out)
+                            cavg_chanl_conv_DFT_norm_outs = torch_stack(
+                                cavg_chanl_conv_DFT_norm_outs, for_vis_dft_out)
+
+                        if(not stop_all_batch_lvl_vis):
+                            std01_vis_dft_out = normalize_in_range_01(
+                                for_vis_dft_out)
+                            std01_vis_dft_out = std01_vis_dft_out[None, :]
+
+                            std01_vis_dft_phase_out = normalize_in_range_01(
+                                for_vis_dft_phase_out)
+                            std01_vis_dft_phase_out = std01_vis_dft_phase_out[None, :]
 
                         raw_dtimeft_out = generate_centralized_DTimeFT(
                             current_channel_conv_output[0])
@@ -522,216 +633,404 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                             1+torch.abs(raw_dtimeft_out))
                         for_vis_dtimeft_phase_out = torch.angle(
                             raw_dtimeft_out)
-                        std01_vis_dtimeft_out = normalize_in_range_01(
-                            for_vis_dtimeft_out)
-                        std01_vis_dtimeft_out = std01_vis_dtimeft_out[None, :]
 
-                        std01_vis_dtimeft_phase_out = normalize_in_range_01(
-                            for_vis_dtimeft_phase_out)
-                        std01_vis_dtimeft_phase_out = std01_vis_dtimeft_phase_out[None, :]
+                        if(run_all_batches):
+                            cavg_chanl_conv_DTimeFT_norm_outs = torch_stack(
+                                cavg_chanl_conv_DTimeFT_norm_outs, for_vis_dtimeft_out)
+                            cavg_chanl_conv_DTimeFT_phase_norm_outs = torch_stack(
+                                cavg_chanl_conv_DTimeFT_phase_norm_outs, for_vis_dtimeft_phase_out)
 
-                        current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + \
-                            str(layer_num)+"/"+"/FILT_IND_" + \
-                            str(channel_ind) + "/"
+                        if(not stop_all_batch_lvl_vis):
+                            std01_vis_dtimeft_out = normalize_in_range_01(
+                                for_vis_dtimeft_out)
+                            std01_vis_dtimeft_out = std01_vis_dtimeft_out[None, :]
 
-                        std01_conv_out_image = normalize_in_range_01(
-                            current_channel_conv_output)
-                        if(current_channel_conv_norm_outs is None):
-                            current_channel_conv_norm_outs = torch.from_numpy(
-                                std01_conv_out_image)
-                        else:
-                            current_channel_conv_norm_outs = torch.vstack(
-                                (current_channel_conv_norm_outs, torch.from_numpy(std01_conv_out_image)))
+                            std01_vis_dtimeft_phase_out = normalize_in_range_01(
+                                for_vis_dtimeft_phase_out)
+                            std01_vis_dtimeft_phase_out = std01_vis_dtimeft_phase_out[None, :]
 
-                        if(current_chanl_conv_DFT_norm_outs is None):
-                            current_chanl_conv_DFT_norm_outs = torch.from_numpy(
-                                std01_vis_dft_out)
-                        else:
-                            current_chanl_conv_DFT_norm_outs = torch.vstack(
-                                (current_chanl_conv_DFT_norm_outs, torch.from_numpy(std01_vis_dft_out)))
+                            current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + \
+                                str(layer_num)+"/"+"/FILT_IND_" + \
+                                str(channel_ind) + "/"
 
-                        if(current_chanl_conv_DFT_phase_norm_outs is None):
-                            current_chanl_conv_DFT_phase_norm_outs = torch.from_numpy(
-                                std01_vis_dft_phase_out)
-                        else:
-                            current_chanl_conv_DFT_phase_norm_outs = torch.vstack(
-                                (current_chanl_conv_DFT_phase_norm_outs, torch.from_numpy(std01_vis_dft_phase_out)))
-                        if(current_chanl_conv_DTimeFT_norm_outs is None):
-                            current_chanl_conv_DTimeFT_norm_outs = torch.from_numpy(
-                                std01_vis_dtimeft_out)
-                        else:
-                            current_chanl_conv_DTimeFT_norm_outs = torch.vstack(
-                                (current_chanl_conv_DTimeFT_norm_outs, torch.from_numpy(std01_vis_dtimeft_out)))
+                            std01_conv_out_image = normalize_in_range_01(
+                                current_channel_conv_output)
 
-                        if(current_chanl_conv_DTimeFT_phase_norm_outs is None):
-                            current_chanl_conv_DTimeFT_phase_norm_outs = torch.from_numpy(
-                                std01_vis_dtimeft_phase_out)
-                        else:
-                            current_chanl_conv_DTimeFT_phase_norm_outs = torch.vstack(
-                                (current_chanl_conv_DTimeFT_phase_norm_outs, torch.from_numpy(std01_vis_dtimeft_phase_out)))
+                            current_channel_conv_norm_outs = torch_stack(
+                                current_channel_conv_norm_outs, std01_conv_out_image)
+                            current_chanl_conv_DFT_norm_outs = torch_stack(
+                                current_chanl_conv_DFT_norm_outs, std01_vis_dft_out)
+                            current_chanl_conv_DFT_phase_norm_outs = torch_stack(
+                                current_chanl_conv_DFT_phase_norm_outs, std01_vis_dft_phase_out)
+                            current_chanl_conv_DTimeFT_norm_outs = torch_stack(
+                                current_chanl_conv_DTimeFT_norm_outs, std01_vis_dtimeft_out)
+                            current_chanl_conv_DTimeFT_phase_norm_outs = torch_stack(
+                                current_chanl_conv_DTimeFT_phase_norm_outs, std01_vis_dtimeft_phase_out)
 
-                        std_filter_out_image = None
-                        if(is_vis_ind_conv_filter_out):
-                            if not os.path.exists(current_save_folder):
-                                os.makedirs(current_save_folder)
-                            current_filt_channel_save_path = current_save_folder + \
-                                "filter_out_channel_" + \
-                                str(channel_ind)+".jpg"
-                            std_filter_out_image = recreate_image(
-                                std01_conv_out_image, unnormalize=False, is_standarize_to_01=False)
-                            save_image(std_filter_out_image,
-                                       current_filt_channel_save_path)
-
-                        if(is_vis_ind_DFT_conv_filter_out):
-                            if not os.path.exists(current_save_folder):
-                                os.makedirs(current_save_folder)
-                            current_filt_channel_save_path = current_save_folder + \
-                                "DFT_filter_out_channel_" + \
-                                str(channel_ind)+".jpg"
-                            std_filter_out_image = recreate_image(
-                                std01_vis_dft_out, unnormalize=False, is_standarize_to_01=False)
-                            save_image(std_filter_out_image,
-                                       current_filt_channel_save_path)
-
-                            current_filt_channel_save_path = current_save_folder + \
-                                "DFT_phase_filter_out_channel_" + \
-                                str(channel_ind)+".jpg"
-                            std_filter_out_image = recreate_image(
-                                std01_vis_dft_phase_out, unnormalize=False, is_standarize_to_01=False)
-                            save_image(std_filter_out_image,
-                                       current_filt_channel_save_path)
-
-                            current_filt_channel_save_path = current_save_folder + \
-                                "DTimeFT_phase_filter_out_channel_" + \
-                                str(channel_ind)+".jpg"
-                            std_filter_out_image = recreate_image(
-                                std01_vis_dtimeft_phase_out, unnormalize=False, is_standarize_to_01=False)
-                            save_image(std_filter_out_image,
-                                       current_filt_channel_save_path)
-
-                            current_filt_channel_save_path = current_save_folder + \
-                                "DTimeFT_filter_out_channel_" + \
-                                str(channel_ind)+".jpg"
-                            std_filter_out_image = recreate_image(
-                                std01_vis_dtimeft_out, unnormalize=False, is_standarize_to_01=False)
-                            save_image(std_filter_out_image,
-                                       current_filt_channel_save_path)
-
-                        if(is_vis_ind_hard_relu_filter_out):
-                            if not os.path.exists(current_save_folder):
-                                os.makedirs(current_save_folder)
-
-                            current_channel_HRelu_output = current_batch_HRelu_output[channel_ind]
-                            current_channel_HRelu_output = current_channel_HRelu_output[None, :]
-                            current_filt_HRelu_channel_save_path = current_save_folder + \
-                                "HRelu_filter_out_channel_" + \
-                                str(channel_ind)+".jpg"
-                            std_HRelu_filter_out_image = recreate_image(
-                                current_channel_HRelu_output, unnormalize=False)
-                            save_image(std_HRelu_filter_out_image,
-                                       current_filt_HRelu_channel_save_path)
-
-                        if(is_print_ind_raw_filter_out):
-                            if not os.path.exists(current_save_folder):
-                                os.makedirs(current_save_folder)
-                            raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
-                            with open(raw_txt_save_folder, "w") as f:
-                                f.write("\n".join(
-                                    ",".join(map(str, x)) for x in current_channel_conv_output))
-                        if(is_print_ind_std_filter_out):
-                            if not os.path.exists(current_save_folder):
-                                os.makedirs(current_save_folder)
-                            if(std_filter_out_image is None):
+                            std_filter_out_image = None
+                            if(is_vis_ind_conv_filter_out):
+                                if not os.path.exists(current_save_folder):
+                                    os.makedirs(current_save_folder)
+                                current_filt_channel_save_path = current_save_folder + \
+                                    "filter_out_channel_" + \
+                                    str(channel_ind)+".jpg"
                                 std_filter_out_image = recreate_image(
                                     std01_conv_out_image, unnormalize=False, is_standarize_to_01=False)
-                            std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
-                            with open(std_txt_save_folder, "w") as f:
-                                f.write("\n".join(
-                                    ",".join(map(str, x)) for x in std_filter_out_image))
+                                save_image(std_filter_out_image,
+                                           current_filt_channel_save_path)
 
-                        if(is_vis_ind_conv_out_orig_diff):
-                            if not os.path.exists(current_save_folder):
-                                os.makedirs(current_save_folder)
-                            orig_image = c_inputs[each_batch_indx]
-                            orig_image = orig_image[None, :]
+                            if(is_vis_ind_DFT_conv_filter_out):
+                                if not os.path.exists(current_save_folder):
+                                    os.makedirs(current_save_folder)
+                                current_filt_channel_save_path = current_save_folder + \
+                                    "DFT_filter_out_channel_" + \
+                                    str(channel_ind)+".jpg"
+                                std_filter_out_image = recreate_image(
+                                    std01_vis_dft_out, unnormalize=False, is_standarize_to_01=False)
+                                save_image(std_filter_out_image,
+                                           current_filt_channel_save_path)
 
-                            diff_fil_channel = current_channel_conv_output - orig_image
-                            current_diff_save_path = current_save_folder + \
-                                "filter_diff_" + \
-                                str(channel_ind)+".jpg"
+                                current_filt_channel_save_path = current_save_folder + \
+                                    "DFT_phase_filter_out_channel_" + \
+                                    str(channel_ind)+".jpg"
+                                std_filter_out_image = recreate_image(
+                                    std01_vis_dft_phase_out, unnormalize=False, is_standarize_to_01=False)
+                                save_image(std_filter_out_image,
+                                           current_filt_channel_save_path)
 
-                            std_diff_fil_channel = recreate_image(
-                                diff_fil_channel, unnormalize=False)
-                            save_image(std_diff_fil_channel,
-                                       current_diff_save_path)
+                                current_filt_channel_save_path = current_save_folder + \
+                                    "DTimeFT_phase_filter_out_channel_" + \
+                                    str(channel_ind)+".jpg"
+                                std_filter_out_image = recreate_image(
+                                    std01_vis_dtimeft_phase_out, unnormalize=False, is_standarize_to_01=False)
+                                save_image(std_filter_out_image,
+                                           current_filt_channel_save_path)
 
-                    gr_batch_save_folder = grid_save_folder + \
-                        "/BTCH_IND_" + str(each_batch_indx)
-                    gr_current_save_folder = str(gr_batch_save_folder) + "/LAY_NUM_" + \
-                        str(layer_num)
-                    if not os.path.exists(gr_current_save_folder):
-                        os.makedirs(gr_current_save_folder)
+                                current_filt_channel_save_path = current_save_folder + \
+                                    "DTimeFT_filter_out_channel_" + \
+                                    str(channel_ind)+".jpg"
+                                std_filter_out_image = recreate_image(
+                                    std01_vis_dtimeft_out, unnormalize=False, is_standarize_to_01=False)
+                                save_image(std_filter_out_image,
+                                           current_filt_channel_save_path)
 
-                    gr_current_b_fout_save_path = gr_current_save_folder + \
-                        "/sq_lay_lev_ind_std_gridded_filter_output.jpg"
+                            if(is_vis_ind_hard_relu_filter_out):
+                                if not os.path.exists(current_save_folder):
+                                    os.makedirs(current_save_folder)
 
-                    current_channel_conv_norm_outs = torch.squeeze(
-                        current_channel_conv_norm_outs)
-                    current_chanl_conv_DFT_norm_outs = torch.squeeze(
-                        current_chanl_conv_DFT_norm_outs)
-                    current_chanl_conv_DFT_phase_norm_outs = torch.squeeze(
-                        current_chanl_conv_DFT_phase_norm_outs)
-                    current_chanl_conv_DTimeFT_norm_outs = torch.squeeze(
-                        current_chanl_conv_DTimeFT_norm_outs)
-                    current_chanl_conv_DTimeFT_phase_norm_outs = torch.squeeze(
-                        current_chanl_conv_DTimeFT_phase_norm_outs)
-                    # print("current_channel_conv_norm_outs size:",
-                    #       current_channel_conv_norm_outs.size())
-                    # print("current_batch_conv_output size:",
-                    #       current_batch_conv_output.size())
-                    generate_plain_image(
-                        current_channel_conv_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+                                current_channel_HRelu_output = current_batch_HRelu_output[channel_ind]
+                                current_channel_HRelu_output = current_channel_HRelu_output[None, :]
+                                current_filt_HRelu_channel_save_path = current_save_folder + \
+                                    "HRelu_filter_out_channel_" + \
+                                    str(channel_ind)+".jpg"
+                                std_HRelu_filter_out_image = recreate_image(
+                                    current_channel_HRelu_output, unnormalize=False)
+                                save_image(std_HRelu_filter_out_image,
+                                           current_filt_HRelu_channel_save_path)
 
-                    gr_current_b_fout_save_path = gr_current_save_folder + \
-                        "/sq_lay_lev_ind_std_grid_DFT_filter_output.jpg"
+                            if(is_print_ind_raw_filter_out):
+                                if not os.path.exists(current_save_folder):
+                                    os.makedirs(current_save_folder)
+                                raw_txt_save_folder = current_save_folder+"/raw_filter_out.txt"
+                                with open(raw_txt_save_folder, "w") as f:
+                                    f.write("\n".join(
+                                        ",".join(map(str, x)) for x in current_channel_conv_output))
+                            if(is_print_ind_std_filter_out):
+                                if not os.path.exists(current_save_folder):
+                                    os.makedirs(current_save_folder)
+                                if(std_filter_out_image is None):
+                                    std_filter_out_image = recreate_image(
+                                        std01_conv_out_image, unnormalize=False, is_standarize_to_01=False)
+                                std_txt_save_folder = current_save_folder+"/std_filter_out.txt"
+                                with open(std_txt_save_folder, "w") as f:
+                                    f.write("\n".join(
+                                        ",".join(map(str, x)) for x in std_filter_out_image))
 
-                    generate_plain_image(
-                        current_chanl_conv_DFT_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+                            if(is_vis_ind_conv_out_orig_diff):
+                                if not os.path.exists(current_save_folder):
+                                    os.makedirs(current_save_folder)
+                                orig_image = c_inputs[each_batch_indx]
+                                orig_image = orig_image[None, :]
 
-                    gr_current_b_fout_save_path = gr_current_save_folder + \
-                        "/sq_lay_lev_ind_std_grid_DFT_phase_filter_output.jpg"
+                                diff_fil_channel = current_channel_conv_output - orig_image
+                                current_diff_save_path = current_save_folder + \
+                                    "filter_diff_" + \
+                                    str(channel_ind)+".jpg"
 
-                    generate_plain_image(
-                        current_chanl_conv_DFT_phase_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+                                std_diff_fil_channel = recreate_image(
+                                    diff_fil_channel, unnormalize=False)
+                                save_image(std_diff_fil_channel,
+                                           current_diff_save_path)
+                    if(run_all_batches):
+                        cavg_channel_conv_norm_outs = torch.squeeze(
+                            cavg_channel_conv_norm_outs)
+                        cavg_chanl_conv_DFT_norm_outs = torch.squeeze(
+                            cavg_chanl_conv_DFT_norm_outs)
+                        cavg_chanl_conv_DFT_phase_norm_outs = torch.squeeze(
+                            cavg_chanl_conv_DFT_phase_norm_outs)
+                        cavg_chanl_conv_DTimeFT_norm_outs = torch.squeeze(
+                            cavg_chanl_conv_DTimeFT_norm_outs)
+                        cavg_chanl_conv_DTimeFT_phase_norm_outs = torch.squeeze(
+                            cavg_chanl_conv_DTimeFT_phase_norm_outs)
 
-                    gr_current_b_fout_save_path = gr_current_save_folder + \
-                        "/sq_lay_lev_ind_std_grid_DTimeFT_filter_output.jpg"
+                    if(not stop_all_batch_lvl_vis):
+                        gr_batch_save_folder = grid_save_folder + \
+                            "/BTCH_IND_" + str(each_batch_indx)
+                        gr_current_save_folder = str(gr_batch_save_folder) + "/LAY_NUM_" + \
+                            str(layer_num)
+                        if not os.path.exists(gr_current_save_folder):
+                            os.makedirs(gr_current_save_folder)
 
-                    generate_plain_image(
-                        current_chanl_conv_DTimeFT_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+                        gr_current_b_fout_save_path = gr_current_save_folder + \
+                            "/sq_lay_lev_ind_std_gridded_filter_output.jpg"
 
-                    gr_current_b_fout_save_path = gr_current_save_folder + \
-                        "/sq_lay_lev_ind_std_grid_DTimeFT_phase_filter_output.jpg"
+                        current_channel_conv_norm_outs = torch.squeeze(
+                            current_channel_conv_norm_outs)
+                        current_chanl_conv_DFT_norm_outs = torch.squeeze(
+                            current_chanl_conv_DFT_norm_outs)
+                        current_chanl_conv_DFT_phase_norm_outs = torch.squeeze(
+                            current_chanl_conv_DFT_phase_norm_outs)
+                        current_chanl_conv_DTimeFT_norm_outs = torch.squeeze(
+                            current_chanl_conv_DTimeFT_norm_outs)
+                        current_chanl_conv_DTimeFT_phase_norm_outs = torch.squeeze(
+                            current_chanl_conv_DTimeFT_phase_norm_outs)
+                        # print("current_channel_conv_norm_outs size:",
+                        #       current_channel_conv_norm_outs.size())
+                        # print("current_batch_conv_output size:",
+                        #       current_batch_conv_output.size())
+                        generate_plain_image(
+                            current_channel_conv_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
 
-                    generate_plain_image(
-                        current_chanl_conv_DTimeFT_phase_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+                        gr_current_b_fout_save_path = gr_current_save_folder + \
+                            "/sq_lay_lev_ind_std_grid_DFT_filter_output.jpg"
 
-                    gr_current_b_fout_save_path = gr_current_save_folder + \
-                        "/sq_layer_level_std_gridded_filter_output.jpg"
-                    generate_plain_image(
-                        current_batch_conv_output, gr_current_b_fout_save_path, is_standarize=False)
+                        generate_plain_image(
+                            current_chanl_conv_DFT_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
 
-                    gr_current_b_fout_save_path = gr_current_save_folder + \
-                        "/sq_HRelu_gridded_filter_output.jpg"
-                    generate_plain_image(
-                        current_batch_HRelu_output, gr_current_b_fout_save_path, is_standarize=False)
-                    # print("gr_current_b_fout_save_path",
-                    #       gr_current_b_fout_save_path)
+                        gr_current_b_fout_save_path = gr_current_save_folder + \
+                            "/sq_lay_lev_ind_std_grid_DFT_phase_filter_output.jpg"
+
+                        generate_plain_image(
+                            current_chanl_conv_DFT_phase_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+                        gr_current_b_fout_save_path = gr_current_save_folder + \
+                            "/sq_lay_lev_ind_std_grid_DTimeFT_filter_output.jpg"
+
+                        generate_plain_image(
+                            current_chanl_conv_DTimeFT_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+                        gr_current_b_fout_save_path = gr_current_save_folder + \
+                            "/sq_lay_lev_ind_std_grid_DTimeFT_phase_filter_output.jpg"
+
+                        generate_plain_image(
+                            current_chanl_conv_DTimeFT_phase_norm_outs, gr_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+                        gr_current_b_fout_save_path = gr_current_save_folder + \
+                            "/sq_layer_level_std_gridded_filter_output.jpg"
+                        generate_plain_image(
+                            current_batch_conv_output, gr_current_b_fout_save_path, is_standarize=False)
+
+                        gr_current_b_fout_save_path = gr_current_save_folder + \
+                            "/sq_HRelu_gridded_filter_output.jpg"
+                        generate_plain_image(
+                            current_batch_HRelu_output, gr_current_b_fout_save_path, is_standarize=False)
+
+                    if(run_all_batches):
+                        avg_channel_conv_norm_outs[layer_num] = update_mean(
+                            avg_channel_conv_norm_outs[layer_num], sample_count, cavg_channel_conv_norm_outs)
+                        avg_chanl_conv_DFT_norm_outs[layer_num] = update_mean(
+                            avg_chanl_conv_DFT_norm_outs[layer_num], sample_count, cavg_chanl_conv_DFT_norm_outs)
+                        avg_chanl_conv_DFT_phase_norm_outs[layer_num] = update_mean(
+                            avg_chanl_conv_DFT_phase_norm_outs[layer_num], sample_count, cavg_chanl_conv_DFT_phase_norm_outs)
+                        avg_chanl_conv_DTimeFT_norm_outs[layer_num] = update_mean(
+                            avg_chanl_conv_DTimeFT_norm_outs[layer_num], sample_count, cavg_chanl_conv_DTimeFT_norm_outs)
+                        avg_chanl_conv_DTimeFT_phase_norm_outs[layer_num] = update_mean(
+                            avg_chanl_conv_DTimeFT_phase_norm_outs[layer_num], sample_count, cavg_chanl_conv_DTimeFT_phase_norm_outs)
+
+                    sample_count += 1
+                if(layer_num != num_layers-1):
+                    sample_count = temp_count
+
             hard_relu_active_percentage = hard_relu_active_percentage / \
                 c_inputs.size()[0]
         overall_indx_count += c_inputs.size()[0]
-        if(not(num_batches_to_visualize is None) and batch_idx == num_batches_to_visualize - 1):
-            break
+        if(not(num_batches_to_visualize is None) and batch_idx >= num_batches_to_visualize - 1):
+            if(not run_all_batches):
+                break
+            else:
+                print("stop_all_batch_lvl_vis enabled")
+                stop_all_batch_lvl_vis = True
+        if(num_batches_to_visualize is None):
+            stop_all_batch_lvl_vis = True
+
+    with torch.no_grad():
+        if(run_all_batches):
+            if not os.path.exists(avg_save_folder):
+                os.makedirs(avg_save_folder)
+            gavg_save_folder = avg_save_folder + "/GSTD/"
+            if not os.path.exists(gavg_save_folder):
+                os.makedirs(gavg_save_folder)
+
+            iavg_save_folder = avg_save_folder + "/IND_STD/"
+            if not os.path.exists(iavg_save_folder):
+                os.makedirs(iavg_save_folder)
+
+            all_avg_save_folder = avg_save_folder + "/ALL_CHANNELS/"
+            if not os.path.exists(all_avg_save_folder):
+                os.makedirs(all_avg_save_folder)
+
+            av_current_b_fout_save_path = gavg_save_folder + \
+                "/avg_sq_g_orig_DFT_amp.jpg"
+            generate_plain_image(
+                avg_chanl_orig_DFT_norm_outs, av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+            av_current_b_fout_save_path = all_avg_save_folder + \
+                "/avg_sq_orig_DFT_amp.jpg"
+            generate_plain_image(
+                torch.mean(avg_chanl_orig_DFT_norm_outs, dim=0), av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+            avg_chanl_orig_DFT_norm_outs = ind_normalize_in_range_01(
+                avg_chanl_orig_DFT_norm_outs)
+            av_current_b_fout_save_path = iavg_save_folder + \
+                "/avg_sq_i_orig_DFT_amp.jpg"
+            generate_plain_image(
+                avg_chanl_orig_DFT_norm_outs, av_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+            av_current_b_fout_save_path = gavg_save_folder + \
+                "/avg_sq_g_orig_DFT_phase.jpg"
+            generate_plain_image(
+                avg_chanl_orig_DFT_phase_norm_outs, av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+            av_current_b_fout_save_path = all_avg_save_folder + \
+                "/avg_sq_orig_DFT_phase.jpg"
+            generate_plain_image(
+                torch.mean(avg_chanl_orig_DFT_phase_norm_outs, dim=0), av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+            avg_chanl_orig_DFT_phase_norm_outs = ind_normalize_in_range_01(
+                avg_chanl_orig_DFT_phase_norm_outs)
+            av_current_b_fout_save_path = iavg_save_folder + \
+                "/avg_sq_i_orig_DFT_phase.jpg"
+            generate_plain_image(
+                avg_chanl_orig_DFT_phase_norm_outs, av_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+            av_current_b_fout_save_path = gavg_save_folder + \
+                "/avg_sq_g_orig_DTimeFT_amp.jpg"
+            generate_plain_image(
+                avg_chanl_orig_DTimeFT_norm_outs, av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+            av_current_b_fout_save_path = all_avg_save_folder + \
+                "/avg_sq_orig_DTimeFT_amp.jpg"
+            generate_plain_image(
+                torch.mean(avg_chanl_orig_DTimeFT_norm_outs, dim=0), av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+            avg_chanl_orig_DTimeFT_norm_outs = ind_normalize_in_range_01(
+                avg_chanl_orig_DTimeFT_norm_outs)
+            av_current_b_fout_save_path = iavg_save_folder + \
+                "/avg_sq_i_orig_DTimeFT_amp.jpg"
+            generate_plain_image(
+                avg_chanl_orig_DTimeFT_norm_outs, av_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+            av_current_b_fout_save_path = gavg_save_folder + \
+                "/avg_sq_g_orig_DTimeFT_phase.jpg"
+            generate_plain_image(
+                avg_chanl_orig_DTimeFT_phase_norm_outs, av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+            av_current_b_fout_save_path = all_avg_save_folder + \
+                "/avg_sq_orig_DTimeFT_phase.jpg"
+            generate_plain_image(
+                torch.mean(avg_chanl_orig_DTimeFT_phase_norm_outs, dim=0), av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+            avg_chanl_orig_DTimeFT_phase_norm_outs = ind_normalize_in_range_01(
+                avg_chanl_orig_DTimeFT_phase_norm_outs)
+            av_current_b_fout_save_path = iavg_save_folder + \
+                "/avg_sq_i_orig_DTimeFT_phase.jpg"
+            generate_plain_image(
+                avg_chanl_orig_DTimeFT_phase_norm_outs, av_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+            for layer_num in range(num_layers):
+                gav_current_save_folder = str(gavg_save_folder) + "/LAY_NUM_" + \
+                    str(layer_num)
+                if not os.path.exists(gav_current_save_folder):
+                    os.makedirs(gav_current_save_folder)
+
+                iav_current_save_folder = str(iavg_save_folder) + "/LAY_NUM_" + \
+                    str(layer_num)
+                if not os.path.exists(iav_current_save_folder):
+                    os.makedirs(iav_current_save_folder)
+
+                allav_current_save_folder = str(all_avg_save_folder) + "/LAY_NUM_" + \
+                    str(layer_num)
+                if not os.path.exists(allav_current_save_folder):
+                    os.makedirs(allav_current_save_folder)
+
+                av_current_b_fout_save_path = gav_current_save_folder + \
+                    "/avg_sq_lay_lev_g_filter_out.jpg"
+                generate_plain_image(
+                    avg_channel_conv_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                av_current_b_fout_save_path = allav_current_save_folder + \
+                    "/avg_sq_lay_lev_filter_out.jpg"
+                generate_plain_image(
+                    torch.mean(avg_channel_conv_norm_outs[layer_num], dim=0), av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                avg_channel_conv_norm_outs[layer_num] = ind_normalize_in_range_01(
+                    avg_channel_conv_norm_outs[layer_num])
+                av_current_b_fout_save_path = iav_current_save_folder + \
+                    "/avg_sq_lay_lev_i_filter_out.jpg"
+                generate_plain_image(
+                    avg_channel_conv_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+                av_current_b_fout_save_path = gav_current_save_folder + \
+                    "/avg_sq_lay_lev_g_fout_DFT_amp.jpg"
+                generate_plain_image(
+                    avg_chanl_conv_DFT_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                av_current_b_fout_save_path = allav_current_save_folder + \
+                    "/avg_sq_lay_lev_fout_DFT_amp.jpg"
+                generate_plain_image(
+                    torch.mean(avg_chanl_conv_DFT_norm_outs[layer_num], dim=0), av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                avg_chanl_conv_DFT_norm_outs[layer_num] = ind_normalize_in_range_01(
+                    avg_chanl_conv_DFT_norm_outs[layer_num])
+                av_current_b_fout_save_path = iav_current_save_folder + \
+                    "/avg_sq_lay_lev_i_fout_DFT_amp.jpg"
+                generate_plain_image(
+                    avg_chanl_conv_DFT_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+                av_current_b_fout_save_path = gav_current_save_folder + \
+                    "/avg_sq_lay_lev_g_fout_DFT_phase.jpg"
+                generate_plain_image(
+                    avg_chanl_conv_DFT_phase_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                av_current_b_fout_save_path = allav_current_save_folder + \
+                    "/avg_sq_lay_lev_fout_DFT_phase.jpg"
+                generate_plain_image(
+                    torch.mean(avg_chanl_conv_DFT_phase_norm_outs[layer_num], dim=0), av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                avg_chanl_conv_DFT_phase_norm_outs[layer_num] = ind_normalize_in_range_01(
+                    avg_chanl_conv_DFT_phase_norm_outs[layer_num])
+                av_current_b_fout_save_path = iav_current_save_folder + \
+                    "/avg_sq_lay_lev_i_fout_DFT_phase.jpg"
+                generate_plain_image(
+                    avg_chanl_conv_DFT_phase_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+                av_current_b_fout_save_path = gav_current_save_folder + \
+                    "/avg_sq_lay_lev_g_fout_DTimeFT_amp.jpg"
+                generate_plain_image(
+                    avg_chanl_conv_DTimeFT_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                av_current_b_fout_save_path = allav_current_save_folder + \
+                    "/avg_sq_lay_lev_fout_DTimeFT_amp.jpg"
+                generate_plain_image(
+                    torch.mean(avg_chanl_conv_DTimeFT_norm_outs[layer_num], dim=0), av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                avg_chanl_conv_DTimeFT_norm_outs[layer_num] = ind_normalize_in_range_01(
+                    avg_chanl_conv_DTimeFT_norm_outs[layer_num])
+                av_current_b_fout_save_path = iav_current_save_folder + \
+                    "/avg_sq_lay_lev_i_fout_DTimeFT_amp.jpg"
+                generate_plain_image(
+                    avg_chanl_conv_DTimeFT_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+                av_current_b_fout_save_path = gav_current_save_folder + \
+                    "/avg_sq_lay_lev_g_fout_DTimeFT_phase.jpg"
+                generate_plain_image(
+                    avg_chanl_conv_DTimeFT_phase_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                av_current_b_fout_save_path = allav_current_save_folder + \
+                    "/avg_sq_lay_lev_fout_DTimeFT_phase.jpg"
+                generate_plain_image(
+                    torch.mean(avg_chanl_conv_DTimeFT_phase_norm_outs[layer_num], dim=0), av_current_b_fout_save_path, is_standarize=False, is_standarize_01=True)
+                avg_chanl_conv_DTimeFT_phase_norm_outs[layer_num] = ind_normalize_in_range_01(
+                    avg_chanl_conv_DTimeFT_phase_norm_outs[layer_num])
+                av_current_b_fout_save_path = iav_current_save_folder + \
+                    "/avg_sq_lay_lev_i_fout_DTimeFT_phase.jpg"
+                generate_plain_image(
+                    avg_chanl_conv_DTimeFT_phase_norm_outs[layer_num], av_current_b_fout_save_path, is_standarize=False, is_standarize_01=False)
+
+    print("sample_count:", sample_count)
     hard_relu_active_percentage = hard_relu_active_percentage / \
         num_b
 
@@ -760,10 +1059,14 @@ def generate_per_batch_filter_outs(inp_channel, filter_weights, batch_inputs):
 
 def normalize_in_range_01(img_data):
     if(isinstance(img_data, torch.Tensor)):
-        img_data = copy.copy(img_data.cpu().clone().detach().numpy())
-    arr_max = np.amax(img_data)
-    arr_min = np.amin(img_data)
-    norm_im = (img_data-arr_min)/(arr_max-arr_min)
+        # img_data = copy.copy(img_data.cpu().clone().detach().numpy())
+        arr_max = torch.max(img_data)
+        arr_min = torch.min(img_data)
+        norm_im = (img_data-arr_min)/(arr_max-arr_min)
+    else:
+        arr_max = np.amax(img_data)
+        arr_min = np.amin(img_data)
+        norm_im = (img_data-arr_min)/(arr_max-arr_min)
     return norm_im
 
 
@@ -1200,6 +1503,8 @@ if __name__ == '__main__':
     is_save_adv = True
 
     num_batches_to_visualize = 1
+    # This is for getting average DFT per layer etc. All full class stats
+    run_all_batches = True
 
     # ORIGINAL, ADVERSARIAL , ADVERSARIAL_PERTURB
     analyse_on = "ADVERSARIAL"
@@ -1214,7 +1519,7 @@ if __name__ == '__main__':
     for filter_vis_dataset in list_of_filter_vis_dataset:
         print("Visualizing over " + str(filter_vis_dataset))
         if(filter_vis_dataset == "mnist"):
-            batch_size = 4
+            batch_size = 16
             inp_channel = 1
             classes = [str(i) for i in range(0, 10)]
             num_classes = len(classes)
@@ -1279,12 +1584,6 @@ if __name__ == '__main__':
 
         for scheme_type in list_of_scheme_type:
             print("Running scheme", scheme_type)
-            coll_seed_gen = torch.Generator()
-            coll_seed_gen.manual_seed(torch_seed)
-            orig_trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
-            orig_testloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
-                                                          shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
                 model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
@@ -1294,7 +1593,12 @@ if __name__ == '__main__':
                 save_prefix = get_prefix_for_save(
                     model_path, model_arch_type_str)
 
-                models_base_path = model_path[0:model_path.rfind(".pt")]
+                if('CLEAN' in model_path):
+                    models_base_path = model_path[0:model_path.rfind(
+                        ".pt")]
+                else:
+                    models_base_path = model_path[0:model_path.rfind(
+                        "/")+1]
 
             if(scheme_type == "RAW_FILTERS_GEN"):
                 # IND , DIFF , START
@@ -1377,10 +1681,28 @@ if __name__ == '__main__':
                 for is_template_image_on_train in [True, False]:
                     if(is_template_image_on_train):
                         evalloader = trainloader
+                        eval_dataset = train_dataset
                         final_postfix_for_save = 'TRAIN/'+analyse_on+"/"
                     else:
                         evalloader = testloader
+                        eval_dataset = test_dataset
                         final_postfix_for_save = "TEST/"+analyse_on+"/"
+                    if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
+                        adv_dataset = load_or_generate_adv_examples(evalloader, models_base_path, is_template_image_on_train, model, eps, adv_attack_type,
+                                                                    number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=True)
+                        adv_loader = torch.utils.data.DataLoader(
+                            adv_dataset, batch_size=batch_size, shuffle=False)
+                        if(analyse_on == "ADVERSARIAL_PERTURB"):
+                            eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=batch_size,
+                                                                      shuffle=False)
+
+                            adv_dataset = generate_adversarial_perturbation_from_adv_orig(
+                                eval_loader, adv_loader)
+                            adv_loader = torch.utils.data.DataLoader(
+                                adv_dataset, batch_size=batch_size, shuffle=False)
+
+                        evalloader = adv_loader
+
                     postfix_for_save = final_postfix_for_save
                     class_indx_to_visualize = [i for i in range(len(classes))]
 
@@ -1395,17 +1717,21 @@ if __name__ == '__main__':
                         per_class_dataset = PerClassDataset(
                             input_data_list_per_class[c_indx], c_indx)
 
-                        if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
-                            adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_template_image_on_train, "")
-                            postfix_for_save = final_postfix_for_save + adv_postfix_for_save
+                        # if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
+                        #     adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                        #         adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_template_image_on_train, "")
+                        #     postfix_for_save = final_postfix_for_save + adv_postfix_for_save
 
-                            adv_postfix_for_save += "C_"+class_label+"/"
-                            per_class_data_loader = torch.utils.data.DataLoader(
-                                per_class_dataset, batch_size=batch_size, shuffle=False)
+                        #     adv_postfix_for_save += "C_"+class_label+"/"
+                        #     per_class_data_loader = torch.utils.data.DataLoader(
+                        #         per_class_dataset, batch_size=batch_size, shuffle=False)
 
-                            per_class_dataset = get_modified_dataset(analyse_on, per_class_data_loader, adv_postfix_for_save, filter_vis_dataset, per_class_dataset, batch_size, models_base_path, is_template_image_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
-                                                                     eps_step_size, adv_target, num_batches_to_visualize, is_save_adv)
+                        #     if(run_all_batches):
+                        #         temp_batches = None
+                        #     else:
+                        #         temp_batches = num_batches_to_visualize
+                        #     per_class_dataset = get_modified_dataset(analyse_on, per_class_data_loader, adv_postfix_for_save, filter_vis_dataset, per_class_dataset, batch_size, models_base_path, is_template_image_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps,
+                        #                                              eps_step_size, adv_target, temp_batches, is_save_adv)
 
                         generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label, c_indx,
                                                               per_class_dataset, save_prefix, num_batches_to_visualize,
