@@ -95,7 +95,7 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
 
                 if(isinstance(current_filter_chnl_weights, np.ndarray)):
                     current_filter_chnl_weights = torch.from_numpy(
-                        current_filter_chnl_weights, device=current_filter_weights.get_device())
+                        current_filter_chnl_weights, device=av_device)
                 pad_factor = 21
                 raw_dft_out = generate_centralized_DTimeFT(
                     current_filter_chnl_weights, pad_factor)
@@ -106,11 +106,10 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
                 std01_vis_dft_out = std01_vis_dft_out[None, :]
 
                 if(current_f_channel_norm_dft_outs is None):
-                    current_f_channel_norm_dft_outs = torch.from_numpy(
-                        std01_vis_dft_out)
+                    current_f_channel_norm_dft_outs = std01_vis_dft_out
                 else:
                     current_f_channel_norm_dft_outs = torch.vstack(
-                        (current_f_channel_norm_dft_outs, torch.from_numpy(std01_vis_dft_out)))
+                        (current_f_channel_norm_dft_outs, std01_vis_dft_out))
 
             if(current_f_outs_DFT_norm is None):
                 current_f_outs_DFT_norm = torch.unsqueeze(
@@ -375,12 +374,12 @@ def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
 
 def torch_stack(inp, update):
     if(isinstance(update, np.ndarray)):
-        update = torch.from_numpy(update)
+        update = torch.from_numpy(update, device=av_device)
 
     if(inp is None):
-        inp = update
+        inp = torch.unsqueeze(update, 0)
     else:
-        inp = torch.vstack((inp, update))
+        inp = torch.vstack((inp, torch.unsqueeze(update, 0)))
     return inp
 
 
@@ -401,7 +400,7 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
     stop_all_batch_lvl_vis = False
     is_vis_ind_conv_filter_out = False
     is_vis_ind_DFT_conv_filter_out = False
-    is_vis_ind_DFT_original = False
+    is_vis_ind_DFT_original = True
     is_vis_ind_hard_relu_filter_out = False
     is_print_ind_raw_filter_out = False
     is_print_ind_std_filter_out = False
@@ -561,15 +560,6 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
 
                         sample_count = temp_c
                         if(run_all_batches):
-                            cur_chanl_orig_DFT_norm_outs = torch.squeeze(
-                                cur_chanl_orig_DFT_norm_outs)
-                            cur_chanl_orig_DFT_phase_norm_outs = torch.squeeze(
-                                cur_chanl_orig_DFT_phase_norm_outs)
-                            cur_chanl_orig_DTimeFT_norm_outs = torch.squeeze(
-                                cur_chanl_orig_DTimeFT_norm_outs)
-                            cur_chanl_orig_DTimeFT_phase_norm_outs = torch.squeeze(
-                                cur_chanl_orig_DTimeFT_phase_norm_outs)
-
                             avg_chanl_orig_DFT_norm_outs = update_mean(
                                 avg_chanl_orig_DFT_norm_outs, sample_count, cur_chanl_orig_DFT_norm_outs)
                             avg_chanl_orig_DFT_phase_norm_outs = update_mean(
@@ -601,14 +591,13 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                         current_chanl_conv_DTimeFT_phase_norm_outs = None
                     for channel_ind in range(len(current_batch_conv_output)):
                         current_channel_conv_output = current_batch_conv_output[channel_ind]
-                        current_channel_conv_output = current_channel_conv_output[None, :]
 
                         if(run_all_batches):
                             cavg_channel_conv_norm_outs = torch_stack(
                                 cavg_channel_conv_norm_outs, current_channel_conv_output)
 
                         raw_dft_out = generate_centralized_DFT(
-                            current_channel_conv_output[0])
+                            current_channel_conv_output)
                         for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
                         for_vis_dft_phase_out = torch.angle(raw_dft_out)
 
@@ -621,14 +610,12 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                         if(not stop_all_batch_lvl_vis):
                             std01_vis_dft_out = normalize_in_range_01(
                                 for_vis_dft_out)
-                            std01_vis_dft_out = std01_vis_dft_out[None, :]
 
                             std01_vis_dft_phase_out = normalize_in_range_01(
                                 for_vis_dft_phase_out)
-                            std01_vis_dft_phase_out = std01_vis_dft_phase_out[None, :]
 
                         raw_dtimeft_out = generate_centralized_DTimeFT(
-                            current_channel_conv_output[0])
+                            current_channel_conv_output)
                         for_vis_dtimeft_out = torch.log(
                             1+torch.abs(raw_dtimeft_out))
                         for_vis_dtimeft_phase_out = torch.angle(
@@ -643,15 +630,12 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
                         if(not stop_all_batch_lvl_vis):
                             std01_vis_dtimeft_out = normalize_in_range_01(
                                 for_vis_dtimeft_out)
-                            std01_vis_dtimeft_out = std01_vis_dtimeft_out[None, :]
 
                             std01_vis_dtimeft_phase_out = normalize_in_range_01(
                                 for_vis_dtimeft_phase_out)
-                            std01_vis_dtimeft_phase_out = std01_vis_dtimeft_phase_out[None, :]
 
-                            current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + \
-                                str(layer_num)+"/"+"/FILT_IND_" + \
-                                str(channel_ind) + "/"
+                            current_save_folder = str(batch_save_folder) + "/LAY_NUM_" + str(
+                                layer_num)+"/"+"/FILT_IND_" + str(channel_ind) + "/"
 
                             std01_conv_out_image = normalize_in_range_01(
                                 current_channel_conv_output)
@@ -1072,7 +1056,7 @@ def normalize_in_range_01(img_data):
 
 def generate_centralized_DFT(img_data):
     if(isinstance(img_data, np.ndarray)):
-        img_data = torch.from_numpy(img_data, device=img_data.get_device())
+        img_data = torch.from_numpy(img_data, device=av_device)
     with torch.no_grad():
         img_c2 = torch.fft.fft2(img_data)
         img_c3 = torch.fft.fftshift(img_c2)
@@ -1081,12 +1065,14 @@ def generate_centralized_DFT(img_data):
 
 
 def generate_centralized_DTimeFT(img_data, pad_factor=5):
-    if(isinstance(img_data, torch.Tensor)):
-        img_data = img_data.detach().cpu().numpy()
-    img_data = np.pad(img_data, (pad_factor*img_data.shape[
-        0], pad_factor*img_data.shape[1]), 'constant', constant_values=(0))
+    if(isinstance(img_data, np.ndarray)):
+        img_data = torch.from_numpy(img_data, device=av_device)
+    pd1 = pad_factor*img_data.size()[0]
+    pd2 = pad_factor*img_data.size()[1]
+    img_data = torch.nn.functional.pad(
+        img_data, (pd1, pd1, pd2, pd2), 'constant', value=0)
     with torch.no_grad():
-        img_data = torch.from_numpy(img_data)
+
         img_c2 = torch.fft.fft2(img_data)
         img_c3 = torch.fft.fftshift(img_c2)
 
@@ -1187,23 +1173,14 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                         for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
                         std01_vis_dft_out = normalize_in_range_01(
                             for_vis_dft_out)
-                        std01_vis_dft_out = std01_vis_dft_out[None, :]
 
-                        if(current_f_channel_norm_dft_outs is None):
-                            current_f_channel_norm_dft_outs = torch.from_numpy(
-                                std01_vis_dft_out)
-                        else:
-                            current_f_channel_norm_dft_outs = torch.vstack(
-                                (current_f_channel_norm_dft_outs, torch.from_numpy(std01_vis_dft_out)))
+                        current_f_channel_norm_dft_outs = torch_stack(
+                            current_f_channel_norm_dft_outs, std01_vis_dft_out)
 
                         std01_filter_out_image = normalize_in_range_01(
                             each_fil_channel)
-                        if(current_f_channel_norm_outs is None):
-                            current_f_channel_norm_outs = torch.from_numpy(
-                                std01_filter_out_image)
-                        else:
-                            current_f_channel_norm_outs = torch.vstack(
-                                (current_f_channel_norm_outs, torch.from_numpy(std01_filter_out_image)))
+                        current_f_channel_norm_outs = torch_stack(
+                            current_f_channel_norm_outs, std01_filter_out_image)
 
                         std_filter_out_image = None
                         if(is_vis_ind_filter_out):
@@ -1260,33 +1237,15 @@ def generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_lab
                             save_image(std_diff_fil_channel,
                                        current_diff_save_path)
 
-                    if(current_f_outs_norm is None):
-                        current_f_outs_norm = torch.unsqueeze(
-                            current_f_channel_norm_outs, 0)
-                    else:
-                        current_f_outs_norm = torch.vstack(
-                            (current_f_outs_norm, torch.unsqueeze(current_f_channel_norm_outs, 0)))
+                    current_f_outs_norm = torch_stack(
+                        current_f_outs_norm, current_f_channel_norm_outs)
+                    current_f_outs_DFT_norm = torch_stack(
+                        current_f_outs_DFT_norm, current_f_channel_norm_dft_outs)
 
-                    if(current_f_outs_DFT_norm is None):
-                        current_f_outs_DFT_norm = torch.unsqueeze(
-                            current_f_channel_norm_dft_outs, 0)
-                    else:
-                        current_f_outs_DFT_norm = torch.vstack(
-                            (current_f_outs_DFT_norm, torch.unsqueeze(current_f_channel_norm_dft_outs, 0)))
-
-                if(current_layer_norm_outputs is None):
-                    current_layer_norm_outputs = torch.unsqueeze(
-                        current_f_outs_norm, 0)
-                else:
-                    current_layer_norm_outputs = torch.vstack(
-                        (current_layer_norm_outputs, torch.unsqueeze(current_f_outs_norm, 0)))
-
-                if(current_layer_DFT_norm_outputs is None):
-                    current_layer_DFT_norm_outputs = torch.unsqueeze(
-                        current_f_outs_DFT_norm, 0)
-                else:
-                    current_layer_DFT_norm_outputs = torch.vstack(
-                        (current_layer_DFT_norm_outputs, torch.unsqueeze(current_f_outs_DFT_norm, 0)))
+                current_layer_norm_outputs = torch_stack(
+                    current_layer_norm_outputs, current_f_outs_norm)
+                current_layer_DFT_norm_outputs = torch_stack(
+                    current_layer_DFT_norm_outputs, current_f_outs_DFT_norm)
 
             current_layer_outputs = torch.transpose(
                 current_layer_outputs, 0, 1)
@@ -1378,7 +1337,7 @@ def generate_dataset_from_images_folder(img_fold, reduce_dim_to_single, transfor
                     im = cv2.imread(img_path)
 
                 if(transform is None):
-                    im = torch.from_numpy(im)
+                    im = torch.from_numpy(im, device=av_device)
                 else:
                     # print("Before Image size:", im.shape)
                     im = transform(im)
@@ -1400,9 +1359,9 @@ def merge_conv_kernels(k1, k2):
       then with k2.
     """
     if isinstance(k1, np.ndarray):
-        k1 = torch.from_numpy(k1)
+        k1 = torch.from_numpy(k1, device=av_device)
     if isinstance(k2, np.ndarray):
-        k2 = torch.from_numpy(k2)
+        k2 = torch.from_numpy(k2, device=av_device)
     padding = k2.shape[-1] - 1
     # Flip because this is actually correlation, and permute to adapt to BHCW
     k3 = torch.conv2d(k1.permute(1, 0, 2, 3), k2.flip(-1, -2),
@@ -1417,7 +1376,7 @@ def perform_sanity_check_over_merged_conv_filter(merged_conv, list_of_convs):
     temp_seq_inp = inp.clone()
     for each_conv in list_of_convs:
         temp_seq_inp = torch.conv2d(
-            temp_seq_inp, torch.from_numpy(each_conv), padding=each_conv.shape[-1]-1)
+            temp_seq_inp, torch.from_numpy(each_conv, device=av_device), padding=each_conv.shape[-1]-1)
 
     seq_conv_out = temp_seq_inp
 
@@ -1425,7 +1384,7 @@ def perform_sanity_check_over_merged_conv_filter(merged_conv, list_of_convs):
     # merged_conv_out = torch.conv2d(
     #     temp_merged_inp, torch.from_numpy(merged_conv), padding=int(merged_conv.shape[-1]//2))
     merged_conv_out = torch.conv2d(
-        temp_merged_inp, torch.from_numpy(merged_conv), padding=merged_conv.shape[-1]-1)
+        temp_merged_inp, torch.from_numpy(merged_conv, device=av_device), padding=merged_conv.shape[-1]-1)
 
     print("merged_conv_out shape", merged_conv_out.size())
     print("seq_conv_out shape", seq_conv_out.size())
@@ -1476,6 +1435,7 @@ def get_modified_dataset(analyse_on, dataloader, adv_postfix_for_save, filter_vi
 
 
 if __name__ == '__main__':
+    av_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # fashion_mnist , mnist , cifar10
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
@@ -1717,10 +1677,10 @@ if __name__ == '__main__':
                         per_class_dataset = PerClassDataset(
                             input_data_list_per_class[c_indx], c_indx)
 
-                        # if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
-                        #     adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                        #         adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_template_image_on_train, "")
-                        #     postfix_for_save = final_postfix_for_save + adv_postfix_for_save
+                        if(analyse_on == "ADVERSARIAL" or analyse_on == "ADVERSARIAL_PERTURB"):
+                            adv_postfix_for_save = "adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_template_image_on_train, "")
+                            postfix_for_save = final_postfix_for_save + adv_postfix_for_save
 
                         #     adv_postfix_for_save += "C_"+class_label+"/"
                         #     per_class_data_loader = torch.utils.data.DataLoader(

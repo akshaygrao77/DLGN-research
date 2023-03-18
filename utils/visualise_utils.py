@@ -115,16 +115,18 @@ def recreate_image(im_as_var, unnormalize=True, is_standarize_to_01=True):
     reverse_mean = [0.4914, 0.4822, 0.4465]
     reverse_std = [1/0.2023, 1/0.1994, 1/0.2010]
     if(isinstance(im_as_var, torch.Tensor)):
-        recreated_im = copy.copy(im_as_var.cpu().clone().detach().numpy()[0])
+        recreated_im = copy.copy(im_as_var.cpu().clone().detach().numpy())
     else:
-        recreated_im = im_as_var[0]
+        recreated_im = im_as_var
+    if(len(recreated_im.shape) == 4):
+        recreated_im = recreated_im[0]
     if(is_standarize_to_01):
         arr_max = np.amax(recreated_im)
         arr_min = np.amin(recreated_im)
         recreated_im = (recreated_im-arr_min)/(arr_max-arr_min)
 
     if(unnormalize):
-        for c in range(3):
+        for c in range(recreated_im.shape[0]):
             recreated_im[c] /= reverse_std[c]
             recreated_im[c] -= reverse_mean[c]
     # recreated_im[recreated_im > 1] = 1
@@ -287,7 +289,10 @@ def generate_plain_image_data(image_data):
     row = None
     col = None
     if(isinstance(image_data, torch.Tensor)):
+        image_data = torch.squeeze(image_data)
         image_data = copy.copy(image_data.cpu().clone().detach().numpy())
+    else:
+        image_data = np.squeeze(image_data)
     if(len(image_data.shape) == 3):
         row, col = determine_row_col_from_features(image_data.shape[0])
     elif(len(image_data.shape) == 4):
