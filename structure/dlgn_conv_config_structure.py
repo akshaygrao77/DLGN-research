@@ -4,6 +4,7 @@ try:
 except ImportError:
     from argparse import Namespace
 
+
 class Configs(Namespace):
 
     def __init__(self, **kwargs):
@@ -15,20 +16,25 @@ class Configs(Namespace):
         except AttributeError:
             return None
 
+
 class DatasetConfig:
-    def __init__(self, name, is_normalize_data, valid_split_size, batch_size=64,list_of_classes=None):
+    def __init__(self, name, is_normalize_data, valid_split_size, batch_size=64, list_of_classes=None, train_transforms=None, test_transforms=None):
         self.name = name
         self.is_normalize_data = is_normalize_data
         self.valid_split_size = valid_split_size
         self.batch_size = batch_size
         self.list_of_classes = list_of_classes
+        self.train_transforms = train_transforms
+        self.test_transforms = test_transforms
+
 
 class AllParams:
     def __init__(self, *args):
         self.args = args
-    
+
     def __str__(self):
         return "Args: "+str(self.args)
+
 
 class HPParams:
     def __init__(self, optimizer, momentum, lr, epochs, activ_func, output_activ_func, weight_init, loss_fn, batch_size=64):

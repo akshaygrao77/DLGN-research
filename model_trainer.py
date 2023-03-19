@@ -12,15 +12,19 @@ import torch.backends.cudnn as cudnn
 from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
+from torchvision import transforms
+from torch.autograd import Variable
 
-from conv4_models import get_model_instance, get_model_save_path, get_model_instance_from_dataset
+from conv4_models import get_model_instance, get_model_save_path, get_model_instance_from_dataset, get_img_size
 from visualization import run_visualization_on_config
 from utils.weight_utils import get_gating_layer_weights
 from raw_weight_analysis import convert_list_tensor_to_numpy
+from utils.APR import APRecombination, mix_data
 
 
 def evaluate_model(net, dataloader, num_classes_trained_on=None):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    net.eval()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
     frequency_pred = None
@@ -50,6 +54,96 @@ def evaluate_model(net, dataloader, num_classes_trained_on=None):
     return 100. * correct / total, frequency_pred
 
 
+def get_normalize(inp):
+    if(inp.size()[1] == 3):
+        normalize = transforms.Compose([
+            transforms.Normalize([0.4914, 0.4822, 0.4465], [
+                                 0.2023, 0.1994, 0.2010]),
+        ])
+        return normalize(inp)
+
+    return inp
+
+
+def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None):
+
+    is_log_wandb = not(wand_project_name is None)
+    best_test_acc = 0
+    net.train()
+    for epoch in range(epochs):  # loop over the dataset multiple times
+        correct = 0
+        total = 0
+
+        running_loss = 0.0
+        loader = tqdm.tqdm(trainloader, desc='Training')
+        for batch_idx, data in enumerate(loader, 0):
+            begin_time = time.time()
+            loader.set_description(f"Epoch {epoch+1}")
+            # get the inputs; data is a list of [inputs, labels]
+            inputs, labels = data
+            inputs, labels = inputs.to(
+                device, non_blocking=True), labels.to(device, non_blocking=True)
+            dev = inputs.get_device()
+            if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
+                inputs_mix = mix_data(inputs)
+                inputs_mix = Variable(inputs_mix)
+                batch_size = inputs.size(0)
+                inputs, inputs_mix = get_normalize(
+                    inputs), get_normalize(inputs_mix)
+                inputs = torch.cat([inputs, inputs_mix], 0)
+            else:
+                inputs = get_normalize(inputs)
+
+            inputs = inputs.to(device=dev, non_blocking=True)
+            # zero the parameter gradients
+            optimizer.zero_grad()
+
+            # forward + backward + optimize
+            outputs = net(inputs)
+
+            if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
+                loss = criterion(outputs[:batch_size], labels) + \
+                    criterion(outputs[batch_size:], labels)
+                labels = torch.cat([labels, labels], 0)
+            else:
+                loss = criterion(outputs, labels)
+
+            loss.backward()
+            optimizer.step()
+
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+            running_loss += loss.item()
+
+            cur_time = time.time()
+            step_time = cur_time - begin_time
+            loader.set_postfix(train_loss=running_loss/(batch_idx+1),
+                               train_acc=100.*correct/total, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
+
+        train_acc = 100. * correct/total
+        test_acc, _ = evaluate_model(
+            net, testloader)
+        if(is_log_wandb):
+            wandb.log({"train_acc": train_acc, "test_acc": test_acc})
+
+        print("Test_acc: ", test_acc)
+        per_epoch_model_save_path = final_model_save_path.replace(
+            "_dir.pt", "")
+        if not os.path.exists(per_epoch_model_save_path):
+            os.makedirs(per_epoch_model_save_path)
+        per_epoch_model_save_path += "/epoch_{}_dir.pt".format(epoch)
+        if(epoch % 7 == 0):
+            torch.save(net, per_epoch_model_save_path)
+        if(test_acc >= best_test_acc):
+            best_test_acc = test_acc
+
+    torch.save(net, final_model_save_path)
+    print('Finished Training: Best saved model test acc is:', best_test_acc)
+    return best_test_acc, net
+
+
 def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None):
     device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
     if device_str == 'cuda':
@@ -61,6 +155,7 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
 
     is_log_wandb = not(wand_project_name is None)
     best_test_acc = 0
+    net.train()
     for epoch in range(epochs):  # loop over the dataset multiple times
         correct = 0
         total = 0
@@ -165,26 +260,40 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'fc_dnn'
-    # iterative_augmenting , nil
-    scheme_type = 'nil'
+    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    # iterative_augmenting , nil , APR_exps
+    scheme_type = 'APR_exps'
     # scheme_type = ''
     batch_size = 32
 
     # torch_seed = ""
     torch_seed = 2022
 
-    # wand_project_name = None
-    wand_project_name = "common_model_init_exps"
+    wand_project_name = None
+    wand_project_name = "APR_experiments"
+    # wand_project_name = "common_model_init_exps"
     # wand_project_name = "V2_template_visualisation_augmentation"
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    pca_exp_percent = 0.95
+    # pca_exp_percent = 0.50
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
     # list_of_classes_to_train_on = [3, 8]
+
+    train_transforms = None
+    is_normalize_data = True
+
+    if(scheme_type == "APR_exps"):
+        # APRP ,APRS, APRSP
+        type_of_APR = "APRSP"
+
+        if("APRS" in type_of_APR):
+            img_size = get_img_size(dataset)[1]
+            is_normalize_data = False
+            train_transforms = transforms.Compose([transforms.RandomApply(
+                [APRecombination(img_size=img_size)], p=1.0), transforms.ToTensor()])
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -193,7 +302,7 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         data_config = DatasetConfig(
-            'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
+            'cifar10', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, train_transforms=train_transforms)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -204,7 +313,7 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         data_config = DatasetConfig(
-            'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
+            'mnist', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, train_transforms=train_transforms)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -216,13 +325,13 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         data_config = DatasetConfig(
-            'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
+            'fashion_mnist', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, train_transforms=train_transforms)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     print("Training over "+dataset)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     num_classes_trained_on = num_classes
     dataset_str = dataset
@@ -282,13 +391,20 @@ if __name__ == '__main__':
     # for i in range(len(list_of_weights)):
     #     current_weight_np = list_of_weights[i]
     #     print("ind:{}=>{}".format(i, current_weight_np.shape))
+    device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
+    torch.cuda.empty_cache()
+    if device_str == 'cuda':
+        if(torch.cuda.device_count() > 1):
+            print("Parallelizing model")
+            net = torch.nn.DataParallel(net).cuda()
+        else:
+            net = net.to(device)
+        cudnn.benchmark = True
 
-    net = net.to(device)
-
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss().to(device)
     lr = 3e-4
     optimizer = optim.Adam(net.parameters(), lr=lr)
-    epochs = 5
+    epochs = 32
 
     if(scheme_type == 'iterative_augmenting'):
         # If False, then on test
@@ -527,6 +643,56 @@ if __name__ == '__main__':
 
             augment_trainloader = torch.utils.data.DataLoader(current_augment_dataset, batch_size=batch_size,
                                                               shuffle=True)
+
+    elif(scheme_type == 'APR_exps'):
+        final_model_save_path = final_model_save_path.replace(
+            "CLEAN_TRAINING", "APR_TRAINING/TYP_"+str(type_of_APR)+"/")
+        print("final_model_save_path: ", final_model_save_path)
+        is_log_wandb = not(wand_project_name is None)
+        if(is_log_wandb):
+            wandb_group_name = "DS_"+str(dataset_str) + \
+                "_MT_"+str(model_arch_type_str)+"_SEED_" + \
+                str(torch_seed)+"_APR_"+str(type_of_APR)
+            wandb_run_name = "MT_" + \
+                str(model_arch_type_str)+"/SEED_"+str(torch_seed)+"/EP_"+str(epochs)+"/LR_" + \
+                str(lr)+"/OPT_"+str(optimizer)+"/LOSS_TYPE_" + \
+                str(criterion)+"/BS_"+str(batch_size) + \
+                "/SCH_TYP_"+str(scheme_type)
+            wandb_run_name = wandb_run_name.replace("/", "")
+
+            wandb_config = dict()
+            wandb_config["dataset"] = dataset_str
+            wandb_config["model_arch_type"] = model_arch_type_str
+            wandb_config["torch_seed"] = torch_seed
+            wandb_config["scheme_type"] = scheme_type
+            wandb_config["final_model_save_path"] = final_model_save_path
+            wandb_config["epochs"] = epochs
+            wandb_config["optimizer"] = optimizer
+            wandb_config["criterion"] = criterion
+            wandb_config["type_of_APR"] = type_of_APR
+            wandb_config["lr"] = lr
+            wandb_config["batch_size"] = batch_size
+            if(pca_exp_percent is not None):
+                wandb_config["pca_exp_percent"] = pca_exp_percent
+                wandb_config["num_comp_pca"] = number_of_components_for_pca
+
+            wandb.init(
+                project=f"{wand_project_name}",
+                name=f"{wandb_run_name}",
+                group=f"{wandb_group_name}",
+                config=wandb_config,
+            )
+
+        model_save_folder = final_model_save_path[0:final_model_save_path.rfind(
+            "/")+1]
+        if not os.path.exists(model_save_folder):
+            os.makedirs(model_save_folder)
+
+        best_test_acc, net = apr_train_model(net, type_of_APR,
+                                             trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name)
+        if(is_log_wandb):
+            wandb.log({"best_test_acc": best_test_acc})
+            wandb.finish()
 
     else:
         is_log_wandb = not(wand_project_name is None)

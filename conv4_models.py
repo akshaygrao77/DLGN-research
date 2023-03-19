@@ -1514,19 +1514,20 @@ class ALLONES_TorchVision_Value_Network(nn.Module):
         return ret
 
 
-def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], pretrained=False):
+def get_img_size(dataset):
     if(dataset == "cifar10"):
-        inp_channel = 3
-        input_size_list = [32, 32]
+        return [3,32, 32]
     elif(dataset == "mnist"):
-        inp_channel = 1
-        input_size_list = [28, 28]
+        return [1,28, 28]
     elif(dataset == "fashion_mnist"):
-        inp_channel = 1
-        input_size_list = [28, 28]
+        return [1,28, 28]
     elif(dataset == "imagenet_1000"):
-        inp_channel = 3
-        input_size_list = [224, 224]
+        return [3,224, 224]
+
+def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], pretrained=False):
+    temp = get_img_size(dataset)
+    inp_channel = temp[0]
+    input_size_list = temp[1:]
 
     return get_model_instance(model_arch_type, inp_channel, seed=seed, mask_percentage=mask_percentage, num_classes=num_classes, input_size_list=input_size_list, nodes_in_each_layer_list=nodes_in_each_layer_list, pretrained=pretrained)
 

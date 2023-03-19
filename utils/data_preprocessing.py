@@ -9,7 +9,7 @@ from keras.datasets import mnist, fashion_mnist
 from algos.dlgn_conv_preprocess import add_channel_to_image
 from sklearn.model_selection import train_test_split
 import torchvision.transforms as transforms
-from structure.generic_structure import CustomSimpleDataset, CustomMergedDataset
+from structure.generic_structure import CustomSimpleDataset, CustomMergedDataset, CustomSimpleArrayDataset
 import random
 
 
@@ -19,7 +19,7 @@ def seed_worker(worker_id):
     random.seed(worker_id - worker_seed)
 
 
-def get_data_loader(x_data, labels, bs, orig_labels=None):
+def get_data_loader(x_data, labels, bs, orig_labels=None, transforms=None):
     merged_data = []
     if(orig_labels is None):
         for i in range(len(x_data)):
@@ -27,8 +27,9 @@ def get_data_loader(x_data, labels, bs, orig_labels=None):
     else:
         for i in range(len(x_data)):
             merged_data.append([x_data[i], labels[i], orig_labels[i]])
+    merged_dataset = CustomSimpleArrayDataset(merged_data,transform=transforms)
     dataloader = torch.utils.data.DataLoader(
-        merged_data, shuffle=False, batch_size=bs)
+        merged_dataset, shuffle=False, pin_memory=True, num_workers=4, batch_size=bs)
     return dataloader
 
 
@@ -199,13 +200,13 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             dataset_config, model_arch_type, verbose=verbose, dataset_folder=dataset_folder, is_split_validation=is_split_validation)
 
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=dataset_config.batch_size,
-                                                  shuffle=False, num_workers=2)
+                                                  shuffle=False,pin_memory=True, num_workers=4)
         if(is_split_validation):
             valid_data_loader = torch.utils.data.DataLoader(val_set, batch_size=dataset_config.batch_size,
-                                                            shuffle=False, num_workers=2)
+                                                            shuffle=False,pin_memory=True, num_workers=4)
 
         testloader = torch.utils.data.DataLoader(testset, batch_size=dataset_config.batch_size,
-                                                 shuffle=False, num_workers=2)
+                                                 shuffle=False,pin_memory=True, num_workers=4)
 
         return trainloader, valid_data_loader, testloader
     elif(dataset_config.name == 'mnist' or dataset_config.name == 'fashion_mnist'):
@@ -213,12 +214,12 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             dataset_config, model_arch_type, verbose=verbose, dataset_folder=dataset_folder, is_split_validation=is_split_validation)
 
         train_data_loader = get_data_loader(
-            filtered_X_train, filtered_y_train, dataset_config.batch_size)
+            filtered_X_train, filtered_y_train, dataset_config.batch_size, transforms=dataset_config.train_transforms)
         if(is_split_validation):
             valid_data_loader = get_data_loader(
-                X_valid, y_valid, dataset_config.batch_size)
+                X_valid, y_valid, dataset_config.batch_size, transforms=dataset_config.test_transforms)
         test_data_loader = get_data_loader(
-            filtered_X_test, filtered_y_test, dataset_config.batch_size)
+            filtered_X_test, filtered_y_test, dataset_config.batch_size, transforms=dataset_config.test_transforms)
 
         return train_data_loader, valid_data_loader, test_data_loader
 
