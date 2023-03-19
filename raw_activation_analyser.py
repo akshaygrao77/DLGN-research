@@ -793,7 +793,7 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
             list_of_save_postfixes = [None]
     else:
         list_of_model_paths = [direct_model_path]
-        if('CLEAN' in direct_model_path):
+        if('CLEAN' in direct_model_path or 'APR_TRAINING' in direct_model_path):
             models_base_path = direct_model_path[0:direct_model_path.rfind(
                 ".pt")]
         else:
@@ -1638,7 +1638,7 @@ if __name__ == '__main__':
         if(is_class_segregation_on_ground_truth):
             seg_over_what_str = 'GT'
 
-        if('CLEAN' in std_model_path):
+        if('CLEAN' in std_model_path or 'APR_TRAINING' in std_model_path):
             first_prefix = std_model_path[0:std_model_path.rfind(
                 ".pt")]
         else:
@@ -1648,7 +1648,7 @@ if __name__ == '__main__':
         final_postfix_for_save = "/{}/EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
             first_prefix, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size)
 
-        if('CLEAN' in adv_model_path):
+        if('CLEAN' in adv_model_path or 'APR_TRAINING' in adv_model_path):
             prefix = adv_model_path[0:adv_model_path.rfind(
                 ".pt")]
         else:
@@ -1764,7 +1764,7 @@ if __name__ == '__main__':
         if(is_class_segregation_on_ground_truth):
             seg_over_what_str = 'GT'
 
-        if('CLEAN' in std_model_path):
+        if('CLEAN' in std_model_path or 'APR_TRAINING' in std_model_path):
             first_prefix = std_model_path[0:std_model_path.rfind(
                 ".pt")]
         else:
@@ -1773,7 +1773,7 @@ if __name__ == '__main__':
         final_postfix_for_save = "/{}/EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
             first_prefix, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size)
 
-        if('CLEAN' in adv_model_path):
+        if('CLEAN' in adv_model_path or 'APR_TRAINING' in adv_model_path):
             prefix = adv_model_path[0:adv_model_path.rfind(
                 ".pt")]
         else:

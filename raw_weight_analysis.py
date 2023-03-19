@@ -2063,7 +2063,7 @@ if __name__ == '__main__':
                 save_prefix = get_prefix_for_save(
                     model_path, model_arch_type_str)
 
-                if('CLEAN' in model_path):
+                if('CLEAN' in model_path or 'APR_TRAINING' in model_path):
                     models_base_path = model_path[0:model_path.rfind(
                         ".pt")]
                 else:

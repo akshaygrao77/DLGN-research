@@ -32,6 +32,9 @@ def apply_adversarial_attack_on_input(input_data, net, eps, adv_attack_type, num
     if(adv_attack_type == "PGD"):
         adv_inp = projected_gradient_descent(
             net, input_data, eps, eps_step_size, number_of_adversarial_optimization_steps, np.inf, y=adv_target, targeted=is_targetted)
+    elif(adv_attack_type == "FGSM"):
+        adv_inp = fast_gradient_method(
+            model_fn=net, x=input_data, eps=eps, norm=np.inf)
 
     return adv_inp
 
@@ -583,7 +586,7 @@ if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
+    model_arch_type = 'conv4_deep_gated_net_n16_small'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -596,10 +599,13 @@ if __name__ == '__main__':
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    pca_exp_percent = 0.95
+    # pca_exp_percent = 0.85
+
+    wandb_config_additional_dict = None
+    wandb_config_additional_dict = {"type_of_APR": "APRSP"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_dnn_W_128_D_4_PCA_K155_P_0.95_dir.pt"
+    direct_model_path = "root/model/save/mnist/APR_TRAINING/TYP_APRSP/ST_2022/conv4_deep_gated_net_n16_small_dir.pt"
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -693,7 +699,8 @@ if __name__ == '__main__':
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "adv_attack_for_active_pixels_on_reconst_augmentation"
         # wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation_with_orig"
-        wand_project_name = 'V2_adv_attack_on_reconst_augmentation_with_orig'
+        # wand_project_name = 'V2_adv_attack_on_reconst_augmentation_with_orig'
+        wand_project_name = "APR_experiments"
         # wand_project_name = 'common_active_pixels_on_reconst_augmentation'
         # wand_project_name = None
 
@@ -734,7 +741,7 @@ if __name__ == '__main__':
                 else:
                     current_aug_iter_num = None
                     model_save_path = direct_model_path
-                    if('CLEAN' in model_save_path):
+                    if('CLEAN' in model_save_path or 'APR_TRAINING' in model_save_path):
                         model_and_data_save_prefix = model_save_path[0:model_save_path.rfind(
                             ".pt")]
                     else:
@@ -780,6 +787,8 @@ if __name__ == '__main__':
                         if(pca_exp_percent is not None):
                             wandb_config["pca_exp_percent"] = pca_exp_percent
                             wandb_config["num_comp_pca"] = number_of_components_for_pca
+                        if(wandb_config_additional_dict is not None):
+                            wandb_config.update(wandb_config_additional_dict)
                         wandb.init(
                             project=f"{wand_project_name}",
                             name=f"{wandb_run_name}",
@@ -885,6 +894,9 @@ if __name__ == '__main__':
                             if(pca_exp_percent is not None):
                                 wandb_config["pca_exp_percent"] = pca_exp_percent
                                 wandb_config["num_comp_pca"] = number_of_components_for_pca
+                            if(wandb_config_additional_dict is not None):
+                                wandb_config.update(
+                                    wandb_config_additional_dict)
                             wandb.init(
                                 project=f"{wand_project_name}",
                                 name=f"{wandb_run_name}",
