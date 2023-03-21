@@ -1,6 +1,8 @@
 import torch
+from torchvision import transforms
 from PIL import Image
 import numpy as np
+from utils.APR import APRecombination
 
 
 class PerClassDataset(torch.utils.data.Dataset):
@@ -32,6 +34,7 @@ class CustomSimpleDataset(torch.utils.data.Dataset):
         return x, y
 
 
+to_tensor = transforms.ToTensor()
 class CustomSimpleArrayDataset(torch.utils.data.Dataset):
     def __init__(self, data_list, transform=None):
         self.data_list = data_list
@@ -49,8 +52,18 @@ class CustomSimpleArrayDataset(torch.utils.data.Dataset):
                 x = Image.fromarray(x[0])
             else:
                 x = Image.fromarray(x.transpose(1, 2, 0))
-            x = self.transform(x)
-
+            if(isinstance(self.transform, transforms.Compose)):
+                x = self.transform(x)
+            elif(isinstance(self.transform, transforms.RandomApply) and isinstance(self.transform.transforms[0], APRecombination)):
+                x, phase_used_flag, amp_used_flag, x_aug, x_orig, orig_img = self.transform(
+                    x)
+                if(isinstance(x, Image.Image)):
+                    x = to_tensor(x)
+                    x_aug = to_tensor(x_aug)
+                    x_orig = to_tensor(x_orig)
+                    orig_img = to_tensor(orig_img)
+                y = self.data_list[idx][1]
+                return x, y, phase_used_flag, amp_used_flag, x_aug, x_orig, orig_img
         y = self.data_list[idx][1]
         if(len(self.data_list[idx]) == 2):
             return x, y

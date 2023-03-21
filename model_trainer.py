@@ -14,12 +14,14 @@ from utils.data_preprocessing import preprocess_dataset_get_data_loader, generat
 from structure.dlgn_conv_config_structure import DatasetConfig
 from torchvision import transforms
 from torch.autograd import Variable
+from configs.dlgn_conv_config import HardRelu
 
 from conv4_models import get_model_instance, get_model_save_path, get_model_instance_from_dataset, get_img_size
 from visualization import run_visualization_on_config
 from utils.weight_utils import get_gating_layer_weights
 from raw_weight_analysis import convert_list_tensor_to_numpy
 from utils.APR import APRecombination, mix_data
+from utils.apr_evaluator import apr_evaluate_model
 
 
 def evaluate_model(net, dataloader, num_classes_trained_on=None):
@@ -65,14 +67,23 @@ def get_normalize(inp):
     return inp
 
 
-def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None):
+def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None, apr_mix_prob=0.6, train_on_phase_labels=True):
 
     is_log_wandb = not(wand_project_name is None)
-    best_test_acc = 0
     net.train()
     for epoch in range(epochs):  # loop over the dataset multiple times
-        correct = 0
-        total = 0
+        orig_correct = 1
+        orig_total = 1
+        overall_total = 1
+        total_count = 1
+
+        if("APRS" in type_of_APR):
+            aprs_used_count = 1
+            aprs_phase_aug_used = 1
+        if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
+            ph_label_correct = 1
+            am_label_correct = 1
+            switch_total = 1
 
         running_loss = 0.0
         loader = tqdm.tqdm(trainloader, desc='Training')
@@ -80,14 +91,35 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
             begin_time = time.time()
             loader.set_description(f"Epoch {epoch+1}")
             # get the inputs; data is a list of [inputs, labels]
-            inputs, labels = data
+            if("APRS" in type_of_APR):
+                inputs, labels, phase_used_flag, amp_used_flag, x_aug, x_orig, orig_img = data
+                with torch.no_grad():
+                    aprs_used_count += torch.numel(phase_used_flag) - \
+                        torch.count_nonzero(phase_used_flag).item()
+                    # phase_used_flag is -1 when x is used and +1 when x_aug is used
+                    aprs_phase_aug_used += torch.count_nonzero(
+                        HardRelu()(phase_used_flag)).item()
+            else:
+                inputs, labels = data
+            total_count += inputs.size(0)
+
             inputs, labels = inputs.to(
                 device, non_blocking=True), labels.to(device, non_blocking=True)
+            batch_size = inputs.size(0)
             dev = inputs.get_device()
+
             if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
-                inputs_mix = mix_data(inputs)
+                mix_train_labels = labels
+                amp_labels = None
+                phase_labels = None
+                inputs_mix, amp_label_indx, _ = mix_data(
+                    inputs, prob=apr_mix_prob)
+                if(amp_label_indx is not None):
+                    amp_labels = labels[amp_label_indx]
+                    phase_labels = labels
+                    if(not train_on_phase_labels):
+                        mix_train_labels = amp_labels
                 inputs_mix = Variable(inputs_mix)
-                batch_size = inputs.size(0)
                 inputs, inputs_mix = get_normalize(
                     inputs), get_normalize(inputs_mix)
                 inputs = torch.cat([inputs, inputs_mix], 0)
@@ -100,11 +132,13 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
 
             # forward + backward + optimize
             outputs = net(inputs)
-
+            orig_size = batch_size
             if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
                 loss = criterion(outputs[:batch_size], labels) + \
-                    criterion(outputs[batch_size:], labels)
-                labels = torch.cat([labels, labels], 0)
+                    criterion(outputs[batch_size:], mix_train_labels)
+                if(amp_labels is None):
+                    orig_size = 2*batch_size
+                    labels = torch.cat([labels, labels], 0)
             else:
                 loss = criterion(outputs, labels)
 
@@ -112,23 +146,53 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
             optimizer.step()
 
             _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+            overall_total += outputs.size(0)
+            orig_total += labels.size(0)
+            orig_correct += (predicted[:orig_size] == labels).sum().item()
+            if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
+                if(amp_labels is not None):
+                    am_label_correct += (predicted[batch_size:]
+                                         == amp_labels).sum().item()
+                    ph_label_correct += (predicted[batch_size:]
+                                         == phase_labels).sum().item()
+                    switch_total += phase_labels.size(0)
 
             running_loss += loss.item()
 
             cur_time = time.time()
             step_time = cur_time - begin_time
-            loader.set_postfix(train_loss=running_loss/(batch_idx+1),
-                               train_acc=100.*correct/total, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
+            if(type_of_APR == "APRP"):
+                loader.set_postfix(total_samples=overall_total, train_loss=running_loss/(batch_idx+1), noswtch_per=100.*orig_total/overall_total, noswtch_ratio="{}/{}".format(orig_total, overall_total),
+                                   orig_tr_acc=100.*orig_correct/orig_total, orgc_ratio="{}/{}".format(orig_correct, orig_total),
+                                   ph_tr_acc=100.*ph_label_correct/switch_total, ph_acratio="{}/{}".format(ph_label_correct, switch_total),
+                                   amp_tr_acc=100.*am_label_correct/switch_total, amp_acratio="{}/{}".format(am_label_correct, switch_total), stime=format_time(step_time))
+            elif(type_of_APR == "APRSP"):
+                loader.set_postfix(total_samples=overall_total, train_loss=running_loss/(batch_idx+1), aprs_use=100.*aprs_used_count/total_count, aprs_phase_use=100.*aprs_phase_aug_used/total_count,
+                                   noswtch_per=100.*orig_total/overall_total, noswtch_ratio="{}/{}".format(orig_total, overall_total),
+                                   orig_tr_acc=100.*orig_correct/orig_total, orgc_ratio="{}/{}".format(orig_correct, orig_total),
+                                   ph_tr_acc=100.*ph_label_correct/switch_total, ph_acratio="{}/{}".format(ph_label_correct, switch_total),
+                                   amp_tr_acc=100.*am_label_correct/switch_total, amp_acratio="{}/{}".format(am_label_correct, switch_total), stime=format_time(step_time))
+            elif(type_of_APR == "APRS"):
+                loader.set_postfix(total_samples=overall_total, train_loss=running_loss/(batch_idx+1), aprs_use=100.*aprs_used_count/total_count, aprs_phase_use=100.*aprs_phase_aug_used/total_count,
+                                   orig_tr_acc=100.*orig_correct/orig_total, orgc_ratio="{}/{}".format(orig_correct, orig_total),
+                                   stime=format_time(step_time))
 
-        train_acc = 100. * correct/total
-        test_acc, _ = evaluate_model(
-            net, testloader)
+        res_dict = apr_evaluate_model(net, testloader, type_of_APR)
+        print("Test evaluation results:", res_dict)
         if(is_log_wandb):
-            wandb.log({"train_acc": train_acc, "test_acc": test_acc})
+            if(type_of_APR == "APRP"):
+                wandb_update_dict = {"noswtch_per": 100.*orig_total/overall_total, "orig_samples_count": total_count, "total_samples": overall_total,
+                                     "orig_tr_acc": 100.*orig_correct/orig_total, "ph_tr_acc": 100.*ph_label_correct/switch_total, "amp_tr_acc": 100.*am_label_correct/switch_total}
+            elif(type_of_APR == "APRSP"):
+                wandb_update_dict = {"aprs_use": 100.*aprs_used_count/total_count, "orig_samples_count": total_count, "aprs_phase_use": 100.*aprs_phase_aug_used/total_count,
+                                     "noswtch_per": 100.*orig_total/overall_total, "total_samples": overall_total,
+                                     "orig_tr_acc": 100.*orig_correct/orig_total, "ph_tr_acc": 100.*ph_label_correct/switch_total, "amp_tr_acc": 100.*am_label_correct/switch_total}
+            elif(type_of_APR == "APRS"):
+                wandb_update_dict = {"aprs_use": 100.*aprs_used_count/total_count, "orig_samples_count": total_count, "total_samples": overall_total, "aprs_phase_use": 100.*aprs_phase_aug_used/total_count,
+                                     "orig_tr_acc": 100.*orig_correct/orig_total}
+            wandb_update_dict.update(res_dict)
+            wandb.log(wandb_update_dict)
 
-        print("Test_acc: ", test_acc)
         per_epoch_model_save_path = final_model_save_path.replace(
             "_dir.pt", "")
         if not os.path.exists(per_epoch_model_save_path):
@@ -136,12 +200,9 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
         per_epoch_model_save_path += "/epoch_{}_dir.pt".format(epoch)
         if(epoch % 7 == 0):
             torch.save(net, per_epoch_model_save_path)
-        if(test_acc >= best_test_acc):
-            best_test_acc = test_acc
 
     torch.save(net, final_model_save_path)
-    print('Finished Training: Best saved model test acc is:', best_test_acc)
-    return best_test_acc, net
+    return net
 
 
 def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None):
@@ -260,7 +321,7 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # iterative_augmenting , nil , APR_exps
     scheme_type = 'APR_exps'
     # scheme_type = ''
@@ -288,12 +349,16 @@ if __name__ == '__main__':
     if(scheme_type == "APR_exps"):
         # APRP ,APRS, APRSP
         type_of_APR = "APRSP"
+        aprp_mix_prob = 0.6
+        train_on_phase_labels = True
+        aprs_prob_threshold = 0.7
+        aprs_mix_prob = 0.5
 
         if("APRS" in type_of_APR):
             img_size = get_img_size(dataset)[1]
             is_normalize_data = False
-            train_transforms = transforms.Compose([transforms.RandomApply(
-                [APRecombination(img_size=img_size)], p=1.0), transforms.ToTensor()])
+            train_transforms = transforms.RandomApply(
+                [APRecombination(img_size=img_size, prob_threshold=aprs_prob_threshold)], p=1.0)
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -645,14 +710,23 @@ if __name__ == '__main__':
                                                               shuffle=True)
 
     elif(scheme_type == 'APR_exps'):
+        aprp_postfix = ""
+        if("APRS" in type_of_APR):
+            aprp_postfix += "/ARPS_PROB_THRES_" + \
+                str(aprs_prob_threshold)+"/ARPS_MPROB_"+str(aprs_mix_prob)+"/"
+        if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
+            aprp_postfix += "/APRP_MPROB_" + \
+                str(aprp_mix_prob)+"/TR_PHASE_"+str(train_on_phase_labels)+"/"
+
         final_model_save_path = final_model_save_path.replace(
-            "CLEAN_TRAINING", "APR_TRAINING/TYP_"+str(type_of_APR)+"/")
+            "CLEAN_TRAINING", "APR_TRAINING/TYP_"+str(type_of_APR)+"/"+aprp_postfix)
         print("final_model_save_path: ", final_model_save_path)
         is_log_wandb = not(wand_project_name is None)
         if(is_log_wandb):
             wandb_group_name = "DS_"+str(dataset_str) + \
                 "_MT_"+str(model_arch_type_str)+"_SEED_" + \
-                str(torch_seed)+"_APR_"+str(type_of_APR)
+                str(torch_seed)+"_APR_"+str(type_of_APR) + \
+                aprp_postfix.replace("/", "_")
             wandb_run_name = "MT_" + \
                 str(model_arch_type_str)+"/SEED_"+str(torch_seed)+"/EP_"+str(epochs)+"/LR_" + \
                 str(lr)+"/OPT_"+str(optimizer)+"/LOSS_TYPE_" + \
@@ -675,6 +749,12 @@ if __name__ == '__main__':
             if(pca_exp_percent is not None):
                 wandb_config["pca_exp_percent"] = pca_exp_percent
                 wandb_config["num_comp_pca"] = number_of_components_for_pca
+            if("APRS" in type_of_APR):
+                wandb_config["aprs_prob_thres"] = aprs_prob_threshold
+                wandb_config["aprs_mix_prob"] = aprs_mix_prob
+            if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
+                wandb_config["aprp_mix_prob"] = aprp_mix_prob
+                wandb_config["is_train_on_phase"] = train_on_phase_labels
 
             wandb.init(
                 project=f"{wand_project_name}",
@@ -688,10 +768,10 @@ if __name__ == '__main__':
         if not os.path.exists(model_save_folder):
             os.makedirs(model_save_folder)
 
-        best_test_acc, net = apr_train_model(net, type_of_APR,
-                                             trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name)
+        net = apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion, optimizer,
+                              final_model_save_path, wand_project_name, aprp_mix_prob, train_on_phase_labels)
+
         if(is_log_wandb):
-            wandb.log({"best_test_acc": best_test_acc})
             wandb.finish()
 
     else:
