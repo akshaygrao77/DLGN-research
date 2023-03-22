@@ -77,6 +77,7 @@ def convert_layers_after_last_relu_to_identity(model, last_relu_layer_name, is_r
 
     return is_replace
 
+
 def convert_inplacerelu_to_relu(model):
     for child_name, child in model.named_children():
         if isinstance(child, nn.ReLU):
@@ -1070,7 +1071,7 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)
@@ -1516,13 +1517,14 @@ class ALLONES_TorchVision_Value_Network(nn.Module):
 
 def get_img_size(dataset):
     if(dataset == "cifar10"):
-        return [3,32, 32]
+        return [3, 32, 32]
     elif(dataset == "mnist"):
-        return [1,28, 28]
+        return [1, 28, 28]
     elif(dataset == "fashion_mnist"):
-        return [1,28, 28]
+        return [1, 28, 28]
     elif(dataset == "imagenet_1000"):
-        return [3,224, 224]
+        return [3, 224, 224]
+
 
 def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], pretrained=False):
     temp = get_img_size(dataset)

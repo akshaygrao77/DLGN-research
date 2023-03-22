@@ -583,10 +583,10 @@ def extract_common_activation_patterns_between_reconst_and_original(true_input_d
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -602,10 +602,12 @@ if __name__ == '__main__':
     # pca_exp_percent = 0.85
 
     wandb_config_additional_dict = None
-    wandb_config_additional_dict = {"type_of_APR": "APRSP"}
+    wandb_config_additional_dict = {
+        "type_of_APR": "APRP", "is_train_on_phase": True}
+    # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist/APR_TRAINING/TYP_APRSP/ST_2022/conv4_deep_gated_net_n16_small_dir.pt"
+    direct_model_path = "root/model/save/fashion_mnist/APR_TRAINING/TYP_APRP/APRP_MPROB_0.6/TR_PHASE_True/ST_2022/conv4_dlgn_n16_small_dir.pt"
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -642,7 +644,7 @@ if __name__ == '__main__':
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
-    print("Training over "+dataset)
+    print("Testing over "+dataset)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     num_classes_trained_on = num_classes

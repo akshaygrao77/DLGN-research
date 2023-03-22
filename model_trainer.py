@@ -21,7 +21,7 @@ from visualization import run_visualization_on_config
 from utils.weight_utils import get_gating_layer_weights
 from raw_weight_analysis import convert_list_tensor_to_numpy
 from utils.APR import APRecombination, mix_data
-from utils.apr_evaluator import apr_evaluate_model
+from apr_evaluator import apr_evaluate_model
 
 
 def evaluate_model(net, dataloader, num_classes_trained_on=None):
@@ -177,7 +177,7 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
                                    orig_tr_acc=100.*orig_correct/orig_total, orgc_ratio="{}/{}".format(orig_correct, orig_total),
                                    stime=format_time(step_time))
 
-        res_dict = apr_evaluate_model(net, testloader, type_of_APR)
+        res_dict, _ = apr_evaluate_model(net, testloader)
         print("Test evaluation results:", res_dict)
         if(is_log_wandb):
             if(type_of_APR == "APRP"):
@@ -191,6 +191,7 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
                 wandb_update_dict = {"aprs_use": 100.*aprs_used_count/total_count, "orig_samples_count": total_count, "total_samples": overall_total, "aprs_phase_use": 100.*aprs_phase_aug_used/total_count,
                                      "orig_tr_acc": 100.*orig_correct/orig_total}
             wandb_update_dict.update(res_dict)
+            wandb_update_dict.update({"cur_epoch": epoch})
             wandb.log(wandb_update_dict)
 
         per_epoch_model_save_path = final_model_save_path.replace(
@@ -317,7 +318,7 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'mnist'
+    dataset = 'cifar10'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
@@ -348,7 +349,7 @@ if __name__ == '__main__':
 
     if(scheme_type == "APR_exps"):
         # APRP ,APRS, APRSP
-        type_of_APR = "APRSP"
+        type_of_APR = "APRS"
         aprp_mix_prob = 0.6
         train_on_phase_labels = True
         aprs_prob_threshold = 0.7
@@ -469,7 +470,7 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss().to(device)
     lr = 3e-4
     optimizer = optim.Adam(net.parameters(), lr=lr)
-    epochs = 32
+    epochs = 50
 
     if(scheme_type == 'iterative_augmenting'):
         # If False, then on test
@@ -725,13 +726,13 @@ if __name__ == '__main__':
         if(is_log_wandb):
             wandb_group_name = "DS_"+str(dataset_str) + \
                 "_MT_"+str(model_arch_type_str)+"_SEED_" + \
-                str(torch_seed)+"_APR_"+str(type_of_APR) + \
-                aprp_postfix.replace("/", "_")
+                str(torch_seed)+"_APR_"+str(type_of_APR)
             wandb_run_name = "MT_" + \
                 str(model_arch_type_str)+"/SEED_"+str(torch_seed)+"/EP_"+str(epochs)+"/LR_" + \
                 str(lr)+"/OPT_"+str(optimizer)+"/LOSS_TYPE_" + \
                 str(criterion)+"/BS_"+str(batch_size) + \
-                "/SCH_TYP_"+str(scheme_type)
+                "/SCH_TYP_"+str(scheme_type)+"_APR_" + \
+                str(type_of_APR)+aprp_postfix
             wandb_run_name = wandb_run_name.replace("/", "")
 
             wandb_config = dict()
