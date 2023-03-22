@@ -1,26 +1,18 @@
 import numpy as np
-import torch.optim as optim
-import torch.nn.functional as F
-import torch.nn as nn
 import torch
 import tqdm
-import time
-import os
 import wandb
 import torch.backends.cudnn as cudnn
 
-from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 from torchvision import transforms
-from torch.autograd import Variable
 
 from conv4_models import get_model_instance, get_model_save_path, get_model_instance_from_dataset, get_img_size
 from visualization import run_visualization_on_config
 from utils.weight_utils import get_gating_layer_weights
 from raw_weight_analysis import convert_list_tensor_to_numpy
 from utils.APR import APRecombination, mix_data
-from configs.dlgn_conv_config import HardRelu
 
 
 def get_normalize(inp):
@@ -34,7 +26,7 @@ def get_normalize(inp):
     return inp
 
 
-def apr_evaluate_model(net, dataloader, type_of_APR, num_classes_trained_on=None):
+def apr_evaluate_model(net, dataloader, num_classes_trained_on=None):
     net.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -116,11 +108,14 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'conv4_dlgn_n16_small'
-    # iterative_augmenting , nil , APR_exps
-    scheme_type = 'APR_exps'
+    model_arch_type = 'conv4_deep_gated_net_n16_small'
+
+    scheme_type = 'APR_exps_eval'
+
+    model_to_be_evaluated = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+
     # scheme_type = ''
-    batch_size = 32
+    batch_size = 64
 
     # torch_seed = ""
     torch_seed = 2022
@@ -138,20 +133,15 @@ if __name__ == '__main__':
     list_of_classes_to_train_on = None
     # list_of_classes_to_train_on = [3, 8]
 
-    model_to_be_evaluated = ""
-
-    train_transforms = None
-    is_normalize_data = True
+    eval_on_test = False
 
     aprp_mix_prob = 0.6
     train_on_phase_labels = True
     aprs_prob_threshold = 0.7
     aprs_mix_prob = 0.5
 
-    if(scheme_type == "APR_exps"):
-        # APRP ,APRS, APRSP
-        type_of_APR = "APRS"
-
+    is_normalize_data = True
+    train_transforms = None
     if(dataset == "cifar10"):
         inp_channel = 3
         classes = ('plane', 'car', 'bird', 'cat',
@@ -222,6 +212,21 @@ if __name__ == '__main__':
         net = get_model_instance(model_arch_type, inp_channel,
                                  seed=torch_seed, num_classes=num_classes_trained_on)
 
+    custom_temp_model = torch.load(model_to_be_evaluated)
+    net.load_state_dict(custom_temp_model.state_dict())
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
+    torch.cuda.empty_cache()
+    if device_str == 'cuda':
+        if(torch.cuda.device_count() > 1):
+            print("Parallelizing model")
+            net = torch.nn.DataParallel(net).cuda()
+        else:
+            net = net.to(device)
+        cudnn.benchmark = True
+
     if(pca_exp_percent is not None):
         dataset_for_pca = generate_dataset_from_loader(trainloader)
         if(isinstance(dataset_for_pca.list_of_x[0], torch.Tensor)):
@@ -236,44 +241,36 @@ if __name__ == '__main__':
             "_PCA_K"+str(number_of_components_for_pca) + \
             "_P_"+str(pca_exp_percent)
 
+    if(eval_on_test):
+        evalLoader = testloader
+    else:
+        evalLoader = trainloader
+
     is_log_wandb = not(wand_project_name is None)
     if(is_log_wandb):
         aprp_postfix = ""
-        if("APRS" in type_of_APR):
-            aprp_postfix += "/ARPS_PROB_THRES_" + \
-                str(aprs_prob_threshold)+"/ARPS_MPROB_"+str(aprs_mix_prob)+"/"
-        if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
-            aprp_postfix += "/APRP_MPROB_" + \
-                str(aprp_mix_prob)+"/TR_PHASE_"+str(train_on_phase_labels)+"/"
 
         wandb_group_name = "DS_"+str(dataset_str) + \
             "_MT_"+str(model_arch_type_str)+"_SEED_" + \
-            str(torch_seed)+"_APR_"+str(type_of_APR) + \
+            str(torch_seed) + \
             aprp_postfix.replace("/", "_")
         wandb_run_name = "MT_" + \
             str(model_arch_type_str)+"/SEED_"+str(torch_seed) +\
-            +"/BS_"+str(batch_size) + \
+            "/BS_"+str(batch_size) + \
             "/SCH_TYP_"+str(scheme_type)
         wandb_run_name = wandb_run_name.replace("/", "")
 
         wandb_config = dict()
         wandb_config["dataset"] = dataset_str
-        wandb_config["type_of_APR"] = type_of_APR
         wandb_config["model_arch_type"] = model_arch_type_str
         wandb_config["torch_seed"] = torch_seed
         wandb_config["scheme_type"] = scheme_type
         wandb_config["model_to_be_evaluated_path"] = model_to_be_evaluated
-        wandb_config["type_of_APR"] = type_of_APR
         wandb_config["batch_size"] = batch_size
+        wandb_config["eval_on_test"] = eval_on_test
         if(pca_exp_percent is not None):
             wandb_config["pca_exp_percent"] = pca_exp_percent
             wandb_config["num_comp_pca"] = number_of_components_for_pca
-        if("APRS" in type_of_APR):
-            wandb_config["aprs_prob_thres"] = aprs_prob_threshold
-            wandb_config["aprs_mix_prob"] = aprs_mix_prob
-        if(type_of_APR == "APRP" or type_of_APR == "APRSP"):
-            wandb_config["aprp_mix_prob"] = aprp_mix_prob
-            wandb_config["is_train_on_phase"] = train_on_phase_labels
 
         wandb.init(
             project=f"{wand_project_name}",
@@ -282,8 +279,8 @@ if __name__ == '__main__':
             config=wandb_config,
         )
 
-    res_dict = apr_evaluate_model(net, testloader, type_of_APR)
-    print("res_dict:",res_dict)
+    res_dict, _ = apr_evaluate_model(net, evalLoader)
+    print("res_dict:", res_dict)
 
     if(is_log_wandb):
         wandb.log(res_dict)
