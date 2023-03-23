@@ -5,6 +5,8 @@ import math
 import numpy as np
 from tqdm import tqdm
 
+import torchvision.datasets as datasets
+
 from keras.datasets import mnist, fashion_mnist
 from algos.dlgn_conv_preprocess import add_channel_to_image
 from sklearn.model_selection import train_test_split
@@ -223,6 +225,36 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             filtered_X_test, filtered_y_test, dataset_config.batch_size, transforms=dataset_config.test_transforms)
 
         return train_data_loader, valid_data_loader, test_data_loader
+    elif(dataset_config.name == 'imagenet_1000'):
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+        train_dataset = datasets.ImageFolder(
+            "/home/rbcdsai/ImageNet/train",
+            transforms.Compose([
+                transforms.RandomResizedCrop(224),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                normalize,
+            ]))
+
+        val_dataset = datasets.ImageFolder(
+            "/home/rbcdsai/ImageNet/val",
+            transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                normalize,
+            ]))
+
+        trainloader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=dataset_config.batch_size, shuffle=False,
+            num_workers=4, pin_memory=True)
+
+        testloader = torch.utils.data.DataLoader(
+            val_dataset, batch_size=dataset_config.batch_size, shuffle=False,
+            num_workers=4, pin_memory=True)
+
+        return trainloader, None, testloader
 
 
 def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):

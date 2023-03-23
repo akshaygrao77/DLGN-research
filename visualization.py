@@ -19,9 +19,9 @@ from configs.dlgn_conv_config import HardRelu
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, segregate_classes
 from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
-from conv4_models import get_model_instance
+from conv4_models import get_model_instance, get_img_size
 import scipy.ndimage as nd
-
+from collections import OrderedDict
 from external_utils import format_time
 
 # from vgg_net_16 import DLGN_VGG_Network, DLGN_VGG_LinearNetwork, DLGN_VGG_WeightNetwork
@@ -2074,8 +2074,8 @@ if __name__ == '__main__':
     # If it gives out of memory error or locks the computer
     # Try it with a smaller image
     print("Start")
-    # mnist , cifar10 , fashion_mnist
-    dataset = 'fashion_mnist'
+    # mnist , cifar10 , fashion_mnist , imagenet_1000
+    dataset = 'cifar10'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -2086,18 +2086,19 @@ if __name__ == '__main__':
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
-    model_arch_type = 'plain_pure_conv4_dnn'
+    # dlgn__resnet18__ , dgn__resnet18__,dnn__resnet18__
+    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     # uniform_init_image , zero_init_image , gaussian_init_image
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 1
+    template_image_calculation_batch_size = 16
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
-    template_loss_type = "TEMP_LOSS"
-    number_of_batch_to_collect = None
+    template_loss_type = "TANH_TEMP_LOSS"
+    number_of_batch_to_collect = 1
     vis_version = "V2"
     wand_project_name = "fresh_template_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -2110,12 +2111,17 @@ if __name__ == '__main__':
     torch_seed = 2022
     number_of_image_optimization_steps = 161
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES
-    exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
+    exp_type = "GENERATE_TEMPLATE_IMAGES"
     collect_threshold = 0.73
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
     random_per_layer_sample_gate_percent = None
+    # random_per_layer_sample_gate_percent = 0.5
+
+    class_indx_to_visualize = None
+    if(dataset == 'imagenet_1000'):
+        class_indx_to_visualize = [i for i in range(100, 111)]
 
     if(not(wand_project_name is None)):
         wandb.login()
@@ -2146,20 +2152,29 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/fashion_mnist/adversarial_training/MT_plain_pure_conv4_dnn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    custom_model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_n16_small_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        inp_channel = 1
-
-        if(dataset == "cifar10"):
-            inp_channel = 3
+        inp_channel = get_img_size(dataset)[0]
 
         wandb_config["custom_model_path"] = custom_model_path
-        temp_model = torch.load(custom_model_path)
+        temp_model = torch.load(custom_model_path, map_location=device)
+        classes, num_classes, ret_config = get_preprocessing_and_other_configs(
+            dataset, valid_split_size)
         custom_model = get_model_instance(
-            model_arch_type, inp_channel, seed=torch_seed)
-        custom_model.load_state_dict(temp_model.state_dict())
+            model_arch_type, inp_channel, seed=torch_seed, num_classes=num_classes)
+        if(isinstance(temp_model, dict)):
+            if("module." in [*temp_model['state_dict'].keys()][0]):
+                new_state_dict = OrderedDict()
+                for k, v in temp_model['state_dict'].items():
+                    name = k[7:]  # remove 'module.' of dataparallel
+                    new_state_dict[name] = v
+                custom_model.load_state_dict(new_state_dict)
+            else:
+                custom_model.load_state_dict(temp_model['state_dict'])
+        else:
+            custom_model.load_state_dict(temp_model.state_dict())
 
         custom_model = custom_model.to(device)
         root_save_prefix = custom_model_path[0:custom_model_path.rfind(
@@ -2172,6 +2187,6 @@ if __name__ == '__main__':
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size,
                                 number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version=vis_version,
-                                root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent)
+                                root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent, class_indx_to_visualize=class_indx_to_visualize)
 
     print("Execution completed")
