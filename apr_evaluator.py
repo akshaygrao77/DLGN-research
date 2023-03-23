@@ -67,8 +67,8 @@ def apr_evaluate_model(net, dataloader, num_classes_trained_on=None):
                 phase_labels = torch.cat([labels, temp], 0)
 
             batch_size = inputs.size(0)
-            inputs, inputs_mix = get_normalize(
-                inputs), get_normalize(inputs_mix)
+            # inputs, inputs_mix = get_normalize(
+            #     inputs), get_normalize(inputs_mix)
             inputs = torch.cat([inputs, inputs_mix], 0)
 
             inputs = inputs.to(device=dev, non_blocking=True)
@@ -104,18 +104,18 @@ def apr_evaluate_model(net, dataloader, num_classes_trained_on=None):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'mnist'
+    dataset = 'cifar10'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
 
     scheme_type = 'APR_exps_eval'
 
-    model_to_be_evaluated = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_deep_gated_net_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    model_to_be_evaluated = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
 
     # scheme_type = ''
-    batch_size = 64
+    batch_size = 32
 
     # torch_seed = ""
     torch_seed = 2022

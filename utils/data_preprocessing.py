@@ -258,59 +258,59 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
 
 
 def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):
-    transform = None
+    transform_list = []
     if(dataset_config.name == 'cifar10'):
         if(model_arch_type == 'cifar10_vgg_dlgn_16'):
-            transform = transforms.Compose([
+            transform_list = [
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
-            ])
+            ]
 
         elif(model_arch_type == 'cifar10_conv4_dlgn_with_inbuilt_norm'):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor()]
         elif(model_arch_type == 'plain_pure_conv4_dnn'):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor()]
         elif(model_arch_type == 'random_cifar10_conv4_dlgn_with_inbuilt_norm'):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor()]
         elif(model_arch_type == 'random_cifar10_conv4_dlgn_with_bn_with_inbuilt_norm'):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor()]
 
         elif(model_arch_type == 'random_cifar10_vgg_dlgn_16_with_inbuilt_norm'):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor()]
 
         elif(model_arch_type == 'cifar10_conv4_dlgn_with_bn_with_inbuilt_norm'):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor()]
         elif(model_arch_type == 'cifar10_conv4_dlgn_with_inbuilt_norm_with_flip_crop'):
-            transform = transforms.Compose([
+            transform_list = [
                 transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor()
-            ])
+            ]
         elif(model_arch_type == 'cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop'):
-            transform = transforms.Compose([
+            transform_list = [
                 transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor()
-            ])
+            ]
 
         elif(model_arch_type == 'cifar10_vgg_dlgn_16_with_inbuilt_norm'):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor()]
 
         elif(model_arch_type == 'cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn'):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor()]
 
         elif(model_arch_type == 'cifar10_conv4_dlgn'):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor()]
 
             # transform = transforms.Compose([
             #     transforms.ToTensor(),
@@ -318,59 +318,67 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
             #                          (0.2023, 0.1994, 0.2010)),
             # ])
         elif(model_arch_type == 'conv4_dlgn' or model_arch_type == "conv4_deep_gated_net_n16_small" or model_arch_type == "conv4_dlgn_n16_small" or model_arch_type == "plain_pure_conv4_dnn_n16_small"):
-            transform = transforms.Compose([
-                transforms.ToTensor()])
+            transform_list = [
+                transforms.ToTensor(), transforms.Normalize([0.4914, 0.4822, 0.4465], [
+                    0.2023, 0.1994, 0.2010])]
 
         elif(model_arch_type == 'random_conv4_dlgn'):
-            transform = transforms.Compose([
+            transform_list = [
                 transforms.ToTensor()
-            ])
+            ]
         elif(model_arch_type == 'random_vggnet_dlgn'):
-            transform = transforms.Compose([
+            transform_list = [
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
-            ])
+            ]
         elif(model_arch_type == 'cifar10_conv4_dlgn_sim_vgg_with_bn'):
-            transform = transforms.Compose([
+            transform_list = [
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
-            ])
+            ]
 
             # transform = transforms.Compose([
             #     transforms.ToTensor()])
         elif(model_arch_type == 'cifar10_conv4_dlgn_sim_vgg_wo_bn'):
-            transform = transforms.Compose([
+            transform_list = [
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
-            ])
+            ]
 
             # transform = transforms.Compose([
             #     transforms.ToTensor()])
         elif(model_arch_type == 'random_conv4_dlgn_sim_vgg_wo_bn'):
-            transform = transforms.Compose([
+            transform_list = [
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
-            ])
+            ]
 
             # transform = transforms.Compose([
             #     transforms.ToTensor()])
         elif(model_arch_type == 'random_conv4_dlgn_sim_vgg_with_bn'):
-            transform = transforms.Compose([
+            transform_list = [
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
-            ])
+            ]
 
             # transform = transforms.Compose([
             #     transforms.ToTensor()])
 
         val_set = None
+
+        if(len(transform_list) == 0):
+            transform = None
+        else:
+            transform = transforms.Compose(transform_list)
+
         if(transform is None):
             return None, None, None
+
         trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                                 download=True, transform=transform)
         if(is_split_validation):
