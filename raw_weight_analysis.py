@@ -1532,7 +1532,7 @@ def generate_seq_filter_outputs_per_image(model, filter_vis_dataset, class_label
 
 
 def generate_per_batch_filter_outs(inp_channel, filter_weights, batch_inputs):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # print("filter_weights before size", filter_weights.shape)
     filter_weights = np.expand_dims(filter_weights, axis=1)
     # print("filter_weights after size", filter_weights.shape)

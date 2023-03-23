@@ -58,7 +58,7 @@ class ActivationAnalyser():
             self.model.eval()
 
         self.device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         self.activation__save_prefix_folder = "root/activation_analysis/"
 
@@ -1093,7 +1093,7 @@ def run_activation_analysis_on_config(dataset, model_arch_type, is_template_imag
         root_save_prefix = 'root/ACT_PATTERN_ANALYSIS'
     if(final_postfix_for_save is None):
         final_postfix_for_save = ""
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)

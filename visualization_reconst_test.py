@@ -28,7 +28,7 @@ class HardReLU_F(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inputs):
         ctx.save_for_backward(inputs)  # save input for backward pass
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         values = torch.tensor([0], dtype=inputs.dtype, device=device)
         retval = torch.heaviside(inputs, values)
         return retval
@@ -178,7 +178,7 @@ class TemplateImageGenerator():
         # Generate a random image
         # self.created_image = Image.open(im_path).convert('RGB')
         self.device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         # self.initial_image = start_image_np[None, :]
         self.original_image = start_image_np

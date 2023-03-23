@@ -34,7 +34,7 @@ def blur_img(img, sigma):
 
 class FilterVisualizer():
     def __init__(self, model, weight_vis_initial_image_type, weight_vis_loss_type, size=10, upscaling_steps=10, upscaling_factor=1.2):
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.size, self.upscaling_steps, self.upscaling_factor, self.weight_vis_loss_type = size, upscaling_steps, upscaling_factor, weight_vis_loss_type
         model = model.to(device)
         self.model = model
@@ -44,7 +44,7 @@ class FilterVisualizer():
 
     def visualize(self, network_type, layer_num, filter_indx, number_of_image_optimization_steps=20, lr=0.1):
 
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         sz = self.size
 
         img = preprocess_image(
@@ -157,7 +157,7 @@ def get_vis_loss_value(
 def generate_weight_initialisation_per_filter(model, weight_vis_initial_image_type, weight_vis_loss_type, number_of_image_optimization_steps,
                                               network_type, layer_num, filter_indx, save_folder):
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     original_image = get_initial_image(dataset, weight_vis_initial_image_type)
     initial_image = preprocess_image(
         original_image.cpu().clone().detach().numpy(), False)

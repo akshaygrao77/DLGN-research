@@ -40,7 +40,7 @@ def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_ana
 
 
 def obtain_kernel_overlap(net, analyse_dataset):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     X, Y = analyse_dataset
     if(not isinstance(X, torch.Tensor)):
         X = torch.from_numpy(X)
@@ -81,6 +81,8 @@ def obtain_kernel_overlap(net, analyse_dataset):
     width = conv_outs[0].size()[1]
     depth = len(conv_outs)
     npk_kernel = npk_kernel / pow(width, depth)
+    # npk_kernel = npk_kernel / torch.trace(npk_kernel)
+
     print("Final Norm npk_kernel:{} for width:{} depth:{}".format(
         torch.norm(npk_kernel), width, depth))
     overlap = torch.matmul(torch.matmul(
@@ -113,7 +115,7 @@ if __name__ == '__main__':
     }
 
     wand_project_name = "kernel_overlap_experiments"
-    # wand_project_name = None
+    wand_project_name = None
 
     torch_seed = 2022
     number_of_adversarial_optimization_steps = 161
@@ -161,7 +163,7 @@ if __name__ == '__main__':
             fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     print("Training over "+dataset)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     num_classes_trained_on = num_classes
     dataset_str = dataset
@@ -288,7 +290,7 @@ if __name__ == '__main__':
 
                 net = net.to(device)
 
-                if('CLEAN' in current_direct_model_path):
+                if('CLEAN' in current_direct_model_path or 'APR_TRAINING' in current_direct_model_path):
                     model_and_data_save_prefix = current_direct_model_path[0:current_direct_model_path.rfind(
                         ".pt")]
                 else:

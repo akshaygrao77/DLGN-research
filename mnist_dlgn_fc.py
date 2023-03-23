@@ -50,7 +50,7 @@ def preprocess_dataset(verbose=1):
 
 
 def evaluate_model(dlgn_fc_model, dataloader):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = 'cuda' if torch.cuda.is_available() else 'cpu'
     correct = 0
     total = 0
@@ -72,7 +72,7 @@ def evaluate_model(dlgn_fc_model, dataloader):
 
 
 def train(dlgn_fc_model, trainloader, testloader):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     criterion = nn.CrossEntropyLoss()
     # optimizer = optim.SGD(dlgn_fc_model.parameters(), lr=0.01,
@@ -137,7 +137,7 @@ def train(dlgn_fc_model, trainloader, testloader):
 if __name__ == '__main__':
     trainloader, testloader = preprocess_dataset()
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     nodes_in_each_layer_list = [128] * 4
     dlgn_fc_model = DLGN_FC_Network(nodes_in_each_layer_list)

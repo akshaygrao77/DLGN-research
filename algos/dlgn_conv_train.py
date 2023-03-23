@@ -24,7 +24,7 @@ def train_one_epoch(model, training_loader, optimizer, loss_fn, epoch_index, par
     # iter(training_loader) so that we can track the batch
     # index and do some intra-epoch reporting
     loader = tqdm.tqdm(training_loader, desc='Train data loader')
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     for i, data in enumerate(loader):
         # Every data instance is an input + label pair
         inputs, labels = data
@@ -88,7 +88,7 @@ def evaluate_model(model, data_loader, loss_fn):
     avg_vacc = 0.
 
     vpredictions, vactuals = list(), list()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     for i, vdata in enumerate(data_loader):
         vinputs, vlabels = vdata
@@ -214,7 +214,7 @@ def initialise_DLGN_conv_model(gate_net_conv_info, is_DLGN_all_ones, seed, weigh
 
 
 def construct_train_evaluate_DLGN_model(gate_net_conv_info, weight_net_conv_info, train_data_loader, valid_data_loader, test_data_loader, hp_obj, runs_out_dir, save_out_dir, conf_name, all_param_hash, seed=2022, writer=None, is_DLGN_all_ones=True, verbose=1):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Initializing in a separate cell so we can easily add more epochs to the same run
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     if(writer is None):

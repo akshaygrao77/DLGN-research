@@ -113,7 +113,7 @@ class DLGN_CONV_Network(nn.Module):
         # print("gating_node_outputs[0]", self.gating_node_outputs[0])
         if(self.is_weight_net_all_ones == True):
             device = torch.device(
-                "cuda:0" if torch.cuda.is_available() else "cpu")
+                "cuda" if torch.cuda.is_available() else "cpu")
             # inp = torch.ones((2,5),dtype=torch.double, requires_grad=True,device=device)
             inp = torch.ones(inp.size(),
                              requires_grad=True, device=device)

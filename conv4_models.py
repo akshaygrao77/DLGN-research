@@ -91,7 +91,7 @@ class CONV_PCA_Layer(nn.Module):
         super(CONV_PCA_Layer, self).__init__()
         self.input_channel = input_channel
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         if(isinstance(data, torch.Tensor)):
             flattened_data = torch.flatten(data, 1)
         else:
@@ -158,7 +158,7 @@ class Mask_Conv4_DLGN_Net(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
@@ -281,7 +281,7 @@ class Mask_Conv4_DLGN_Net_N16_Small(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
@@ -398,7 +398,7 @@ class Plain_CONV4_Net(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)
@@ -465,7 +465,7 @@ class Plain_CONV4_Net_N16_Small(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)
@@ -535,7 +535,7 @@ class Conv4_DLGN_Net(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)
@@ -623,7 +623,7 @@ class Conv4_DeepGated_Net(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
@@ -718,7 +718,7 @@ class Conv4_DeepGated_Net_N16_Small(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
@@ -805,7 +805,7 @@ class Conv4_DeepGated_Net_With_Actual_Inp_Over_WeightNet(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         g1 = nn.Sigmoid()(self.beta * x_g1)
@@ -885,7 +885,7 @@ class Conv4_DeepGated_Net_With_Random_AllOnes_Over_WeightNet(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         g1 = nn.Sigmoid()(self.beta * x_g1)
@@ -975,7 +975,7 @@ class Conv4_DeepGated_Net_With_Random_Actual_Inp_Over_WeightNet(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         g1 = nn.Sigmoid()(self.beta * x_g1)

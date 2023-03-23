@@ -9,7 +9,7 @@ class PCA_Layer(nn.Module):
     def __init__(self, data, explained_var_required):
         super(PCA_Layer, self).__init__()
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         if(isinstance(data, torch.Tensor)):
             flattened_data = torch.flatten(data, 1)
         else:
@@ -86,7 +86,7 @@ class DLGN_FC_Network(nn.Module):
 
     def forward(self, inp, verbose=2):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
@@ -225,7 +225,7 @@ class DGN_FC_Network(nn.Module):
 
     def forward(self, inp, verbose=2):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
@@ -333,7 +333,7 @@ class DNN_FC_Network(nn.Module):
 
     def forward(self, inp, verbose=2):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)

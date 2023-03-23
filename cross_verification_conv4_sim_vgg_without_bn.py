@@ -47,7 +47,7 @@ class Net_sim_VGG_without_BN(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         g1 = nn.Sigmoid()(4 * x_g1)
@@ -105,7 +105,7 @@ if __name__ == '__main__':
 
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = Net_sim_VGG_without_BN()
     net.to(device)
 
@@ -157,7 +157,7 @@ if __name__ == '__main__':
             path = 'root/model/save/cross_verification_conv4_sim_vgg_wo_bn_norm_dir.pt'
             torch.save(
                 net, path)
-            print("Model saved at:",path)
-            print("Current best test accuracy:",best_test_acc)
+            print("Model saved at:", path)
+            print("Current best test accuracy:", best_test_acc)
 
     print('Finished Training: Best saved model test acc is:', best_test_acc)

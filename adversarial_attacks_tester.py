@@ -60,7 +60,7 @@ def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv
 
 
 def plain_evaluate_model(net, dataloader, classes=None):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
     acc = 0.
@@ -106,7 +106,7 @@ def plain_evaluate_model(net, dataloader, classes=None):
 
 
 def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
     acc = 0.
@@ -170,7 +170,7 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
 
 
 def plain_evaluate_model_via_reconstructed(model_arch_type, net, dataloader, classes, dataset, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, adv_target, save_image_prefix=None, postfix_folder_for_save="/"):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
     acc = 0.
@@ -223,7 +223,7 @@ def plain_evaluate_model_via_reconstructed(model_arch_type, net, dataloader, cla
 
 
 def evaluate_model_via_reconstructed(model_arch_type, net, dataloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
     acc = 0.
@@ -324,7 +324,7 @@ def load_or_generate_adv_examples(to_be_analysed_dataloader, models_base_path, i
 
 
 def generate_adversarial_perturbation_from_adv_orig(orig_dataloader, adv_dataloader):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     merged_dataset = generate_merged_dataset_from_two_loader(
         orig_dataloader, adv_dataloader)
     merged_data_loader = torch.utils.data.DataLoader(
@@ -354,7 +354,7 @@ def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_ad
     list_of_adv_images = None
     list_of_labels = None
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     data_loader = tqdm.tqdm(
         data_loader, desc='Generating adversarial examples for current class')
@@ -645,7 +645,7 @@ if __name__ == '__main__':
             fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     print("Testing over "+dataset)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     num_classes_trained_on = num_classes
     dataset_str = dataset

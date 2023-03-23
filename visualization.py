@@ -184,7 +184,7 @@ class TemplateImageGenerator():
         # Generate a random image
         # self.created_image = Image.open(im_path).convert('RGB')
         self.device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         self.image_save_prefix_folder = "root/cifar10-vggnet_16/CCE_and_Template_loss_mixed/zero_image_init/"
 
@@ -1366,7 +1366,7 @@ class TemplateImageGenerator():
         print("Reconstructed images written at:",
               self.image_save_prefix_folder)
         current_y_s = np.full(
-            list_of_reconst_images.shape[0], original_label.cpu().clone().detach().numpy())
+            list_of_reconst_images.shape[0], original_label[0].cpu().clone().detach().numpy())
 
         with open(np_save_filename, 'wb') as file:
             np.savez(
@@ -1990,7 +1990,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                 entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix='root', final_postfix_for_save="aug_indx_1",
                                 custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None):
     output_template_list_per_class = None
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
@@ -2093,10 +2093,10 @@ if __name__ == '__main__':
     is_class_segregation_on_ground_truth = True
     # uniform_init_image , zero_init_image , gaussian_init_image
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 32
+    template_image_calculation_batch_size = 1
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
-    template_loss_type = "TANH_TEMP_LOSS"
+    template_loss_type = "TEMP_LOSS"
     number_of_batch_to_collect = None
     vis_version = "V2"
     wand_project_name = "fresh_template_visualisation_augmentation"
@@ -2146,10 +2146,10 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_plain_pure_conv4_dnn_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+    custom_model_path = "root/model/save/fashion_mnist/adversarial_training/MT_plain_pure_conv4_dnn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
     if(custom_model_path is not None):
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         inp_channel = 1
 
         if(dataset == "cifar10"):

@@ -13,7 +13,7 @@ import torch.backends.cudnn as cudnn
 
 
 def get_model_from_loader(model_arch_type, dataset):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_path = "RANDOM_INIT_UNTRAINED_MODEL"
     print("Loading model")
     if(dataset == "cifar10"):

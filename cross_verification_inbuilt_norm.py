@@ -48,7 +48,7 @@ class Net_with_inbuilt_norm(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         inp = self.data_normalization(inp)
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -113,7 +113,7 @@ class Net_with_inbuilt_norm_with_bn(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         inp = self.data_normalization(inp)
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -190,7 +190,7 @@ if __name__ == '__main__':
 
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = Net_with_inbuilt_norm()
     # net = Net_with_inbuilt_norm_with_bn()
     net.to(device)

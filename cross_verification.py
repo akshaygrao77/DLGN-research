@@ -45,7 +45,7 @@ class Net(nn.Module):
 
     def forward(self, inp):
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         conv_outs.append(x_g1)
@@ -99,7 +99,7 @@ if __name__ == '__main__':
 
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = Net()
     net.to(device)
 

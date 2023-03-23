@@ -27,7 +27,8 @@ def get_data_loader(x_data, labels, bs, orig_labels=None, transforms=None):
     else:
         for i in range(len(x_data)):
             merged_data.append([x_data[i], labels[i], orig_labels[i]])
-    merged_dataset = CustomSimpleArrayDataset(merged_data,transform=transforms)
+    merged_dataset = CustomSimpleArrayDataset(
+        merged_data, transform=transforms)
     dataloader = torch.utils.data.DataLoader(
         merged_dataset, shuffle=False, pin_memory=True, num_workers=4, batch_size=bs)
     return dataloader
@@ -87,7 +88,7 @@ def segregate_input_over_labels(model, data_loader, num_classes):
     print("Segregating predicted labels")
     # We don't need gradients on to do reporting
     model.train(False)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     input_data_list_per_class = [None] * num_classes
     for i in range(num_classes):
@@ -200,13 +201,13 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             dataset_config, model_arch_type, verbose=verbose, dataset_folder=dataset_folder, is_split_validation=is_split_validation)
 
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=dataset_config.batch_size,
-                                                  shuffle=False,pin_memory=True, num_workers=4)
+                                                  shuffle=False, pin_memory=True, num_workers=4)
         if(is_split_validation):
             valid_data_loader = torch.utils.data.DataLoader(val_set, batch_size=dataset_config.batch_size,
-                                                            shuffle=False,pin_memory=True, num_workers=4)
+                                                            shuffle=False, pin_memory=True, num_workers=4)
 
         testloader = torch.utils.data.DataLoader(testset, batch_size=dataset_config.batch_size,
-                                                 shuffle=False,pin_memory=True, num_workers=4)
+                                                 shuffle=False, pin_memory=True, num_workers=4)
 
         return trainloader, valid_data_loader, testloader
     elif(dataset_config.name == 'mnist' or dataset_config.name == 'fashion_mnist'):
@@ -284,7 +285,7 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
             #     transforms.Normalize((0.4914, 0.4822, 0.4465),
             #                          (0.2023, 0.1994, 0.2010)),
             # ])
-        elif(model_arch_type == 'conv4_dlgn'):
+        elif(model_arch_type == 'conv4_dlgn' or model_arch_type == "conv4_deep_gated_net_n16_small" or model_arch_type == "conv4_dlgn_n16_small" or model_arch_type == "plain_pure_conv4_dnn_n16_small"):
             transform = transforms.Compose([
                 transforms.ToTensor()])
 

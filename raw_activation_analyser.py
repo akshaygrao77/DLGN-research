@@ -84,7 +84,7 @@ class RawActivationAnalyser():
             self.model.eval()
 
         self.device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         self.activation__save_prefix_folder = "root/raw_activation_analysis/"
 
@@ -596,7 +596,7 @@ class RawActivationAnalyser():
 
 def calculate_entropy(entropy_bin_list):
     device = torch.device(
-        "cuda:0" if torch.cuda.is_available() else "cpu")
+        "cuda" if torch.cuda.is_available() else "cpu")
     entropy = torch.zeros(
         size=entropy_bin_list[0].size(), device=device)
     zero_default = torch.zeros(
@@ -637,7 +637,7 @@ def run_raw_activation_analysis_on_config(dataset, model_arch_type, is_template_
         root_save_prefix = 'root/RAW_ACT_PATTERN_ANALYSIS'
     if(final_postfix_for_save is None):
         final_postfix_for_save = ""
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset_str))
 
     coll_seed_gen = torch.Generator()
@@ -906,7 +906,7 @@ def generate_per_class_combination_stats(list_of_act_analyser_of_class_comb):
     pos_hrelu_entropy_bin_list = []
     neg_hrelu_entropy_bin_list = []
     device = torch.device(
-        "cuda:0" if torch.cuda.is_available() else "cpu")
+        "cuda" if torch.cuda.is_available() else "cpu")
     zeros_t = torch.zeros(
         list_of_act_analyser_of_class_comb[0].post_activation_values_positive_hrelu_counts.size())
     pos_sum = torch.zeros(

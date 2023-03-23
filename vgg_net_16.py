@@ -160,7 +160,7 @@ class DLGN_VGG_Network(nn.Module):
         print("self.gating_node_outputs after", self.gating_node_outputs)
 
         device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+            "cuda" if torch.cuda.is_available() else "cpu")
         # inp = torch.ones((2,5),dtype=torch.double, requires_grad=True,device=device)
         inp = torch.ones(inp.size(),
                          requires_grad=True, device=device)
@@ -499,7 +499,7 @@ def evaluate_model_and_loss(model, data_loader, loss_fn):
     avg_vacc = 0.
 
     vpredictions, vactuals = list(), list()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     for i, vdata in enumerate(data_loader):
         vinputs, vlabels = vdata
@@ -582,7 +582,7 @@ def train(net, trainloader, validloader):
 if __name__ == '__main__':
     trainloader, validloader, testloader = preprocess_data()
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = DLGN_VGG_Network()
     net.to(device)
 
