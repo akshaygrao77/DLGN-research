@@ -206,6 +206,12 @@ class TemplateImageGenerator():
         self.entropy_active_list = None
         self.overall_entropy_list = None
 
+        self.layer_wise_average_feature_maps_dict = None
+
+    def reset_layer_wise_states(self):
+        self.layer_wise_average_feature_maps_dict = None
+        self.layers_to_visualize = None
+
     def reset_collection_state(self):
         self.y_plus_list = None
         self.y_minus_list = None
@@ -213,6 +219,27 @@ class TemplateImageGenerator():
     def reset_entropy_state(self):
         self.entropy_active_list = None
         self.overall_entropy_list = None
+
+    def initialise_layerwise_states(self, layers_to_visualize=None):
+        self.total_tcollect_img_count = 0
+        self.total_lay_coll_img_count = 0
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            conv_outs = self.model.module.linear_conv_outputs
+        else:
+            conv_outs = self.model.linear_conv_outputs
+
+        self.layer_wise_average_feature_maps_dict = dict()
+        if(layers_to_visualize is None):
+            self.layers_to_visualize = []
+            for i in range(len(conv_outs)):
+                self.layers_to_visualize.append(i)
+        else:
+            self.layers_to_visualize = layers_to_visualize
+
+        for i in self.layers_to_visualize:
+            each_conv_output = conv_outs[i]
+            self.layer_wise_average_feature_maps_dict[i] = torch.zeros(size=each_conv_output.size()[
+                1:], requires_grad=True, device=self.device)
 
     def initialise_y_plus_and_y_minus(self):
         self.y_plus_list = []
@@ -279,6 +306,26 @@ class TemplateImageGenerator():
 
             self.total_tcollect_img_count += conv_outs[0].size()[0]
 
+    def update_layerwise_states(self):
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            conv_outs = self.model.module.linear_conv_outputs
+        else:
+            conv_outs = self.model.linear_conv_outputs
+        bs = conv_outs[0].size()[0]
+        with torch.no_grad():
+            for l_indx in self.layers_to_visualize:
+                each_conv_output = conv_outs[l_indx]
+                # [B,C,W,H]
+                cur_sum_fmap = torch.sum(each_conv_output, dim=0)
+                if(self.total_lay_coll_img_count == 0):
+                    self.layer_wise_average_feature_maps_dict[l_indx] = cur_sum_fmap/bs
+                else:
+                    self.layer_wise_average_feature_maps_dict[l_indx] = (
+                        (self.layer_wise_average_feature_maps_dict[l_indx] * self.total_lay_coll_img_count) + cur_sum_fmap)/(self.total_lay_coll_img_count+bs)
+
+            self.total_tcollect_img_count += bs
+            self.total_lay_coll_img_count += bs
+
     def update_entropy_y_lists(self):
         if(isinstance(self.model, torch.nn.DataParallel)):
             conv_outs = self.model.module.linear_conv_outputs
@@ -330,6 +377,46 @@ class TemplateImageGenerator():
             self.initialise_entropy_information()
 
         self.update_entropy_y_lists()
+
+    def collect_layer_wise_states_per_batch(self, per_class_per_batch_data, layers_to_visualize=None):
+        c_inputs, _ = per_class_per_batch_data
+        c_inputs = c_inputs.to(self.device)
+
+        # Forward pass to store layer outputs
+        self.model(c_inputs)
+
+        if(self.layer_wise_average_feature_maps_dict is None):
+            self.initialise_layerwise_states(layers_to_visualize)
+
+        self.update_layerwise_states()
+
+    def collect_all_layer_wise_states(self, per_class_data_loader, class_label, number_of_batch_to_collect, layers_to_visualize=None, is_save_original_image=True):
+        self.reset_layer_wise_states()
+        self.model.train(False)
+
+        per_class_data_loader = tqdm(
+            per_class_data_loader, desc='Collecting layer-wise states for class label:'+str(class_label))
+        for i, per_class_per_batch_data in enumerate(per_class_data_loader):
+            torch.cuda.empty_cache()
+            c_inputs, _ = per_class_per_batch_data
+            if(i == 0 and c_inputs.size()[0] == 1 and is_save_original_image):
+                with torch.no_grad():
+                    temp_image = recreate_image(
+                        c_inputs, False)
+                    save_folder = self.image_save_prefix_folder + \
+                        "class_"+str(class_label)+"/"
+                    if not os.path.exists(save_folder):
+                        os.makedirs(save_folder)
+                    im_path = save_folder+'/original.jpg'
+
+                    numpy_image = temp_image
+                    save_image(numpy_image, im_path)
+
+            self.collect_layer_wise_states_per_batch(
+                per_class_per_batch_data, layers_to_visualize)
+
+            if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
+                break
 
     def collect_active_pixel_per_batch(self, per_class_per_batch_data):
         c_inputs, _ = per_class_per_batch_data
@@ -686,6 +773,31 @@ class TemplateImageGenerator():
 
         return loss/active_pixel_points, active_pixel_points, total_pixel_points, non_zero_pixel_points
 
+    def calculate_layer_MSE_loss(self, layer_indx):
+        loss = 0
+        total_pixel_points = 0
+        active_pixel_points = 0
+        non_zero_pixel_points = 0
+
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            conv_outs = self.model.module.linear_conv_outputs
+        else:
+            conv_outs = self.model.linear_conv_outputs
+        cur_conv_out = conv_outs[layer_indx][0]
+
+        expected_out = self.layer_wise_average_feature_maps_dict[layer_indx]
+        loss_fn = torch.nn.MSELoss()
+        loss = loss_fn(cur_conv_out, expected_out)
+
+        total_pixel_points += torch.numel(cur_conv_out)
+        current_active_pixel = torch.count_nonzero(
+            HardRelu()(cur_conv_out))
+        non_zero_pixel_points += torch.count_nonzero(cur_conv_out).item()
+
+        active_pixel_points += current_active_pixel.item()
+
+        return loss, active_pixel_points, total_pixel_points, non_zero_pixel_points
+
     def calculate_only_active_loss_for_template_image(self):
         loss = 0
         if(isinstance(self.model, torch.nn.DataParallel)):
@@ -758,6 +870,16 @@ class TemplateImageGenerator():
         correct = outputs_final.eq(original_label).sum().item()
 
         return outputs_raw, outputs_logits, outputs_final, correct
+
+    def get_layer_loss_value(self, template_loss_type, class_indx, layer_indx, outputs=None, class_image=None, alpha=None, verbose=1):
+        active_pixel_points = None
+        total_pixel_points = None
+        non_zero_pixel_points = None
+        if(template_loss_type == "MSE_LAYER_LOSS"):
+            loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.calculate_layer_MSE_loss(
+                layer_indx)
+
+        return loss, active_pixel_points, total_pixel_points, non_zero_pixel_points
 
     def get_loss_value(self, template_loss_type, class_indx, outputs=None, class_image=None, alpha=None, verbose=1):
         active_pixel_points = None
@@ -985,7 +1107,7 @@ class TemplateImageGenerator():
                     loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
                         template_loss_type, class_indx, outputs, class_image, alpha)
 
-                    if(step_iter == 0 and "TEMP" in template_loss_type):
+                    if(step_iter == 0 and active_pixel_points is not None):
                         percent_active_pixels = float((
                             active_pixel_points/total_pixel_points)*100)
                         print("active_pixel_points", active_pixel_points)
@@ -1094,7 +1216,7 @@ class TemplateImageGenerator():
                         loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
                             template_loss_type, class_indx, outputs, class_image, alpha)
 
-                        if(step_iter == 0 and "TEMP" in template_loss_type):
+                        if(step_iter == 0 and active_pixel_points is not None):
                             percent_active_pixels = float((
                                 active_pixel_points/total_pixel_points)*100)
                             print("active_pixel_points", active_pixel_points)
@@ -1427,7 +1549,7 @@ class TemplateImageGenerator():
                         template_loss_type, class_indx=0, outputs=outputs, verbose=verbose)
 
                     # print("{} Loss: {}".format(template_loss_type, loss))
-                    if(step_iter == 0 and "TEMP" in template_loss_type):
+                    if(step_iter == 0 and active_pixel_points is not None):
                         percent_active_pixels = float((
                             active_pixel_points/total_pixel_points)*100)
                         print("active_pixel_points", active_pixel_points)
@@ -1476,7 +1598,7 @@ class TemplateImageGenerator():
                     loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
                         template_loss_type, class_indx=0, outputs=outputs)
 
-                    if(step_iter == 0 and "TEMP" in template_loss_type):
+                    if(step_iter == 0 and active_pixel_points is not None):
                         percent_active_pixels = float((
                             active_pixel_points/total_pixel_points)*100)
                         print("active_pixel_points", active_pixel_points)
@@ -1505,6 +1627,436 @@ class TemplateImageGenerator():
                     self.initial_image.requires_grad_()
 
         return self.initial_image
+
+    def generate_layer_wise_template_image_per_class(self, exp_type, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
+                                                     is_class_segregation_on_ground_truth, template_initial_image_type,
+                                                     template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
+                                                     layer_nums_to_visualize, root_save_prefix="root", final_postfix_for_save="",
+                                                     wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None):
+        coll_gate_sample_seed_gen = None
+        random_sample_gate_percent_str = ""
+        is_log_wandb = not(wand_project_name is None)
+        plot_iteration_interval = 25
+
+        # torch.manual_seed(torch_seed)
+        coll_seed_gen = torch.Generator()
+        coll_seed_gen.manual_seed(torch_seed)
+
+        entr_seed_gen = torch.Generator()
+        entr_seed_gen.manual_seed(torch_seed)
+
+        if(random_sample_gate_percent is not None):
+            random_sample_gate_percent_str = "RD_GT_PER_LAY_SAMPLE_" + \
+                str(random_sample_gate_percent)
+            coll_gate_sample_seed_gen = torch.Generator()
+            coll_gate_sample_seed_gen.manual_seed(torch_seed)
+
+        self.model.train(False)
+        per_class_data_loader = torch.utils.data.DataLoader(per_class_dataset, batch_size=template_image_calculation_batch_size,
+                                                            shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+
+        tmp_image_over_what_str = 'test'
+        if(is_template_image_on_train):
+            tmp_image_over_what_str = 'train'
+
+        seg_over_what_str = 'MP'
+        if(is_class_segregation_on_ground_truth):
+            seg_over_what_str = 'GT'
+
+        alpha = 0
+        normalize_image = False
+
+        self.collect_all_layer_wise_states(
+            per_class_data_loader, class_label, number_of_batch_to_collect, layer_nums_to_visualize)
+        print("self.total_lay_coll_img_count:", self.total_lay_coll_img_count)
+        class_image, _ = next(iter(per_class_data_loader))
+        class_image = class_image.to(self.device, non_blocking=True)
+        if(vis_version == 'V2' or vis_version == 'V3'):
+            if('conv4_deep_gated_net' in model_arch_type):
+                number_of_image_optimization_steps = 301
+            else:
+                number_of_image_optimization_steps = 161
+            if(vis_version == 'V2'):
+                start_sigma = 0.75
+                end_sigma = 0.1
+            elif(vis_version == 'V3'):
+                start_sigma = 0.1
+                end_sigma = 0.75
+            if('conv4_deep_gated_net' in model_arch_type):
+                start_step_size = 1
+                end_step_size = 0.5
+            else:
+                start_step_size = 0.1
+                end_step_size = 0.05
+
+        if(layer_nums_to_visualize is None):
+            layer_nums_to_visualize = []
+            self.model(class_image)
+            if(isinstance(self.model, torch.nn.DataParallel)):
+                conv_outs = self.model.module.linear_conv_outputs
+            else:
+                conv_outs = self.model.linear_conv_outputs
+
+            for i in range(len(conv_outs)):
+                layer_nums_to_visualize.append(i)
+
+        for current_layer_num in layer_nums_to_visualize:
+            self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/Ver_"+str(vis_version)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+                seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"/"+random_sample_gate_percent_str+"/" + str(final_postfix_for_save) + "/"
+
+            self.image_save_prefix_folder += "/Layer_" + \
+                str(current_layer_num)+"/"
+
+            print(
+                "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Layer", current_layer_num)
+
+            num_classes = len(classes)
+            number_of_intervals = (
+                number_of_image_optimization_steps // plot_iteration_interval) + 1
+            list_of_reconst_softmax_pred = [None] * number_of_intervals
+
+            if(is_log_wandb):
+                wandb_run_name = self.image_save_prefix_folder.replace(
+                    "/", "").replace(root_save_prefix, class_label)
+                wandb_config = self.get_wandb_config(exp_type, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
+                                                     is_class_segregation_on_ground_truth, template_initial_image_type,
+                                                     template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
+                                                     number_of_batch_to_collect=number_of_batch_to_collect)
+                if(vis_version == 'V2' or vis_version == 'V3'):
+                    wandb_config["vis_version"] = vis_version
+                    wandb_config["start_sigma"] = start_sigma
+                    wandb_config["end_sigma"] = end_sigma
+                    wandb_config["start_step_size"] = start_step_size
+                    wandb_config["end_step_size"] = end_step_size
+                    wandb_config["per_layer_random_sample_gate_percent"] = random_sample_gate_percent
+                    wandb_config["current_layer_num"] = current_layer_num
+                if(wandb_config_additional_dict is not None):
+                    wandb_config.update(wandb_config_additional_dict)
+                wandb_config["alpha"] = alpha
+
+                wandb.init(
+                    project=f"{wand_project_name}",
+                    name=f"{wandb_run_name}",
+                    group=f"{wandb_group_name}",
+                    config=wandb_config,
+                )
+
+            self.initial_image = preprocess_image(
+                self.original_image.cpu().clone().detach().numpy(), normalize_image)
+
+            self.initial_image = self.initial_image.to(self.device)
+
+            self.initial_image.requires_grad_()
+
+            step_size = 0.01
+            if(vis_version == 'V2' or vis_version == 'V3'):
+                with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image V2") as pbar:
+                    for step_iter in pbar:
+                        begin_time = time.time()
+                        pbar.set_description(f"Iteration {step_iter+1}")
+
+                        step_size = start_step_size + \
+                            ((end_step_size - start_step_size) * step_iter) / \
+                            number_of_image_optimization_steps
+                        # optimizer = torch.optim.SGD([img_var], lr=step_size)
+                        sigma = start_sigma + \
+                            ((end_sigma - start_sigma) * step_iter) / \
+                            number_of_image_optimization_steps
+
+                        outputs = self.model(self.initial_image)
+
+                        verbose = 1
+                        loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_layer_loss_value(
+                            template_loss_type, class_indx, current_layer_num, outputs, class_image, alpha, verbose)
+
+                        # print("{} Loss: {}".format(template_loss_type, loss))
+                        if(step_iter == 0 and active_pixel_points is not None):
+                            percent_active_pixels = float((
+                                active_pixel_points/total_pixel_points)*100)
+                            print("active_pixel_points", active_pixel_points)
+                            print("total_pixel_points", total_pixel_points)
+                            print("Percentage of active pixels:",
+                                  percent_active_pixels)
+                            if(is_log_wandb):
+                                wandb.log(
+                                    {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points,
+                                     "Percent_active_pixels": percent_active_pixels, "non_zero_pixel_points": non_zero_pixel_points,
+                                     "final_postfix_for_save": final_postfix_for_save}, step=(step_iter+1))
+
+                        # Backward
+                        loss.backward()
+
+                        unnorm_gradients = self.initial_image.grad
+                        # std_unnorm_grad = torch.std(unnorm_gradients)
+                        norm_grad = torch.norm(unnorm_gradients)
+                        # print("torch.norm(unnorm_gradients):",
+                        #       norm_grad)
+                        # print("std_unnorm_grad:", std_unnorm_grad)
+                        # print("Original self.initial_image gradients", gradients)
+
+                        # gradients = unnorm_gradients / first_norm
+                        gradients = unnorm_gradients / \
+                            norm_grad + 1e-8
+
+                        # print("torch.norm(gradients):",
+                        #       torch.norm(gradients))
+
+                        with torch.no_grad():
+                            # self.initial_image = self.initial_image - gradients*step_size
+                            blurred_grad = gradients.cpu().detach().numpy()[0]
+                            blurred_grad = blur_img(
+                                blurred_grad, sigma)
+                            self.initial_image = self.initial_image.cpu().detach().numpy()[
+                                0]
+                            self.initial_image -= step_size / \
+                                np.abs(blurred_grad).mean() * blurred_grad
+
+                            # optimizer.step()
+                            # print("sigma:", sigma)
+
+                            self.initial_image = blur_img(
+                                self.initial_image, sigma)
+                            self.initial_image = torch.from_numpy(
+                                self.initial_image[None])
+
+                        self.initial_image = self.initial_image.to(self.device)
+                        self.initial_image.requires_grad_()
+
+                        if(plot_iteration_interval is not None and step_iter % plot_iteration_interval == 0):
+                            with torch.no_grad():
+                                reconst_outputs = self.model(
+                                    self.initial_image)
+                                reconst_outputs_softmax = reconst_outputs.softmax(
+                                    dim=1)
+                                reconst_img_norm = torch.norm(
+                                    self.initial_image)
+                                reconst_pred = reconst_outputs_softmax.max(
+                                    1).indices
+
+                                update_indx = step_iter // plot_iteration_interval
+                                list_of_reconst_softmax_pred[update_indx] = reconst_outputs_softmax[0]
+
+                                if(is_log_wandb):
+                                    wandb.log(
+                                        {"reconst_img_pred_indx":  reconst_pred, "reconst_img_norm": reconst_img_norm,
+                                         "normalized_gradients": wandb.Histogram(gradients.cpu().detach().numpy()),
+                                         "unnormalized_gradients": wandb.Histogram(unnorm_gradients.cpu().detach().numpy()),
+                                         "reconst_img_label_pred": classes[reconst_pred], "loss": loss, "optimizing_img_gradient_norm": torch.norm(unnorm_gradients).item()}, step=(step_iter+1))
+
+                                self.created_image = recreate_image(
+                                    self.initial_image, normalize_image)
+                                print("self.created_image.shape::",
+                                      self.created_image.shape)
+                                save_folder = self.image_save_prefix_folder + \
+                                    "class_"+str(class_label)+"/"
+                                if not os.path.exists(save_folder):
+                                    os.makedirs(save_folder)
+                                im_path = save_folder+'/iter_' + \
+                                    str(step_iter)+'_no_optimizer_actual_c_' + \
+                                    str(class_label)+'.jpg'
+
+                                dft_im_path = save_folder+'/iter_' + \
+                                    str(step_iter)+'_centered_dft_amp_' + \
+                                    str(class_label)+'.jpg'
+
+                                dft_phase_im_path = save_folder+'/iter_' + \
+                                    str(step_iter)+'_centered_dft_phase_' + \
+                                    str(class_label)+'.jpg'
+
+                                raw_dft = np.fft.fft2(self.created_image)
+                                raw_centered_dft_out = np.fft.fftshift(raw_dft)
+                                for_vis_dft_amp_out = np.log(
+                                    1+np.abs(raw_centered_dft_out))
+                                std01_vis_dft_amp_out = recreate_image(
+                                    for_vis_dft_amp_out, unnormalize=False)
+
+                                for_vis_dft_phase_out = np.angle(
+                                    raw_centered_dft_out)
+                                std01_vis_dft_phase_out = recreate_image(
+                                    for_vis_dft_phase_out, unnormalize=False)
+
+                                numpy_image = self.created_image
+                                save_image(numpy_image, im_path)
+
+                                save_image(std01_vis_dft_amp_out, dft_im_path)
+                                save_image(std01_vis_dft_phase_out,
+                                           dft_phase_im_path)
+
+                        cur_time = time.time()
+                        tot_time = cur_time - begin_time
+
+                        pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
+                            self.initial_image).item(), norm_grad=torch.norm(gradients).item(), norm_raw_grad=norm_grad.item(), it_time=format_time(tot_time))
+            else:
+                with trange(number_of_image_optimization_steps, unit="iter") as pbar:
+                    for step_iter in pbar:
+                        begin_time = time.time()
+                        pbar.set_description(f"Iteration {step_iter+1}")
+                        # print("self.initial_image grad", self.initial_image.grad)
+                        # self.initial_image.grad = None
+
+                        # conv = torch.nn.Conv2d(
+                        #     3, 3, 3, padding=1)
+                        # conv = conv.to(self.device)
+                        # self.initial_image_tilda = conv(self.initial_image)
+
+                        outputs = self.model(self.initial_image)
+
+                        loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_layer_loss_value(
+                            template_loss_type, class_indx, current_layer_num, outputs, class_image, alpha, verbose)
+
+                        print("{} Loss: {}".format(template_loss_type, loss))
+
+                        if(step_iter == 0 and active_pixel_points is not None):
+                            percent_active_pixels = float((
+                                active_pixel_points/total_pixel_points)*100)
+                            print("active_pixel_points", active_pixel_points)
+                            print("total_pixel_points", total_pixel_points)
+                            print("Percentage of active pixels:",
+                                  percent_active_pixels)
+                            if(is_log_wandb):
+                                wandb.log(
+                                    {"active_pixel_points": active_pixel_points, "total_pixel_points": total_pixel_points,
+                                     "Percent_active_pixels": percent_active_pixels, "non_zero_pixel_points": non_zero_pixel_points,
+                                     "final_postfix_for_save": final_postfix_for_save}, step=(step_iter+1))
+                        # Backward
+                        loss.backward()
+
+                        unnorm_gradients = self.initial_image.grad
+                        # print("Original self.initial_image gradients",
+                        #       unnorm_gradients)
+
+                        gradients = unnorm_gradients / \
+                            torch.std(unnorm_gradients) + 1e-8
+                        # print("After normalize self.initial_image gradients", gradients)
+
+                        with torch.no_grad():
+                            self.initial_image = self.initial_image - gradients*step_size
+                            # self.initial_image = 0.9 * self.initial_image
+                            self.initial_image = torch.clamp(
+                                self.initial_image, -1, 1)
+
+                        # Save image every plot_interval iteration
+                        if step_iter % plot_iteration_interval == 0:
+                            with torch.no_grad():
+                                reconst_outputs = self.model(
+                                    self.initial_image)
+                                reconst_outputs_softmax = reconst_outputs.softmax(
+                                    dim=1)
+                                reconst_img_norm = torch.norm(
+                                    self.initial_image)
+                                reconst_pred = reconst_outputs_softmax.max(
+                                    1).indices
+
+                                update_indx = step_iter // plot_iteration_interval
+                                list_of_reconst_softmax_pred[update_indx] = reconst_outputs_softmax[0]
+
+                                if(is_log_wandb):
+                                    wandb.log(
+                                        {"reconst_img_pred_indx":  reconst_pred, "reconst_img_norm": reconst_img_norm,
+                                         "normalized_gradients": wandb.Histogram(gradients.cpu().detach().numpy()),
+                                         "unnormalized_gradients": wandb.Histogram(unnorm_gradients.cpu().detach().numpy()),
+                                         "reconst_img_label_pred": classes[reconst_pred], "loss": loss, "optimizing_img_gradient_norm": torch.norm(unnorm_gradients).item()}, step=(step_iter+1))
+
+                                self.created_image = recreate_image(
+                                    self.initial_image, normalize_image)
+                                print("self.created_image.shape::",
+                                      self.created_image.shape)
+                                save_folder = self.image_save_prefix_folder + \
+                                    "class_"+str(class_label)+"/"
+                                if not os.path.exists(save_folder):
+                                    os.makedirs(save_folder)
+                                im_path = save_folder+'/no_optimizer_actual_c_' + \
+                                    str(class_label)+'_iter' + \
+                                    str(step_iter) + '.jpg'
+
+                                numpy_image = self.created_image
+                                save_image(numpy_image, im_path)
+
+                        self.initial_image.requires_grad_()
+                        # Recreate image
+                        print("self.initial_image", self.initial_image)
+
+                        cur_time = time.time()
+                        tot_time = cur_time - begin_time
+
+                        pbar.set_postfix(
+                            loss=loss, it_time=format_time(tot_time))
+
+            reconst_outputs = self.model(self.initial_image)
+            reconst_outputs_softmax = reconst_outputs.softmax(dim=1)
+            reconst_img_norm = torch.norm(self.initial_image)
+            print("Norm of reconstructed image is:", reconst_img_norm)
+            print("Confidence over Reconstructed image with alpha:", alpha)
+            for i in range(len(reconst_outputs_softmax[0])):
+                print("Class {} => {}".format(
+                    classes[i], reconst_outputs_softmax[0][i]))
+            reconst_pred = reconst_outputs_softmax.max(1).indices
+            print("Reconstructed image Class predicted:",
+                  classes[reconst_pred])
+
+            image = preprocess_image(
+                class_image[0].cpu().clone().detach().numpy(), normalize_image)
+            image = image.to(self.device)
+
+            image.requires_grad_()
+            original_image_outputs = self.model(image)
+            original_image_outputs_softmax = original_image_outputs.softmax(
+                dim=1)
+            print("Confidence over original image with alpha:", alpha)
+            for i in range(len(original_image_outputs_softmax[0])):
+                print("Class {} => {}".format(
+                    classes[i], original_image_outputs_softmax[0][i]))
+            original_image_pred = original_image_outputs_softmax.max(1).indices
+            print("Class predicted on original image was :",
+                  classes[original_image_pred])
+            print("Original label was:", class_label)
+
+            if(is_log_wandb):
+                step_lists = [(plot_iteration_interval * indx)
+                              for indx in range(number_of_intervals)]
+                each_class_softmax_ordered_by_steps = [None] * num_classes
+
+                for c_ind in range(num_classes):
+                    current_class_softmax_list = []
+                    for indx in range(number_of_intervals):
+                        current_class_softmax_list.append(
+                            list_of_reconst_softmax_pred[indx][c_ind])
+                    each_class_softmax_ordered_by_steps[c_ind] = current_class_softmax_list
+
+                reconst_img = recreate_image(
+                    self.initial_image, normalize_image)
+                if isinstance(reconst_img, (np.ndarray, np.generic)):
+                    reconst_img = format_np_output(reconst_img)
+                    reconst_img = Image.fromarray(reconst_img)
+                reconst_img = wandb.Image(
+                    reconst_img, caption="Reconstructed final image")
+
+                orig_img = recreate_image(
+                    class_image, normalize_image)
+                if isinstance(orig_img, (np.ndarray, np.generic)):
+                    orig_img = format_np_output(orig_img)
+                    orig_img = Image.fromarray(orig_img)
+                orig_img = wandb.Image(
+                    orig_img, caption="Original image")
+
+                wandb.log(
+                    {
+                        "reconst_img": reconst_img, "orig_img": orig_img,
+                        "reconst_img_norm": reconst_img_norm,
+                        "reconst_img_label_pred": classes[reconst_pred], "reconst_img_pred_indx":  reconst_pred,
+                        "original_image_outputs_softmax": original_image_outputs_softmax, "original_img_label_pred": classes[original_image_pred], "original_img_pred_indx": original_image_pred,
+                        "softmax_reconst_img_opt_steps_plt": wandb.plot.line_series(xs=step_lists,
+                                                                                    ys=each_class_softmax_ordered_by_steps,
+                                                                                    keys=classes,
+                                                                                    title="Variation of softmax values across classes vs Optimization steps",
+                                                                                    xname="Optimization steps")
+                    }, step=(step_iter+1))
+                wandb.finish()
+            print("Reconstructed images written at:",
+                  self.image_save_prefix_folder)
+
+        return self.initial_image.cpu().clone().detach().numpy()
 
     def generate_template_image_per_class(self, exp_type, per_class_dataset, class_label, class_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                           is_class_segregation_on_ground_truth, template_initial_image_type,
@@ -1652,7 +2204,7 @@ class TemplateImageGenerator():
                             template_loss_type, class_indx, outputs, class_image, alpha, verbose)
 
                         # print("{} Loss: {}".format(template_loss_type, loss))
-                        if(step_iter == 0 and "TEMP" in template_loss_type):
+                        if(step_iter == 0 and active_pixel_points is not None):
                             percent_active_pixels = float((
                                 active_pixel_points/total_pixel_points)*100)
                             print("active_pixel_points", active_pixel_points)
@@ -1789,7 +2341,7 @@ class TemplateImageGenerator():
 
                         print("{} Loss: {}".format(template_loss_type, loss))
 
-                        if(step_iter == 0 and "TEMP" in template_loss_type):
+                        if(step_iter == 0 and active_pixel_points is not None):
                             percent_active_pixels = float((
                                 active_pixel_points/total_pixel_points)*100)
                             print("active_pixel_points", active_pixel_points)
@@ -1988,7 +2540,8 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
                                 entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix='root', final_postfix_for_save="aug_indx_1",
-                                custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None):
+                                custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, wandb_config_additional_dict=None,
+                                vis_version='V2', random_sample_gate_percent=None, layer_nums_to_visualize=None):
     output_template_list_per_class = None
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
@@ -2041,6 +2594,12 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                                       number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save, wandb_config_additional_dict=wandb_config_additional_dict,
                                                       vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
 
+        elif(exp_type == "GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG"):
+            tmp_gen.generate_layer_wise_template_image_per_class(exp_type, per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
+                                                                 is_class_segregation_on_ground_truth, template_initial_image_type,
+                                                                 template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
+                                                                 layer_nums_to_visualize, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save,
+                                                                 wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
         elif(exp_type == "TEMPLATE_ACC_WITH_CUSTOM_PLOTS"):
             tmp_gen.generate_accuracies_of_template_image_per_class(
                 per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
@@ -2069,10 +2628,6 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
 
 
 if __name__ == '__main__':
-    # THIS OPERATION IS MEMORY HUNGRY! #
-    # Because of the selected image is very large
-    # If it gives out of memory error or locks the computer
-    # Try it with a smaller image
     print("Start")
     # mnist , cifar10 , fashion_mnist , imagenet_1000
     dataset = 'cifar10'
@@ -2087,37 +2642,41 @@ if __name__ == '__main__':
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # dlgn__resnet18__ , dgn__resnet18__,dnn__resnet18__
-    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     # uniform_init_image , zero_init_image , gaussian_init_image
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 16
+    template_image_calculation_batch_size = 32
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
-    template_loss_type = "TANH_TEMP_LOSS"
-    number_of_batch_to_collect = 1
+    # MSE_LAYER_LOSS
+    template_loss_type = "MSE_LAYER_LOSS"
+    number_of_batch_to_collect = None
     vis_version = "V2"
-    wand_project_name = "fresh_template_visualisation_augmentation"
+    wand_project_name = "layerwise_avg_template_visualisation_augmentation"
+    # wand_project_name = "fresh_template_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "test_template_visualisation_augmentation"
-    # wand_project_name = None
+    wand_project_name = None
     wandb_group_name = "TP_"+str(template_loss_type) + \
         "_DS_"+str(dataset)+"_MT_"+str(model_arch_type)
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
     number_of_image_optimization_steps = 161
-    # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES
-    exp_type = "GENERATE_TEMPLATE_IMAGES"
-    collect_threshold = 0.73
+    # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES , GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG
+    exp_type = "GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG"
+    temp_collect_threshold = 0.75
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
     random_per_layer_sample_gate_percent = None
-    # random_per_layer_sample_gate_percent = 0.5
+    # random_per_layer_sample_gate_percent = 1000
+
+    layer_nums_to_visualize = None
 
     class_indx_to_visualize = None
     if(dataset == 'imagenet_1000'):
@@ -2152,7 +2711,7 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_n16_small_dir.pt"
+    custom_model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -2185,8 +2744,9 @@ if __name__ == '__main__':
 
     run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                 template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
-                                valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold, entropy_calculation_batch_size,
+                                valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, temp_collect_threshold, entropy_calculation_batch_size,
                                 number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version=vis_version,
-                                root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent, class_indx_to_visualize=class_indx_to_visualize)
+                                root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent,
+                                class_indx_to_visualize=class_indx_to_visualize, layer_nums_to_visualize=layer_nums_to_visualize)
 
     print("Execution completed")
