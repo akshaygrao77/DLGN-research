@@ -3,7 +3,7 @@ import torch
 import os
 import numpy as np
 from utils.weight_utils import get_gating_layer_weights
-from utils.visualise_utils import generate_list_of_plain_images_from_data, generate_plain_image, generate_plain_image_data, save_image, recreate_image
+from utils.visualise_utils import generate_list_of_plain_images_from_data, generate_plain_image, generate_plain_image_data, save_image, recreate_image, generate_plot_pca_variance_curve, determine_row_col_from_features
 from conv4_models import get_model_instance_from_dataset
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader, seed_worker, true_segregation
 from structure.generic_structure import PerClassDataset, CustomSimpleDataset
@@ -16,6 +16,7 @@ import cv2
 from configs.dlgn_conv_config import HardRelu
 import copy
 import cv2
+from sklearn.decomposition import PCA
 
 
 def convert_list_tensor_to_numpy(list_of_tensors):
@@ -58,6 +59,136 @@ def standarize_list_of_numpy(list_of_np_array):
     return list_of_np_array
 
 
+def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_expvar, top_pca_components, pca_variance_curve):
+    save_folder = root_save_prefix + "/" + \
+        str(final_postfix_for_save)+"/PCA_INFO/"
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
+    txt_save_folder = root_save_prefix + "/" + \
+        str(final_postfix_for_save)+"/PCA_INFO_RAW_TXT/"
+    if not os.path.exists(txt_save_folder):
+        os.makedirs(txt_save_folder)
+
+    f_outs_DFT_norms = []
+    for layer_num in range(len(top_pca_components)):
+        current_layer_pca_comp = top_pca_components[layer_num]
+        cur_k_or_var = ret_k_or_expvar[layer_num]
+
+        if(explained_var_required < 1):
+            pc_inf = "_VAR_"+str(cur_k_or_var)
+        else:
+            pc_inf = "_K_"+str(cur_k_or_var)
+
+        print("PCA Component {} size:{}".format(
+            final_postfix_for_save, current_layer_pca_comp.shape))
+
+        if(isinstance(current_layer_pca_comp, np.ndarray)):
+            current_layer_pca_comp = torch.from_numpy(
+                current_layer_pca_comp).to(av_device)
+        pad_factor = 5
+        raw_dft_out = generate_centralized_DTimeFT(
+            current_layer_pca_comp, pad_factor)
+
+        for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
+        std01_vis_dft_out = normalize_in_range_01(
+            for_vis_dft_out)
+        std01_vis_dft_out = std01_vis_dft_out[None, :]
+
+        f_outs_DFT_norms.append(std01_vis_dft_out)
+
+    for i in range(len(top_pca_components)):
+        current_pca_comp_np = top_pca_components[i]
+
+        print("Norm of {} of layer:{} => {}".format(
+            final_postfix_for_save, i, np.linalg.norm(current_pca_comp_np)))
+
+        print("PCA Component:{} of layer:{} => {}".format(
+            final_postfix_for_save, i, current_pca_comp_np))
+
+    with open(txt_save_folder+"raw_pca_component"+str(pc_inf)+".txt", "w") as myfile:
+        for l_ind in range(len(top_pca_components)):
+            curr_layer = top_pca_components[l_ind]
+            myfile.write(
+                "\n ************************************ Next Layer:{} size:{} *********************************** \n".format(l_ind, curr_layer.shape))
+            for f_ind in range(len(curr_layer)):
+                curr_filter = curr_layer[f_ind]
+                myfile.write(
+                    "\n -------------------- Lay:{} Next Filter:{} size:{} ------------------- \n".format(l_ind, f_ind, curr_filter.shape))
+                myfile.write("%s" % curr_filter)
+
+    with open(txt_save_folder+"formatted_raw_pca_component"+str(pc_inf)+".txt", "w") as f:
+        f.write("\n ************************************ Next Layer *********************************** \n".join(
+            "\n".join(map(str, generate_plain_image_data(np.squeeze(x)))) for x in top_pca_components))
+
+    is_all_3D_DFTs = True
+    ind = 0
+    max_row = 0
+    max_col = 0
+    while(is_all_3D_DFTs and ind < len(f_outs_DFT_norms)):
+        temp = np.squeeze(f_outs_DFT_norms[ind].cpu().numpy())
+        is_all_3D_DFTs = is_all_3D_DFTs and (len(temp.shape) == 3)
+        if(temp.shape[-2] > max_row):
+            max_row = temp.shape[-2]
+        if(temp.shape[-1] > max_col):
+            max_col = temp.shape[-1]
+        ind = ind + 1
+
+    if(is_all_3D_DFTs):
+        # print("max_row", max_row)
+        # print("max_col", max_col)
+        merged_padded_fouts = None
+        for i in range(len(f_outs_DFT_norms)):
+            current_layer_DFT = np.squeeze(f_outs_DFT_norms[i].cpu().numpy())
+            # print("current_layer_DFT shape", current_layer_DFT.shape)
+            # print("min_current_layer_DFT", np.min(current_layer_DFT))
+            current_layer_DFT_padded = []
+            for each_DFT_padded in current_layer_DFT:
+                current_filter_layer_DFT_padded = cv2.resize(
+                    each_DFT_padded, (max_row, max_row), interpolation=cv2.INTER_CUBIC)
+                current_layer_DFT_padded.append(
+                    current_filter_layer_DFT_padded)
+            current_layer_DFT_padded = np.array(current_layer_DFT_padded)
+            # print("current_layer_DFT_padded shape", current_layer_DFT_padded.shape)
+            # current_layer_DFT_padded = np.pad(current_layer_DFT, ((0, 0), (0, max_row - current_layer_DFT.shape[
+            #     -2]), (0, max_col - current_layer_DFT.shape[-1])), 'constant', constant_values=(0))
+            if(merged_padded_fouts is None):
+                merged_padded_fouts = torch.from_numpy(
+                    current_layer_DFT_padded)
+            else:
+                merged_padded_fouts = torch.vstack(
+                    (merged_padded_fouts, torch.from_numpy(current_layer_DFT_padded)))
+
+        print("merged_padded_fouts shape", merged_padded_fouts.size())
+
+    for i in range(len(top_pca_components)):
+        current_layer_DFT = f_outs_DFT_norms[i]
+        current_pca_comp_np = top_pca_components[i]
+        current_pca_variance_curve = pca_variance_curve[layer_num]
+        cur_k_or_var = ret_k_or_expvar[layer_num]
+
+        if(cur_k_or_var < 1):
+            pc_inf = "_VAR_"+str(cur_k_or_var)
+        else:
+            pc_inf = "_K_"+str(cur_k_or_var)
+
+        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"/" + \
+            "DFT_filter_pca_components"+str(pc_inf)+"_*.jpg"
+        generate_list_of_plain_images_from_data(
+            current_layer_DFT, save_each_img_path=current_full_img_save_path, is_standarize=False)
+        current_pca_comp_np = np.squeeze(current_pca_comp_np)
+        generate_plain_image(
+            current_pca_comp_np, save_folder+"layer_num_"+str(i)+"_sh"+str(current_pca_comp_np.shape)+".jpg", is_standarize=False)
+        generate_plot_pca_variance_curve(current_pca_variance_curve, save_folder+"lay_num_"+str(
+            i)+"_pca_var_curve.jpg", "Number of components", "Cumulative Explained Variance")
+        current_layer_DFT = np.squeeze(current_layer_DFT)
+        generate_plain_image(
+            current_layer_DFT, save_folder+"DFT_lay_num_"+str(i)+"_sh"+str(current_layer_DFT.shape)+".jpg", is_standarize=False)
+        if(is_all_3D_DFTs):
+            generate_plain_image(
+                merged_padded_fouts, save_folder+"merged_DFTs.jpg", is_standarize=False)
+
+
 def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
     save_folder = root_save_prefix + "/" + \
         str(final_postfix_for_save)+"/PlainImages/KernelParams/"
@@ -95,7 +226,9 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
 
                 if(isinstance(current_filter_chnl_weights, np.ndarray)):
                     current_filter_chnl_weights = torch.from_numpy(
-                        current_filter_chnl_weights, device=av_device)
+                        current_filter_chnl_weights)
+                    current_filter_chnl_weights = current_filter_chnl_weights.to(
+                        av_device)
                 pad_factor = 21
                 raw_dft_out = generate_centralized_DTimeFT(
                     current_filter_chnl_weights, pad_factor)
@@ -156,7 +289,7 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
     max_row = 0
     max_col = 0
     while(is_all_3D_DFTs and ind < len(f_outs_DFT_norms)):
-        temp = np.squeeze(f_outs_DFT_norms[ind].numpy())
+        temp = np.squeeze(f_outs_DFT_norms[ind].cpu().numpy())
         is_all_3D_DFTs = is_all_3D_DFTs and (len(temp.shape) == 3)
         if(temp.shape[-2] > max_row):
             max_row = temp.shape[-2]
@@ -169,7 +302,7 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
         # print("max_col", max_col)
         merged_padded_fouts = None
         for i in range(len(f_outs_DFT_norms)):
-            current_layer_DFT = np.squeeze(f_outs_DFT_norms[i].numpy())
+            current_layer_DFT = np.squeeze(f_outs_DFT_norms[i].cpu().numpy())
             # print("current_layer_DFT shape", current_layer_DFT.shape)
             # print("min_current_layer_DFT", np.min(current_layer_DFT))
             current_layer_DFT_padded = []
@@ -374,7 +507,7 @@ def run_generate_diff_raw_weight_analysis(model1_path, model2_path):
 
 def torch_stack(inp, update):
     if(isinstance(update, np.ndarray)):
-        update = torch.from_numpy(update, device=av_device)
+        update = torch.from_numpy(update).to(av_device)
 
     if(inp is None):
         inp = torch.unsqueeze(update, 0)
@@ -1566,7 +1699,7 @@ def normalize_in_range_01(img_data):
 
 def generate_centralized_DFT(img_data):
     if(isinstance(img_data, np.ndarray)):
-        img_data = torch.from_numpy(img_data, device=av_device)
+        img_data = torch.from_numpy(img_data).to(av_device)
     with torch.no_grad():
         img_c2 = torch.fft.fft2(img_data)
         img_c3 = torch.fft.fftshift(img_c2)
@@ -1576,7 +1709,7 @@ def generate_centralized_DFT(img_data):
 
 def generate_centralized_DTimeFT(img_data, pad_factor=5):
     if(isinstance(img_data, np.ndarray)):
-        img_data = torch.from_numpy(img_data, device=av_device)
+        img_data = torch.from_numpy(img_data).to(av_device)
     pd1 = pad_factor*img_data.size()[0]
     pd2 = pad_factor*img_data.size()[1]
     img_data = torch.nn.functional.pad(
@@ -1847,7 +1980,7 @@ def generate_dataset_from_images_folder(img_fold, reduce_dim_to_single, transfor
                     im = cv2.imread(img_path)
 
                 if(transform is None):
-                    im = torch.from_numpy(im, device=av_device)
+                    im = torch.from_numpy(im).to(av_device)
                 else:
                     # print("Before Image size:", im.shape)
                     im = transform(im)
@@ -1869,9 +2002,9 @@ def merge_conv_kernels(k1, k2):
       then with k2.
     """
     if isinstance(k1, np.ndarray):
-        k1 = torch.from_numpy(k1, device=av_device)
+        k1 = torch.from_numpy(k1).to(av_device)
     if isinstance(k2, np.ndarray):
-        k2 = torch.from_numpy(k2, device=av_device)
+        k2 = torch.from_numpy(k2).to(av_device)
     padding = k2.shape[-1] - 1
     # Flip because this is actually correlation, and permute to adapt to BHCW
     k3 = torch.conv2d(k1.permute(1, 0, 2, 3), k2.flip(-1, -2),
@@ -1886,7 +2019,7 @@ def perform_sanity_check_over_merged_conv_filter(merged_conv, list_of_convs):
     temp_seq_inp = inp.clone()
     for each_conv in list_of_convs:
         temp_seq_inp = torch.conv2d(
-            temp_seq_inp, torch.from_numpy(each_conv, device=av_device), padding=each_conv.shape[-1]-1)
+            temp_seq_inp, torch.from_numpy(each_conv).to(av_device), padding=each_conv.shape[-1]-1)
 
     seq_conv_out = temp_seq_inp
 
@@ -1894,12 +2027,65 @@ def perform_sanity_check_over_merged_conv_filter(merged_conv, list_of_convs):
     # merged_conv_out = torch.conv2d(
     #     temp_merged_inp, torch.from_numpy(merged_conv), padding=int(merged_conv.shape[-1]//2))
     merged_conv_out = torch.conv2d(
-        temp_merged_inp, torch.from_numpy(merged_conv, device=av_device), padding=merged_conv.shape[-1]-1)
+        temp_merged_inp, torch.from_numpy(merged_conv).to(av_device), padding=merged_conv.shape[-1]-1)
 
     print("merged_conv_out shape", merged_conv_out.size())
     print("seq_conv_out shape", seq_conv_out.size())
     print("seq_conv_out::::", seq_conv_out)
     print("merged_conv_out::::", merged_conv_out)
+
+
+def perform_pca_analysis_on_weights(list_of_weights, explained_var_required=None, num_comp=None, cin_dom=False):
+    n = len(list_of_weights)
+    if(cin_dom):
+        for i in range(n):
+            list_of_weights[i] = np.array(list_of_weights[i])
+            print("list_of_weights[i] orig size", list_of_weights[i].shape)
+            list_of_weights[i] = np.transpose(
+                list_of_weights[i], (1, 0, 2, 3))
+            print("list_of_weights[i] latest size", list_of_weights[i].shape)
+    transformed_weights = [None] * n
+    ret_k_or_expvar = [None] * n
+    top_pca_components = [None] * n
+    pca_variance_curve = [None] * n
+    for current_lay in range(0, len(list_of_weights)):
+        current_weights = list_of_weights[current_lay]
+        if(not isinstance(current_weights, np.ndarray)):
+            current_weights = np.array(current_weights)
+
+        flattened_weights = current_weights.reshape(
+            current_weights.shape[0], current_weights.shape[1]*current_weights.shape[2]*current_weights.shape[3])
+
+        pca = PCA().fit(flattened_weights)
+        if(explained_var_required is not None):
+            k = 0
+            current_variance = 0
+            while(current_variance < explained_var_required):
+                current_variance = sum(pca.explained_variance_ratio_[:k])
+                k = k + 1
+
+            print("Number of PCA components used for layer:{} is:{} with required explained variance:{}".format(
+                current_lay, k, current_variance))
+            ret_k_or_expvar[current_lay] = k
+        else:
+            k = num_comp
+            actual_variance = sum(pca.explained_variance_ratio_[:k])
+            ret_k_or_expvar[current_lay] = actual_variance
+            print("Number of PCA components used for layer:{} is:{} which had explained variance:{}".format(
+                current_lay, k, actual_variance))
+        pca_variance_curve[current_lay] = np.cumsum(
+            pca.explained_variance_ratio_)
+        k_pca = PCA(n_components=k)
+        temp = k_pca.fit_transform(
+            flattened_weights)
+        d1, d2 = determine_row_col_from_features(k)
+        temp = temp.reshape(current_weights.shape[0], 1, d1, d2)
+        transformed_weights[current_lay] = temp
+        print("transformed_weights[current_lay] shape:",
+              transformed_weights[current_lay].shape)
+        top_pca_components[current_lay] = k_pca.components_.T
+
+    return transformed_weights, ret_k_or_expvar, top_pca_components, pca_variance_curve
 
 
 def generate_merged_convolution_weights_at_each_layer(list_of_weights):
@@ -1912,7 +2098,7 @@ def generate_merged_convolution_weights_at_each_layer(list_of_weights):
     c_hat_sanity[0] = list_of_weights[0]
     for current_lay in range(1, len(list_of_weights)):
         sanity_check_merged_conv = merge_conv_kernels(
-            c_hat_sanity[current_lay-1], list_of_weights[current_lay]).numpy()
+            c_hat_sanity[current_lay-1], list_of_weights[current_lay]).cpu().numpy()
         c_hat_sanity[current_lay] = sanity_check_merged_conv
         # print("Layer:{} , shape:{} \n, sanity_check_merged_conv :{}".format(
         #     current_lay, sanity_check_merged_conv.shape, sanity_check_merged_conv))
@@ -1951,14 +2137,14 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
-    model_arch_type = 'plain_pure_conv4_dnn_n16_small'
+    model_arch_type = 'conv4_dlgn_n16_small'
 
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
     # list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
     list_of_scheme_type = [
-        "IMAGE_SEQ_OUTPUTS_PER_FILTER"]
+        "IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist , fashion_mnist
     list_of_filter_vis_dataset = ["mnist"]
@@ -2056,7 +2242,7 @@ if __name__ == '__main__':
             print("Running scheme", scheme_type)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_plain_pure_conv4_dnn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 
@@ -2208,6 +2394,11 @@ if __name__ == '__main__':
                                                               final_postfix_for_save=postfix_for_save)
             elif(scheme_type == "IMAGE_OUT_PER_RES_FILTER"):
                 sub_scheme_type = 'IND'
+                explained_var_required = None
+                num_comp = None
+                cin_dom = False
+
+                explained_var_required = 0.9
 
                 if(sub_scheme_type == "IND"):
                     list_of_weights, list_of_bias = run_raw_weight_analysis_on_config(model, root_save_prefix=save_prefix, final_postfix_for_save="",
@@ -2218,6 +2409,25 @@ if __name__ == '__main__':
 
                 output_params(list_of_weights, root_save_prefix=save_prefix,
                               final_postfix_for_save="MERGED_WEIGHTS")
+
+                print("Doing merged weights analysis for model:{} PCA INFO:=> explained_var_required:{} num_comp:{}".format(
+                    model_path, explained_var_required, num_comp))
+
+                transformed_weights, ret_k_or_expvar, top_pca_components, pca_variance_curve = perform_pca_analysis_on_weights(
+                    list_of_weights, explained_var_required=explained_var_required, num_comp=num_comp, cin_dom=cin_dom)
+                pca_str = ""
+                if(explained_var_required is not None):
+                    pca_str = "/EXP_VAR_"+str(explained_var_required)
+                else:
+                    pca_str = "/NUM_COMP_"+str(num_comp)
+
+                print("ret_k_or_expvar:{}".format(ret_k_or_expvar))
+
+                output_params(transformed_weights, root_save_prefix=save_prefix,
+                              final_postfix_for_save="MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str)
+
+                outputs_pca_information(save_prefix, "MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str,
+                                        ret_k_or_expvar, top_pca_components, pca_variance_curve)
 
                 # for is_template_image_on_train in [True, False]:
                 #     if(is_template_image_on_train):

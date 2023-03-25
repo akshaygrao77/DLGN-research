@@ -16,6 +16,11 @@ from configs.dlgn_conv_config import HardRelu
 
 # Activation map is a 1,0 tensor
 
+def generate_plot_pca_variance_curve(var_curve, path,xlabel,ylabel):
+    plt.plot(var_curve)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.savefig(path)
 
 def calculate_common_among_two_activation_patterns(active_map_one, active_map_two):
     common_active_pixels = 0
@@ -302,7 +307,6 @@ def generate_plain_image_data(image_data):
     reshaped_data = gallery(image_data, row, col)
 
     return reshaped_data
-
 
 def generate_plain_image(image_data, save_path, is_standarize=True, is_standarize_01=True):
     # print("image_data", image_data.shape)
