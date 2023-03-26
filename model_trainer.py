@@ -120,8 +120,8 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
                     if(not train_on_phase_labels):
                         mix_train_labels = amp_labels
                 inputs_mix = Variable(inputs_mix)
-                inputs, inputs_mix = get_normalize(
-                    inputs), get_normalize(inputs_mix)
+                # inputs, inputs_mix = get_normalize(
+                #     inputs), get_normalize(inputs_mix)
                 inputs = torch.cat([inputs, inputs_mix], 0)
             else:
                 inputs = get_normalize(inputs)
@@ -322,7 +322,7 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'conv4_deep_gated_net_n16_small'
     # iterative_augmenting , nil , APR_exps
     scheme_type = 'APR_exps'
     # scheme_type = ''
@@ -349,7 +349,7 @@ if __name__ == '__main__':
 
     if(scheme_type == "APR_exps"):
         # APRP ,APRS, APRSP
-        type_of_APR = "APRS"
+        type_of_APR = "APRP"
         aprp_mix_prob = 0.6
         train_on_phase_labels = True
         aprs_prob_threshold = 0.7
@@ -470,7 +470,7 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss().to(device)
     lr = 3e-4
     optimizer = optim.Adam(net.parameters(), lr=lr)
-    epochs = 50
+    epochs = 100
 
     if(scheme_type == 'iterative_augmenting'):
         # If False, then on test
