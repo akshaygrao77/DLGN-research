@@ -11,6 +11,11 @@ import time
 
 import torch.backends.cudnn as cudnn
 from external_utils import format_time
+from conv4_models import TorchVision_DLGN
+import torchvision.datasets as datasets
+import os
+from conv4_models import get_model_save_path, get_model_instance_from_dataset
+import wandb
 
 import tensorflow as tf
 
@@ -82,23 +87,23 @@ def preprocess_data():
                              (0.2023, 0.1994, 0.2010)),
     ])
 
-    num_workers = 2
+    num_workers = 4
 
     trainset = torchvision.datasets.CIFAR10(
         root='./data', train=True, download=True, transform=transform_train)
     trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=128, shuffle=True, num_workers=num_workers)
+        trainset, batch_size=batch_size, pin_memory=True, shuffle=True, num_workers=num_workers)
 
     testset = torchvision.datasets.CIFAR10(
         root='./data', train=False, download=True, transform=transform_test)
     testloader = torch.utils.data.DataLoader(
-        testset, batch_size=100, shuffle=False, num_workers=num_workers)
+        testset, batch_size=batch_size, pin_memory=True, shuffle=False, num_workers=num_workers)
 
     return trainloader, testloader
 
 
 def evaluate_model(net, dataloader):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = 'cuda' if torch.cuda.is_available() else 'cpu'
     correct = 0
     total = 0
@@ -122,7 +127,7 @@ def evaluate_model(net, dataloader):
 class DLGN_VGG_Network(nn.Module):
     def __init__(self):
         super(DLGN_VGG_Network, self).__init__()
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.g_conv_64_1 = nn.Conv2d(3, 64, 3, padding=1)
@@ -449,15 +454,13 @@ def custom_piecewise_lr_decay_scheduler(optimizer, n_iter):
         optimizer.param_groups[0]['lr'] = 0.01
 
 
-def train(net, trainloader, testloader):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+def train(net, trainloader, testloader, total_steps, criterion, optimizer, final_model_save_path, wand_project_name=None):
+    is_log_wandb = not(wand_project_name is None)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.01,
-                          nesterov=False, momentum=0.9, weight_decay=2.5e-4)
     step = 0
-    # total_steps = 64000
-    total_steps = 352
+    best_test_acc = 0
+    eps = 0
     # for epoch in range(20):
     while (step < total_steps):
         print("step", step)
@@ -466,7 +469,6 @@ def train(net, trainloader, testloader):
         # print('EPOCH {}:'.format(epoch + 1))
         running_loss = 0.0
         step_per_batch = 0
-        eps = 0
         last_time = time.time()
         begin_time = last_time
         with tqdm(trainloader, unit="batch", desc='Training') as loader:
@@ -503,39 +505,141 @@ def train(net, trainloader, testloader):
 
         print(f'loss: {running_loss / step_per_batch:.3f}')
         eps += 1
-
-        # valid_acc = evaluate_model(net, validloader)
-        # print("Valid_acc: ", valid_acc)
         test_acc = evaluate_model(net, testloader)
         print("Test_acc: ", test_acc)
+        train_acc = 100. * correct/total
+        if(is_log_wandb):
+            wandb.log(
+                {"cur_epoch": eps, "train_acc": train_acc, "test_acc": test_acc})
+        per_epoch_model_save_path = final_model_save_path.replace(
+            "_dir.pt", "")
+        if not os.path.exists(per_epoch_model_save_path):
+            os.makedirs(per_epoch_model_save_path)
+        per_epoch_model_save_path += "/epoch_{}_dir.pt".format(eps)
+        if(eps % 7 == 0):
+            torch.save({
+                'epoch': eps,
+                'state_dict': net.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'loss': criterion,
+            }, per_epoch_model_save_path)
+        if(test_acc >= best_test_acc):
+            best_test_acc = test_acc
 
-    # torch.save({
-    #     'model_state_dict': net.state_dict(),
-    #     'optimizer_state_dict': optimizer.state_dict(),
-    #     'loss': criterion,
-    # }, 'root/model/save/vggnet_tf_16.pt')
-    # torch.save(net, 'root/model/save/vggnet_tf_16_dir.pt')
-    print('Finished Training')
+    torch.save({
+        'epoch': eps,
+        'state_dict': net.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'loss': criterion,
+    }, final_model_save_path)
+
+    print('Finished Training: Best saved model test acc is:', best_test_acc)
+    return best_test_acc
 
 
 if __name__ == '__main__':
-    trainloader, testloader = preprocess_data()
+    # cifar10 , imagenet1000
+    dataset = "cifar10"
+    model_arch_type = "dlgn__vgg16__"
+    # wand_project_name = "common_model_init_exps"
+    wand_project_name = None
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    batch_size = 128
+    pretrained = False
+    torchseed = 2022
+    if(dataset == "cifar10"):
+        trainloader, testloader = preprocess_data()
+    elif(dataset == "imagenet1000"):
+        data_dir = "/home/rbcdsai/ImageNet/"
+        traindir = os.path.join(data_dir, 'train')
+        valdir = os.path.join(data_dir, 'val')
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+
+        train_dataset = datasets.ImageFolder(
+            traindir,
+            transforms.Compose([
+                transforms.RandomResizedCrop(224),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                normalize,
+            ]))
+
+        val_dataset = datasets.ImageFolder(
+            valdir,
+            transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                normalize,
+            ]))
+        trainloader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=256, shuffle=True,
+            num_workers=4, pin_memory=True)
+
+        testloader = torch.utils.data.DataLoader(
+            val_dataset, batch_size=256, shuffle=False,
+            num_workers=4, pin_memory=True)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    net = DLGN_VGG_Network()
+    # net = DLGN_VGG_Network()
+    net = get_model_instance_from_dataset(
+        dataset=dataset, model_arch_type=model_arch_type, num_classes=10, pretrained=pretrained)
     net.to(device)
+
     print("Device count:", torch.cuda.device_count())
     device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
     if device_str == 'cuda':
         if(torch.cuda.device_count() > 1):
             print("Parallelizing model")
-            net = torch.nn.DataParallel(net)
+            net = torch.nn.DataParallel(net).cuda()
         # net = torch.nn.parallel.DistributedDataParallel(net)
 
         cudnn.benchmark = True
 
-    train(net, trainloader, testloader)
+    final_model_save_path = get_model_save_path(
+        model_arch_type+"_PRET_"+str(pretrained), dataset, torchseed)
 
-    # test_acc = evaluate_model(net, testloader)
-    # print("Test_acc: ", test_acc)
+    criterion = nn.CrossEntropyLoss().to(device)
+    optimizer = optim.SGD(net.parameters(), lr=0.01,
+                          nesterov=False, momentum=0.9, weight_decay=2.5e-4)
+    total_steps = 64000
+
+    is_log_wandb = not(wand_project_name is None)
+    if(is_log_wandb):
+        wandb_group_name = "DS_"+str(dataset) + \
+            "_MT_"+str(model_arch_type)+"_PRET_"+str(pretrained) + \
+            "_SEED_"+str(torchseed)
+        wandb_run_name = "MT_" + \
+            str(model_arch_type)+"/SEED_"+str(torchseed)+"/total_steps_"+str(total_steps)+"/OPT_"+str(optimizer)+"/LOSS_TYPE_" + \
+            str(criterion)+"/BS_"+str(batch_size) + \
+            "/pretrained"+str(pretrained)
+        wandb_run_name = wandb_run_name.replace("/", "")
+
+        wandb_config = dict()
+        wandb_config["dataset"] = dataset
+        wandb_config["model_arch_type"] = model_arch_type
+        wandb_config["total_steps"] = total_steps
+        wandb_config["optimizer"] = optimizer
+        wandb_config["criterion"] = criterion
+        wandb_config["batch_size"] = batch_size
+        wandb_config["pretrained"] = pretrained
+
+        wandb.init(
+            project=f"{wand_project_name}",
+            name=f"{wandb_run_name}",
+            group=f"{wandb_group_name}",
+            config=wandb_config,
+        )
+
+    model_save_folder = final_model_save_path[0:final_model_save_path.rfind(
+        "/")+1]
+    if not os.path.exists(model_save_folder):
+        os.makedirs(model_save_folder)
+    best_test_acc = train(net, trainloader, testloader, total_steps, criterion,
+                          optimizer, final_model_save_path, wand_project_name)
+
+    if(is_log_wandb):
+        wandb.log({"best_test_acc": best_test_acc})
+        wandb.finish()
