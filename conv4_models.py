@@ -90,6 +90,21 @@ def replace_given_layer_name_with_layer(model, given_layer_name, replacement_lay
                 child, given_layer_name, replacement_layer_obj, root_name+child_name+".")
 
 
+def convert_identity_layers_after_first_linear_back_to_Relu(model, first_fc_lay_name, is_replace=False, root_name=""):
+    for child_name, child in model.named_children():
+        if (root_name + child_name) == first_fc_lay_name:
+            is_replace = True
+        elif(is_replace):
+            if isinstance(child, nn.Identity):
+                print("Nodes replaced back to relu are", root_name + child_name)
+                setattr(model, child_name, nn.ReLU())
+        else:
+            is_replace = is_replace or convert_identity_layers_after_first_linear_back_to_Relu(
+                child, first_fc_lay_name, is_replace, root_name+child_name+".")
+
+    return is_replace
+
+
 def convert_layers_after_last_relu_to_identity(model, last_relu_layer_name, is_replace=False, root_name=""):
     for child_name, child in model.named_children():
         if (root_name + child_name) == last_relu_layer_name:
@@ -1501,6 +1516,8 @@ class ALLONES_TorchVision_Value_Network(nn.Module):
         # Replace relu activations with Identity functions
         convert_relu_to_identity(self.model_instance)
         convert_maxpool_to_avgpool(self.model_instance)
+        first_fc_name, _ = get_first_layer_instance(self.model_instance, layer=nn.Linear)
+        convert_identity_layers_after_first_linear_back_to_Relu(self.model_instance,first_fc_name)
 
         last_linear_layer_name, last_linear_layer = get_last_layer_instance(
             self.model_instance, nn.Linear)
@@ -1647,6 +1664,20 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
             print("Instantiating torchvision architecture")
             net = TorchVision_DeepGatedNet(
                 model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained)
+        elif(arch_type_extracted_from_model_arch in torchvision_model_names and 'dnn' in model_arch_type):
+            print("Instantiating torchvision architecture")
+            arch_type = model_arch_type[model_arch_type.index(
+                "__")+2:model_arch_type.rindex("__")]
+            net = models.__dict__[
+                arch_type](pretrained=pretrained)
+            last_linear_layer_name, last_linear_layer = get_last_layer_instance(
+                net, nn.Linear)
+            num_ftrs = last_linear_layer.in_features
+            replacement_layer_obj = nn.Linear(num_ftrs, num_classes)
+            replace_given_layer_name_with_layer(
+                net, last_linear_layer_name, replacement_layer_obj)
+            convert_maxpool_to_avgpool(net)
+            print("net", net)
 
     return net
 
