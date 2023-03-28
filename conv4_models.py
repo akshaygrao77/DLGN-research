@@ -1279,12 +1279,6 @@ class TorchVision_Deep_Gating_Network(nn.Module):
             self.model_instance, layer=nn.ReLU)
         convert_layers_after_last_relu_to_identity(
             self.model_instance, last_relu_name)
-        first_fc_name, _ = get_first_layer_instance(
-            self.model_instance, layer=nn.Linear)
-        replace_given_layer_name_with_layer(
-            self.model_instance, first_fc_name, nn.Identity())
-        convert_layers_after_last_relu_to_identity(
-            self.model_instance, first_fc_name)
         convert_inplacerelu_to_relu(self.model_instance)
         convert_maxpool_to_avgpool(self.model_instance)
 
@@ -1298,12 +1292,9 @@ class TorchVision_Deep_Gating_Network(nn.Module):
 
         prev_layer = None
         prev_layer_name = None
-        is_seen_fc = False
         # Capture outputs of Identity module (earlier input to Relu module)
         for i, (name, layer) in enumerate(self.model_instance.named_modules()):
-            if(isinstance(layer, nn.Linear)):
-                is_seen_fc = True
-            if (isinstance(layer, nn.ReLU) and (prev_layer is None or not is_seen_fc)):
+            if (isinstance(layer, nn.ReLU)):
                 print("Gating signals hooked at layer:", prev_layer_name)
                 self.f_id_hooks.append(prev_layer.register_forward_hook(
                     self.forward_relu_hook(name)))
@@ -1442,12 +1433,6 @@ class TorchVision_Gating_Network(nn.Module):
             self.model_instance, layer=nn.ReLU)
         convert_layers_after_last_relu_to_identity(
             self.model_instance, last_relu_name)
-        first_fc_name, _ = get_first_layer_instance(
-            self.model_instance, layer=nn.Linear)
-        replace_given_layer_name_with_layer(
-            self.model_instance, first_fc_name, nn.Identity())
-        convert_layers_after_last_relu_to_identity(
-            self.model_instance, first_fc_name)
         # Replace relu activations with Identity functions
         convert_relu_to_identity(self.model_instance)
         convert_maxpool_to_avgpool(self.model_instance)
@@ -1461,12 +1446,9 @@ class TorchVision_Gating_Network(nn.Module):
         self.clear_hooks()
 
         prev_layer = None
-        is_seen_fc = False
         # Capture outputs of Identity module (earlier input to Relu module)
         for i, (name, layer) in enumerate(self.model_instance.named_modules()):
-            if(isinstance(layer, nn.Linear)):
-                is_seen_fc = True
-            if (isinstance(layer, nn.Identity) and (prev_layer is None or not is_seen_fc)):
+            if (isinstance(layer, nn.Identity)):
                 self.f_id_hooks.append(prev_layer.register_forward_hook(
                     self.forward_identity_hook(name)))
             prev_layer = layer
@@ -1516,8 +1498,6 @@ class ALLONES_TorchVision_Value_Network(nn.Module):
         # Replace relu activations with Identity functions
         convert_relu_to_identity(self.model_instance)
         convert_maxpool_to_avgpool(self.model_instance)
-        first_fc_name, _ = get_first_layer_instance(self.model_instance, layer=nn.Linear)
-        convert_identity_layers_after_first_linear_back_to_Relu(self.model_instance,first_fc_name)
 
         last_linear_layer_name, last_linear_layer = get_last_layer_instance(
             self.model_instance, nn.Linear)
@@ -1536,14 +1516,11 @@ class ALLONES_TorchVision_Value_Network(nn.Module):
         self.gating_signals = None
         prev_layer = None
         prev_layer_name = None
-        is_seen_fc = False
 
         all_devices = _get_all_device_indices()
         # Attaches hook to Identity and modify its inputs
         for i, (name, layer) in enumerate(self.model_instance.named_modules()):
-            if(isinstance(layer, nn.Linear)):
-                is_seen_fc = True
-            if (isinstance(layer, nn.Identity) and (prev_layer is None or not is_seen_fc)):
+            if (isinstance(layer, nn.Identity)):
                 print("Hook added to layer name", prev_layer_name)
                 self.f_relu_hooks.append(
                     prev_layer.register_forward_hook(self.forward_hook(name)))
