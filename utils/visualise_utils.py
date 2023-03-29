@@ -17,10 +17,13 @@ from configs.dlgn_conv_config import HardRelu
 # Activation map is a 1,0 tensor
 
 
-def generate_plot_pca_variance_curve(var_curve, path, xlabel, ylabel):
-    plt.plot(var_curve)
+def generate_plot_pca_variance_curve(list_of_var_curve, path, xlabel, ylabel):
+    for i in range(len(list_of_var_curve)):
+        plt.plot(list_of_var_curve[i], label="Layer "+str(i))
+
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
+    plt.legend()
     plt.grid()
     plt.savefig(path)
 

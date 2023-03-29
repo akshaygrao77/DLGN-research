@@ -176,11 +176,13 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
 
         print("merged_padded_fouts shape", merged_padded_fouts.size())
 
+    generate_plot_pca_variance_curve(pca_variance_curve, save_folder+"PCA_var_curve.jpg",
+                                     "Number of components", "Cumulative Explained Variance")
+
     for i in range(len(top_pca_components)):
         current_layer_DFT = f_outs_DFT_norms[i]
         current_pca_comp_np = top_pca_components[i]
-        current_pca_variance_curve = pca_variance_curve[layer_num]
-        cur_k_or_var = ret_k_or_expvar[layer_num]
+        cur_k_or_var = ret_k_or_expvar[i]
 
         current_pca_comp_np = np.transpose(current_pca_comp_np, (1, 0))
         k1, k2 = determine_row_col_from_features(current_pca_comp_np.shape[1])
@@ -203,8 +205,6 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
             current_pca_comp_np, save_each_img_path=current_full_img_save_path, is_standarize=False)
         generate_plain_image(
             current_pca_comp_np, save_folder+"layer_num_"+str(i)+"_sh"+str(current_pca_comp_np.shape)+".jpg", is_standarize=False)
-        generate_plot_pca_variance_curve(current_pca_variance_curve, save_folder+"lay_num_"+str(
-            i)+"_pca_var_curve.jpg", "Number of components", "Cumulative Explained Variance")
         current_layer_DFT = np.squeeze(current_layer_DFT)
         generate_plain_image(
             current_layer_DFT, save_folder+"DFT_lay_num_"+str(i)+"_sh"+str(current_layer_DFT.shape)+".jpg", is_standarize=False)
