@@ -7,6 +7,7 @@ from sklearn.decomposition import PCA
 from collections import OrderedDict
 import torchvision.models as models
 from torch._utils import _get_all_device_indices
+from googlenet_custom import Custom_GoogLeNet
 
 
 def replace_percent_of_values(inp_np, const_value, percentage):
@@ -1571,15 +1572,15 @@ def get_img_size(dataset):
         return [3, 224, 224]
 
 
-def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], pretrained=False):
+def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], pretrained=False, aux_logits=True):
     temp = get_img_size(dataset)
     inp_channel = temp[0]
     input_size_list = temp[1:]
 
-    return get_model_instance(model_arch_type, inp_channel, seed=seed, mask_percentage=mask_percentage, num_classes=num_classes, input_size_list=input_size_list, nodes_in_each_layer_list=nodes_in_each_layer_list, pretrained=pretrained)
+    return get_model_instance(model_arch_type, inp_channel, seed=seed, mask_percentage=mask_percentage, num_classes=num_classes, input_size_list=input_size_list, nodes_in_each_layer_list=nodes_in_each_layer_list, pretrained=pretrained, aux_logits=aux_logits)
 
 
-def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], input_size_list=[], pretrained=False):
+def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], input_size_list=[], pretrained=False, aux_logits=True):
     if(seed == ""):
         seed = 2022
 
@@ -1628,6 +1629,12 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
     elif(model_arch_type == "fc_dgn"):
         net = DGN_FC_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
+    elif(model_arch_type == "dlgn__googlenet__"):
+        net = Custom_GoogLeNet(
+            "dlgn", num_classes,aux_logits)
+    elif(model_arch_type == "dgn__googlenet__"):
+        net = Custom_GoogLeNet(
+            "dgn", num_classes,aux_logits)
 
     # If no specific implementation was found for model arch type, then try to instantiate from torchvision
     if(net is None):

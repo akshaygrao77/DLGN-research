@@ -131,10 +131,14 @@ def main():
 
 def main_worker(gpu, ngpus_per_node, args):
     dataset = "imagenet_1000"
-    wand_project_name = "resnet_exp"
+    wand_project_name = "imagenet_exp"
+    # wand_project_name = None
     args.wand_project_name = wand_project_name
     global best_acc1
     args.gpu = gpu
+
+    arch_type_extracted_from_model_arch = args.arch[args.arch.index(
+        "__")+2:args.arch.rindex("__")]
 
     if args.gpu is not None:
         print("Use GPU: {} for training".format(args.gpu))
@@ -148,20 +152,26 @@ def main_worker(gpu, ngpus_per_node, args):
             args.rank = args.rank * ngpus_per_node + gpu
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
+
     # create model
-    if("dnn" in args.arch):
-        arch_type = args.arch[args.arch.index(
-            "__")+2:args.arch.rindex("__")]
-        if args.pretrained:
-            print("=> using pre-trained model '{}'".format(arch_type))
-            model = models.__dict__[arch_type](pretrained=True)
-        else:
-            print("=> creating model '{}'".format(arch_type))
-            model = models.__dict__[arch_type]()
-        print(model)
-    else:
+    if(arch_type_extracted_from_model_arch == "googlenet"):
+        args.aux_logits = True
         model = get_model_instance_from_dataset(
-            dataset=dataset, model_arch_type=args.arch, num_classes=1000, pretrained=args.pretrained)
+            dataset=dataset, model_arch_type=args.arch, num_classes=1000, pretrained=args.pretrained, aux_logits=args.aux_logits)
+    else:
+        if("dnn" in args.arch):
+            arch_type = args.arch[args.arch.index(
+                "__")+2:args.arch.rindex("__")]
+            if args.pretrained:
+                print("=> using pre-trained model '{}'".format(arch_type))
+                model = models.__dict__[arch_type](pretrained=True)
+            else:
+                print("=> creating model '{}'".format(arch_type))
+                model = models.__dict__[arch_type]()
+            print(model)
+        else:
+            model = get_model_instance_from_dataset(
+                dataset=dataset, model_arch_type=args.arch, num_classes=1000, pretrained=args.pretrained)
 
     if not torch.cuda.is_available() and not torch.backends.mps.is_available():
         print('using CPU, this will be slow')
@@ -212,12 +222,23 @@ def main_worker(gpu, ngpus_per_node, args):
     # define loss function (criterion), optimizer, and learning rate scheduler
     criterion = nn.CrossEntropyLoss().to(device)
 
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+    if(arch_type_extracted_from_model_arch == "googlenet"):
+        print("Using config for googlenet::", model)
+        args.lr = 0.0001
+        args.weight_decay = 1e-4
+        args.momentum = 0
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        #     optimizer, patience=5, verbose=True)
+    else:
+        optimizer = torch.optim.SGD(model.parameters(), args.lr,
+                                    momentum=args.momentum,
+                                    weight_decay=args.weight_decay)
 
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+        """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
+        scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -319,6 +340,8 @@ def main_worker(gpu, ngpus_per_node, args):
         wandb_config["criterion"] = criterion
         wandb_config["batch_size"] = args.batch_size
         wandb_config["pretrained"] = args.pretrained
+        if(arch_type_extracted_from_model_arch == "googlenet"):
+            wandb_config["aux_logits"] = args.aux_logits
 
         wandb.init(
             project=f"{wand_project_name}",
@@ -385,8 +408,21 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         target = target.to(device, non_blocking=True)
 
         # compute output
-        output = model(images)
-        loss = criterion(output, target)
+        if("googlenet" in args.arch):
+            if(i == 0):
+                print("Running google net with aux loss", i)
+
+            output, aux_pred_1, aux_pred_2 = model(images)
+
+            # Compute the loss.
+            real_loss = criterion(output, target)
+            aux_loss_1 = criterion(aux_pred_1, target)
+            aux_loss_2 = criterion(aux_pred_2, target)
+
+            loss = real_loss + 0.3 * aux_loss_1 + 0.3 * aux_loss_2
+        else:
+            output = model(images)
+            loss = criterion(output, target)
 
         # measure accuracy and record loss
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
@@ -417,12 +453,11 @@ def validate(val_loader, model, criterion, args):
             end = time.time()
             for i, (images, target) in enumerate(loader):
                 i = base_progress + i
-                if args.gpu is not None and torch.cuda.is_available():
-                    images = images.cuda(args.gpu, non_blocking=True)
                 # if torch.backends.mps.is_available():
                 #     images = images.to('mps')
                 #     target = target.to('mps')
                 if torch.cuda.is_available():
+                    images = images.cuda(args.gpu, non_blocking=True)
                     target = target.cuda(args.gpu, non_blocking=True)
 
                 # compute output
