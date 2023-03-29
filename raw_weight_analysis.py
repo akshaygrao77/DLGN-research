@@ -83,19 +83,34 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
         print("PCA Component {} size:{}".format(
             final_postfix_for_save, current_layer_pca_comp.shape))
 
+        current_layer_pca_comp = np.transpose(current_layer_pca_comp, (1, 0))
+        k1, k2 = determine_row_col_from_features(
+            current_layer_pca_comp.shape[1])
+        current_layer_pca_comp = np.reshape(
+            current_layer_pca_comp, (current_layer_pca_comp.shape[0], k1, k2))
+        print("PCA Component {} after resize size:{}".format(
+            final_postfix_for_save, current_layer_pca_comp.shape))
+
         if(isinstance(current_layer_pca_comp, np.ndarray)):
             current_layer_pca_comp = torch.from_numpy(
                 current_layer_pca_comp).to(av_device)
-        pad_factor = 5
-        raw_dft_out = generate_centralized_DTimeFT(
-            current_layer_pca_comp, pad_factor)
 
-        for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
-        std01_vis_dft_out = normalize_in_range_01(
-            for_vis_dft_out)
-        std01_vis_dft_out = std01_vis_dft_out[None, :]
+        curr_chanl_DFT_outputs = None
+        for current_indx_cur_lay_pca_comp in current_layer_pca_comp:
+            pad_factor = 5
+            raw_dft_out = generate_centralized_DTimeFT(
+                current_indx_cur_lay_pca_comp, pad_factor)
 
-        f_outs_DFT_norms.append(std01_vis_dft_out)
+            for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
+            std01_vis_dft_out = normalize_in_range_01(
+                for_vis_dft_out)
+            if(curr_chanl_DFT_outputs is None):
+                curr_chanl_DFT_outputs = torch.unsqueeze(std01_vis_dft_out, 0)
+            else:
+                curr_chanl_DFT_outputs = torch.vstack(
+                    (curr_chanl_DFT_outputs, torch.unsqueeze(std01_vis_dft_out, 0)))
+
+        f_outs_DFT_norms.append(curr_chanl_DFT_outputs)
 
     for i in range(len(top_pca_components)):
         current_pca_comp_np = top_pca_components[i]
@@ -167,6 +182,11 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
         current_pca_variance_curve = pca_variance_curve[layer_num]
         cur_k_or_var = ret_k_or_expvar[layer_num]
 
+        current_pca_comp_np = np.transpose(current_pca_comp_np, (1, 0))
+        k1, k2 = determine_row_col_from_features(current_pca_comp_np.shape[1])
+        current_pca_comp_np = np.reshape(
+            current_pca_comp_np, (current_pca_comp_np.shape[0], k1, k2))
+
         if(cur_k_or_var < 1):
             pc_inf = "_VAR_"+str(cur_k_or_var)
         else:
@@ -177,6 +197,10 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
         generate_list_of_plain_images_from_data(
             current_layer_DFT, save_each_img_path=current_full_img_save_path, is_standarize=False)
         current_pca_comp_np = np.squeeze(current_pca_comp_np)
+        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"/" + \
+            "pca_components"+str(pc_inf)+"_*.jpg"
+        generate_list_of_plain_images_from_data(
+            current_pca_comp_np, save_each_img_path=current_full_img_save_path, is_standarize=False)
         generate_plain_image(
             current_pca_comp_np, save_folder+"layer_num_"+str(i)+"_sh"+str(current_pca_comp_np.shape)+".jpg", is_standarize=False)
         generate_plot_pca_variance_curve(current_pca_variance_curve, save_folder+"lay_num_"+str(
