@@ -15,6 +15,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
+import numpy as np
 from conv4_models import get_model_instance_from_dataset, get_model_save_path
 
 temp_names = sorted(name for name in models.__dict__
@@ -64,6 +65,239 @@ parser.add_argument('--save-dir', dest='save_dir',
                     default='save_temp', type=str)
 
 
+class DLGN_VGG_Network_without_BN(nn.Module):
+    def __init__(self, num_classes=10):
+        super(DLGN_VGG_Network_without_BN, self).__init__()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
+        # device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        self.g_conv_64_1 = nn.Conv2d(3, 64, 3, padding=1)
+        self.initialize_weights(self.g_conv_64_1)
+        self.g_conv_64_2 = nn.Conv2d(64, 64, 3, padding=1)
+        self.initialize_weights(self.g_conv_64_2)
+
+        self.g_conv_64_pool = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.g_conv_128_1 = nn.Conv2d(64, 128, 3, padding=1)
+        self.initialize_weights(self.g_conv_128_1)
+        self.g_conv_128_2 = nn.Conv2d(128, 128, 3, padding=1)
+        self.initialize_weights(self.g_conv_128_2)
+
+        self.g_conv_128_pool = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.g_conv_256_1 = nn.Conv2d(128, 256, 3, padding=1)
+        self.initialize_weights(self.g_conv_256_1)
+        self.g_conv_256_2 = nn.Conv2d(256, 256, 3, padding=1)
+        self.initialize_weights(self.g_conv_256_2)
+        self.g_conv_256_3 = nn.Conv2d(256, 256, 3, padding=1)
+        self.initialize_weights(self.g_conv_256_3)
+
+        self.g_conv_256_pool = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.g_conv_512_1 = nn.Conv2d(256, 512, 3, padding=1)
+        self.initialize_weights(self.g_conv_512_1)
+        self.g_conv_512_2 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.g_conv_512_2)
+        self.g_conv_512_3 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.g_conv_512_3)
+
+        self.g_conv_512_pool1 = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.g_conv_512_4 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.g_conv_512_4)
+        self.g_conv_512_5 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.g_conv_512_5)
+        self.g_conv_512_6 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.g_conv_512_6)
+
+        self.g_conv_512_pool2 = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.w_conv_64_1 = nn.Conv2d(3, 64, 3, padding=1)
+        self.initialize_weights(self.w_conv_64_1)
+        self.w_conv_64_2 = nn.Conv2d(64, 64, 3, padding=1)
+        self.initialize_weights(self.w_conv_64_2)
+        self.w_conv_64_pool = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.w_conv_128_1 = nn.Conv2d(64, 128, 3, padding=1)
+        self.initialize_weights(self.w_conv_128_1)
+        self.w_conv_128_2 = nn.Conv2d(128, 128, 3, padding=1)
+        self.initialize_weights(self.w_conv_128_2)
+        self.w_conv_128_pool = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.w_conv_256_1 = nn.Conv2d(128, 256, 3, padding=1)
+        self.initialize_weights(self.w_conv_256_1)
+        self.w_conv_256_2 = nn.Conv2d(256, 256, 3, padding=1)
+        self.initialize_weights(self.w_conv_256_2)
+        self.w_conv_256_3 = nn.Conv2d(256, 256, 3, padding=1)
+        self.initialize_weights(self.w_conv_256_3)
+        self.w_conv_256_pool = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.w_conv_512_1 = nn.Conv2d(256, 512, 3, padding=1)
+        self.initialize_weights(self.w_conv_512_1)
+        self.w_conv_512_2 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.w_conv_512_2)
+        self.w_conv_512_3 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.w_conv_512_3)
+        self.w_conv_512_pool1 = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.w_conv_512_4 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.w_conv_512_4)
+        self.w_conv_512_5 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.w_conv_512_5)
+        self.w_conv_512_6 = nn.Conv2d(512, 512, 3, padding=1)
+        self.initialize_weights(self.w_conv_512_6)
+
+        self.w_conv_512_pool2 = nn.AvgPool2d(kernel_size=2, stride=2)
+        # self.g_conv_512_pool2 = nn.AvgPool2d(kernel_size=2, stride=2)
+
+        self.globalpool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.w_fc_1 = nn.Linear(512, num_classes)
+        self.initialize_weights(self.w_fc_1)
+        # self.g_fc_1 = nn.Linear(512 * 7 * 7, 4096)
+        # self.initialize_weights(self.g_fc_1)
+        # self.w_dp1 = nn.Dropout()
+        # self.w_fc_2 = nn.Linear(4096, 4096)
+        # self.g_fc_2 = nn.Linear(4096, 4096)
+        # self.initialize_weights(self.w_fc_2)
+        # self.initialize_weights(self.g_fc_2)
+        # self.w_dp2 = nn.Dropout()
+        # self.w_fc_3 = nn.Linear(4096, num_classes)
+        # self.initialize_weights(self.w_fc_3)
+
+        self.allones = None
+
+    def initialize_weights(self, mod_obj):
+        if isinstance(mod_obj, nn.Conv2d):
+            nn.init.kaiming_normal_(
+                mod_obj.weight, mode='fan_out', nonlinearity='relu')
+            if mod_obj.bias is not None:
+                nn.init.constant_(mod_obj.bias, 0)
+        elif isinstance(mod_obj, nn.BatchNorm2d):
+            nn.init.constant_(mod_obj.weight, 1)
+            nn.init.constant_(mod_obj.bias, 0)
+        elif isinstance(mod_obj, nn.Linear):
+            nn.init.normal_(mod_obj.weight, 0, 0.01)
+            nn.init.constant_(mod_obj.bias, 0)
+
+    def forward(self, inp, verbose=2):
+        self.allones = torch.ones(inp.size(), requires_grad=True,
+                                  device=self.device)
+        beta = 4
+        # conv_g_outs = []
+        # 64 blocks *********************************************
+
+        x_g = self.g_conv_64_1(inp)
+        x_w = self.w_conv_64_1(self.allones)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g1)
+
+        x_g = self.g_conv_64_2(x_g)
+        x_w = self.w_conv_64_2(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g2)
+        x_g = self.g_conv_64_pool(x_g)
+        x_w = self.w_conv_64_pool(x_w)
+
+        # ********************************************************
+
+        # 128 block *********************************************
+
+        x_g = self.g_conv_128_1(x_g)
+        x_w = self.w_conv_128_1(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g3)
+
+        x_g = self.g_conv_128_2(x_g)
+        x_w = self.w_conv_128_2(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g4)
+        x_g = self.g_conv_128_pool(x_g)
+        x_w = self.w_conv_128_pool(x_w)
+
+        # **********************************************************
+
+        # 256 blocks ***********************************************
+
+        x_g = self.g_conv_256_1(x_g)
+        x_w = self.w_conv_256_1(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g5)
+
+        x_g = self.g_conv_256_2(x_g)
+        x_w = self.w_conv_256_2(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g6)
+
+        x_g = self.g_conv_256_3(x_g)
+        x_w = self.w_conv_256_3(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g7)
+
+        x_g = self.g_conv_256_pool(x_g)
+        x_w = self.w_conv_256_pool(x_w)
+
+        # **********************************************************
+
+        # 512 blocks 1 ***************************************************
+
+        x_g = self.g_conv_512_1(x_g)
+        x_w = self.w_conv_512_1(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g8)
+
+        x_g = self.g_conv_512_2(x_g)
+        x_w = self.w_conv_512_2(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g9)
+
+        x_g = self.g_conv_512_3(x_g)
+        x_w = self.w_conv_512_3(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g10)
+
+        x_g = self.g_conv_512_pool1(x_g)
+        x_w = self.w_conv_512_pool1(x_w)
+
+        # **********************************************************
+
+        # 512 blocks 2 ***************************************************
+
+        x_g = self.g_conv_512_4(x_g)
+        x_w = self.w_conv_512_4(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g11)
+
+        x_g = self.g_conv_512_5(x_g)
+        x_w = self.w_conv_512_5(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g12)
+
+        x_g = self.g_conv_512_6(x_g)
+        x_w = self.w_conv_512_6(x_w)
+        x_w = x_w * nn.Sigmoid()(beta * x_g)
+        # conv_g_outs.append(x_g13)
+
+        # x_g = self.g_conv_512_pool2(x_g)
+        x_w = self.w_conv_512_pool2(x_w)
+
+        x_w = self.globalpool(x_w)
+        # x_w = self.w_adapt_pool(x_w)
+        x_w = torch.flatten(x_w, 1)
+
+        x_w = self.w_fc_1(x_w)
+        # x_w = x_w * nn.Sigmoid()(beta * x_g)
+
+        # x_g = self.g_fc_2(x_g)
+        # x_w = self.w_fc_2(x_w)
+        # x_w = x_w * nn.Sigmoid()(beta * x_g)
+
+        # x_w = self.w_fc_3(x_w)
+
+        return x_w
+
+
 class ProgressMeter(object):
     def __init__(self, num_batches, meters, prefix=""):
         self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
@@ -97,6 +331,7 @@ def main():
     global args, best_acc1, av_device
     args = parser.parse_args()
     args.wand_project_name = wand_project_name
+    args.start_step = 0
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -109,14 +344,25 @@ def main():
                       'You may see unexpected behavior when restarting '
                       'from checkpoints.')
 
-    model = get_model_instance_from_dataset(
-        dataset=dataset, model_arch_type=args.arch, num_classes=10, pretrained=args.pretrained)
+    if(args.arch == "dlgn__vgg16__"):
+        model = DLGN_VGG_Network_without_BN(num_classes=10)
+    elif(args.arch == "dlgn__vgg16_bn__"):
+        allones = np.ones((1, 3, 32, 32)).astype(np.float32)
+        model = vgg16_bn(allones)
+    # model = get_model_instance_from_dataset(
+    #     dataset=dataset, model_arch_type=args.arch, num_classes=10, pretrained=args.pretrained)
 
-    # model.gating_network = torch.nn.DataParallel(model.gating_network)
-    # model.value_network.list_of_modules[0].features = torch.nn.DataParallel(
-    #     model.value_network.list_of_modules[0].features)
-    model = torch.nn.DataParallel(model)
+    # model = torch.nn.DataParallel(model)
     model = model.to(av_device)
+
+    # define loss function (criterion) and pptimizer
+    criterion = nn.CrossEntropyLoss().to(av_device)
+
+    optimizer = torch.optim.SGD(model.parameters(), args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=200)
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -129,12 +375,14 @@ def main():
                 loc = 'cuda:{}'.format(args.gpu)
                 checkpoint = torch.load(args.resume, map_location=loc)
             args.start_epoch = checkpoint['epoch']
+            args.start_step = checkpoint['steps']
             best_acc1 = checkpoint['best_acc1']
             if args.gpu is not None:
                 # best_acc1 may be from a checkpoint from a different GPU
                 best_acc1 = best_acc1.to(args.gpu)
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
+            scheduler.load_state_dict(checkpoint['scheduler'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
         else:
@@ -142,13 +390,13 @@ def main():
 
     cudnn.benchmark = True
 
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+    normalize = transforms.Normalize(
+        (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
 
     train_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10(root='./data', train=True, transform=transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(32, 4),
             transforms.ToTensor(),
             normalize,
         ]), download=True),
@@ -162,13 +410,6 @@ def main():
         ])),
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
-
-    # define loss function (criterion) and pptimizer
-    criterion = nn.CrossEntropyLoss().to(av_device)
-
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
 
     if args.evaluate:
         validate(val_loader, model, criterion)
@@ -197,6 +438,7 @@ def main():
         wandb_config["model_arch_type"] = args.arch
         wandb_config["epochs"] = args.epochs
         wandb_config["optimizer"] = optimizer
+        wandb_config["scheduler"] = scheduler
         wandb_config["criterion"] = criterion
         wandb_config["batch_size"] = args.batch_size
         wandb_config["pretrained"] = args.pretrained
@@ -209,10 +451,9 @@ def main():
         )
 
     for epoch in range(args.start_epoch, args.epochs):
-        adjust_learning_rate(optimizer, epoch)
-
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch)
+        scheduler.step()
 
         # evaluate on validation set
         prec1 = validate(val_loader, model, criterion)
@@ -221,19 +462,33 @@ def main():
         is_best = prec1 > best_acc1
         best_acc1 = max(prec1, best_acc1)
         if(is_log_wandb):
-            wandb.log({"cur_epoch": epoch+1, "best_valid_acc1": best_acc1})
+            wandb.log({"steps": args.start_step, "test_acc": prec1,
+                      "cur_epoch": epoch+1, "best_test_acc": best_acc1})
 
         save_checkpoint({
             'epoch': epoch + 1,
+            'steps': args.start_step,
             'arch': args.arch,
             'state_dict': model.state_dict(),
             'best_acc1': best_acc1,
+            'scheduler': scheduler.state_dict(),
             'optimizer': optimizer.state_dict(),
             'pretrained': args.pretrained
         }, is_best, final_model_save_path)
 
     if(is_log_wandb):
         wandb.finish()
+
+
+def custom_piecewise_lr_decay_scheduler(optimizer, n_iter):
+    if n_iter > 48000:
+        optimizer.param_groups[0]['lr'] = 0.001
+    elif n_iter > 32000:
+        optimizer.param_groups[0]['lr'] = 0.01
+    elif n_iter > 400:
+        optimizer.param_groups[0]['lr'] = 0.1
+    else:
+        optimizer.param_groups[0]['lr'] = 0.01
 
 
 def train(train_loader, model, criterion, optimizer, epoch):
@@ -268,6 +523,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        args.start_step += 1
+        # custom_piecewise_lr_decay_scheduler(optimizer, args.start_step)
 
         output = output.float()
         loss = loss.float()
