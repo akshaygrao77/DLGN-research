@@ -8,6 +8,7 @@ from collections import OrderedDict
 import torchvision.models as models
 from torch._utils import _get_all_device_indices
 from googlenet_custom import Custom_GoogLeNet
+from utils.forward_visualization_helpers import merge_operations_in_modules,apply_input_on_conv_matrix
 
 
 def replace_percent_of_values(inp_np, const_value, percentage):
@@ -128,8 +129,9 @@ def convert_inplacerelu_to_relu(model):
         else:
             convert_inplacerelu_to_relu(child)
 
+
 class vgg16_bn(nn.Module):
-    def __init__(self, allones, init_weights: bool = True,num_classes:int=10) -> None:
+    def __init__(self, allones, init_weights: bool = True, num_classes: int = 10) -> None:
         super().__init__()
         self.conv1_g = nn.Conv2d(3, 64, kernel_size=3, padding=1)
         self.conv2_g = nn.Conv2d(64, 64, kernel_size=3, padding=1)
@@ -235,6 +237,107 @@ class vgg16_bn(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
+
+    def get_gate_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        gating_net_layers_ordered["conv1_g"] = self.conv1_g
+        gating_net_layers_ordered["bn1_g"] = self.bn1_g
+
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["bn2_g"] = self.bn2_g
+
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["bn2_g"] = self.bn2_g
+
+        gating_net_layers_ordered["pool1"] = self.pool
+
+        gating_net_layers_ordered["conv3_g"] = self.conv3_g
+        gating_net_layers_ordered["bn3_g"] = self.bn3_g
+
+        gating_net_layers_ordered["conv4_g"] = self.conv4_g
+        gating_net_layers_ordered["bn4_g"] = self.bn4_g
+
+        gating_net_layers_ordered["pool2"] = self.pool
+
+        gating_net_layers_ordered["conv5_g"] = self.conv5_g
+        gating_net_layers_ordered["bn5_g"] = self.bn5_g
+
+        gating_net_layers_ordered["conv6_g"] = self.conv6_g
+        gating_net_layers_ordered["bn6_g"] = self.bn6_g
+
+        gating_net_layers_ordered["conv7_g"] = self.conv7_g
+        gating_net_layers_ordered["bn7_g"] = self.bn7_g
+
+        gating_net_layers_ordered["conv8_g"] = self.conv8_g
+        gating_net_layers_ordered["bn8_g"] = self.bn8_g
+
+        gating_net_layers_ordered["pool3"] = self.pool
+
+        gating_net_layers_ordered["conv9_g"] = self.conv9_g
+        gating_net_layers_ordered["bn9_g"] = self.bn9_g
+
+        gating_net_layers_ordered["conv10_g"] = self.conv10_g
+        gating_net_layers_ordered["bn10_g"] = self.bn10_g
+
+        gating_net_layers_ordered["conv11_g"] = self.conv11_g
+        gating_net_layers_ordered["bn11_g"] = self.bn11_g
+
+        gating_net_layers_ordered["conv12_g"] = self.conv12_g
+        gating_net_layers_ordered["bn12_g"] = self.bn12_g
+
+        gating_net_layers_ordered["pool4"] = self.pool
+
+        gating_net_layers_ordered["conv13_g"] = self.conv13_g
+        gating_net_layers_ordered["bn13_g"] = self.bn13_g
+
+        gating_net_layers_ordered["conv14_g"] = self.conv14_g
+        gating_net_layers_ordered["bn14_g"] = self.bn14_g
+
+        gating_net_layers_ordered["conv15_g"] = self.conv15_g
+        gating_net_layers_ordered["bn15_g"] = self.bn15_g
+
+        gating_net_layers_ordered["conv16_g"] = self.conv16_g
+        gating_net_layers_ordered["bn16_g"] = self.bn16_g
+
+        gating_net_layers_ordered["avgpool"] = self.avgpool
+
+        gating_net_layers_ordered["fc1_g"] = self.fc1_g
+        gating_net_layers_ordered["fc2_g"] = self.fc2_g
+
+        return gating_net_layers_ordered
+
+    def forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        conv_matrix_operations_in_each_layer = OrderedDict()
+        conv_bias_operations_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_matrix = None
+        merged_conv_bias = None
+        orig_out = x
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_matrix, merged_conv_bias, current_tensor_size = merge_operations_in_modules(
+                    layer_obj, current_tensor_size, merged_conv_matrix, merged_conv_bias)
+                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix
+                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias
+
+                orig_out = layer_obj(orig_out)
+
+                convmatrix_output = apply_input_on_conv_matrix(
+                    x, merged_conv_matrix, merged_conv_bias)
+                convmatrix_output = torch.unsqueeze(torch.reshape(
+                    convmatrix_output, current_tensor_size), 0)
+                difference_in_output = (
+                    orig_out - convmatrix_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Feature/Gating Network
@@ -1991,10 +2094,10 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
         net = vgg16_bn(num_classes=num_classes)
     elif(model_arch_type == "dlgn__googlenet__"):
         net = Custom_GoogLeNet(
-            "dlgn", num_classes,aux_logits)
+            "dlgn", num_classes, aux_logits)
     elif(model_arch_type == "dgn__googlenet__"):
         net = Custom_GoogLeNet(
-            "dgn", num_classes,aux_logits)
+            "dgn", num_classes, aux_logits)
 
     # If no specific implementation was found for model arch type, then try to instantiate from torchvision
     if(net is None):
