@@ -8,7 +8,7 @@ from collections import OrderedDict
 import torchvision.models as models
 from torch._utils import _get_all_device_indices
 from googlenet_custom import Custom_GoogLeNet
-from utils.forward_visualization_helpers import merge_operations_in_modules,apply_input_on_conv_matrix
+from utils.forward_visualization_helpers import merge_operations_in_modules, apply_input_on_conv_matrix, merge_layers_operations_in_modules
 
 
 def replace_percent_of_values(inp_np, const_value, percentage):
@@ -299,10 +299,10 @@ class vgg16_bn(nn.Module):
         gating_net_layers_ordered["conv16_g"] = self.conv16_g
         gating_net_layers_ordered["bn16_g"] = self.bn16_g
 
-        gating_net_layers_ordered["avgpool"] = self.avgpool
+        # gating_net_layers_ordered["avgpool"] = self.avgpool
 
-        gating_net_layers_ordered["fc1_g"] = self.fc1_g
-        gating_net_layers_ordered["fc2_g"] = self.fc2_g
+        # gating_net_layers_ordered["fc1_g"] = self.fc1_g
+        # gating_net_layers_ordered["fc2_g"] = self.fc2_g
 
         return gating_net_layers_ordered
 
@@ -333,6 +333,8 @@ class vgg16_bn(nn.Module):
                     x, merged_conv_matrix, merged_conv_bias)
                 convmatrix_output = torch.unsqueeze(torch.reshape(
                     convmatrix_output, current_tensor_size), 0)
+                assert orig_out.size() == convmatrix_output.size(
+                ), "Size of effective and actual output unequal"
                 difference_in_output = (
                     orig_out - convmatrix_output).abs().sum()
                 print("difference_in_output ", difference_in_output)
@@ -572,6 +574,963 @@ class vgg16_bn(nn.Module):
         x_v = self.bn16_v(x_v)
         x_v = x_v*g_16
         #x = F.relu(x)
+
+        # Max-Pool : 5
+        x_v = self.avgpool(x_v)
+
+        x_v = torch.flatten(x_v, 1)
+        x_v = self.fc1_v(x_v)
+        x_v = x_v*g_17
+
+        #x_v = self.dropout(x_v)
+        x_v = self.fc2_v(x_v)
+        x_v = x_v*g_18
+        #x = F.relu(x)
+        #x_v = self.dropout(x_v)
+        x_v = self.fc3_v(x_v)
+
+        return x_v
+
+
+class pad2_vgg16_bn(nn.Module):
+    def __init__(self, init_weights: bool = True, num_classes: int = 10) -> None:
+        super().__init__()
+        self.conv1_g = nn.Conv2d(3, 64, kernel_size=3, padding=2)
+        self.conv2_g = nn.Conv2d(64, 64, kernel_size=3, padding=2)
+        self.conv3_g = nn.Conv2d(64, 128, kernel_size=3, padding=2)
+        self.conv4_g = nn.Conv2d(128, 128, kernel_size=3, padding=2)
+        self.conv5_g = nn.Conv2d(128, 256, kernel_size=3, padding=2)
+        self.conv6_g = nn.Conv2d(256, 256, kernel_size=3, padding=2)
+        self.conv7_g = nn.Conv2d(256, 256, kernel_size=3, padding=2)
+        self.conv8_g = nn.Conv2d(256, 256, kernel_size=3, padding=2)
+        self.conv9_g = nn.Conv2d(256, 512, kernel_size=3, padding=2)
+        self.conv10_g = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv11_g = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv12_g = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv13_g = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv14_g = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv15_g = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv16_g = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+
+        self.conv1_v = nn.Conv2d(3, 64, kernel_size=3, padding=2)
+        self.conv2_v = nn.Conv2d(64, 64, kernel_size=3, padding=2)
+        self.conv3_v = nn.Conv2d(64, 128, kernel_size=3, padding=2)
+        self.conv4_v = nn.Conv2d(128, 128, kernel_size=3, padding=2)
+        self.conv5_v = nn.Conv2d(128, 256, kernel_size=3, padding=2)
+        self.conv6_v = nn.Conv2d(256, 256, kernel_size=3, padding=2)
+        self.conv7_v = nn.Conv2d(256, 256, kernel_size=3, padding=2)
+        self.conv8_v = nn.Conv2d(256, 256, kernel_size=3, padding=2)
+        self.conv9_v = nn.Conv2d(256, 512, kernel_size=3, padding=2)
+        self.conv10_v = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv11_v = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv12_v = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv13_v = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv14_v = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv15_v = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+        self.conv16_v = nn.Conv2d(512, 512, kernel_size=3, padding=2)
+
+        self.bn1_g = nn.BatchNorm2d(64)
+        self.bn2_g = nn.BatchNorm2d(64)
+        self.bn3_g = nn.BatchNorm2d(128)
+        self.bn4_g = nn.BatchNorm2d(128)
+
+        self.bn5_g = nn.BatchNorm2d(256)
+        self.bn6_g = nn.BatchNorm2d(256)
+        self.bn7_g = nn.BatchNorm2d(256)
+        self.bn8_g = nn.BatchNorm2d(256)
+
+        self.bn9_g = nn.BatchNorm2d(512)
+        self.bn10_g = nn.BatchNorm2d(512)
+        self.bn11_g = nn.BatchNorm2d(512)
+        self.bn12_g = nn.BatchNorm2d(512)
+
+        self.bn13_g = nn.BatchNorm2d(512)
+        self.bn14_g = nn.BatchNorm2d(512)
+        self.bn15_g = nn.BatchNorm2d(512)
+        self.bn16_g = nn.BatchNorm2d(512)
+
+        self.bn1_v = nn.BatchNorm2d(64)
+        self.bn2_v = nn.BatchNorm2d(64)
+        self.bn3_v = nn.BatchNorm2d(128)
+        self.bn4_v = nn.BatchNorm2d(128)
+
+        self.bn5_v = nn.BatchNorm2d(256)
+        self.bn6_v = nn.BatchNorm2d(256)
+        self.bn7_v = nn.BatchNorm2d(256)
+        self.bn8_v = nn.BatchNorm2d(256)
+
+        self.bn9_v = nn.BatchNorm2d(512)
+        self.bn10_v = nn.BatchNorm2d(512)
+        self.bn11_v = nn.BatchNorm2d(512)
+        self.bn12_v = nn.BatchNorm2d(512)
+
+        self.bn13_v = nn.BatchNorm2d(512)
+        self.bn14_v = nn.BatchNorm2d(512)
+        self.bn15_v = nn.BatchNorm2d(512)
+        self.bn16_v = nn.BatchNorm2d(512)
+
+        self.fc1_g = nn.Linear(512*1*1, 4096)
+        self.fc2_g = nn.Linear(4096, 4096)
+
+        self.fc1_v = nn.Linear(512*1*1, 4096)
+        self.fc2_v = nn.Linear(4096, 4096)
+        self.fc3_v = nn.Linear(4096, num_classes)
+
+        self.sig = nn.Sigmoid()
+        self.pool = nn.AvgPool2d(kernel_size=2, stride=2)
+        self.dropout = nn.Dropout()
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        # self.globalpool = nn.AdaptiveAvgPool2d((1,1))
+        self.allones = torch.ones(size=(1, 3, 32, 32))
+
+        if init_weights:
+            self._initialize_weights()
+
+    def _initialize_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(
+                    m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+                elif isinstance(m, nn.BatchNorm2d):
+                    nn.init.constant_(m.weight, 1)
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+
+    def get_gate_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        gating_net_layers_ordered["conv1_g"] = self.conv1_g
+        gating_net_layers_ordered["bn1_g"] = self.bn1_g
+
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["bn2_g"] = self.bn2_g
+
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["bn2_g"] = self.bn2_g
+
+        gating_net_layers_ordered["pool1"] = self.pool
+
+        gating_net_layers_ordered["conv3_g"] = self.conv3_g
+        gating_net_layers_ordered["bn3_g"] = self.bn3_g
+
+        gating_net_layers_ordered["conv4_g"] = self.conv4_g
+        gating_net_layers_ordered["bn4_g"] = self.bn4_g
+
+        gating_net_layers_ordered["pool2"] = self.pool
+
+        gating_net_layers_ordered["conv5_g"] = self.conv5_g
+        gating_net_layers_ordered["bn5_g"] = self.bn5_g
+
+        gating_net_layers_ordered["conv6_g"] = self.conv6_g
+        gating_net_layers_ordered["bn6_g"] = self.bn6_g
+
+        gating_net_layers_ordered["conv7_g"] = self.conv7_g
+        gating_net_layers_ordered["bn7_g"] = self.bn7_g
+
+        gating_net_layers_ordered["conv8_g"] = self.conv8_g
+        gating_net_layers_ordered["bn8_g"] = self.bn8_g
+
+        gating_net_layers_ordered["pool3"] = self.pool
+
+        gating_net_layers_ordered["conv9_g"] = self.conv9_g
+        gating_net_layers_ordered["bn9_g"] = self.bn9_g
+
+        gating_net_layers_ordered["conv10_g"] = self.conv10_g
+        gating_net_layers_ordered["bn10_g"] = self.bn10_g
+
+        gating_net_layers_ordered["conv11_g"] = self.conv11_g
+        gating_net_layers_ordered["bn11_g"] = self.bn11_g
+
+        gating_net_layers_ordered["conv12_g"] = self.conv12_g
+        gating_net_layers_ordered["bn12_g"] = self.bn12_g
+
+        gating_net_layers_ordered["pool4"] = self.pool
+
+        gating_net_layers_ordered["conv13_g"] = self.conv13_g
+        gating_net_layers_ordered["bn13_g"] = self.bn13_g
+
+        gating_net_layers_ordered["conv14_g"] = self.conv14_g
+        gating_net_layers_ordered["bn14_g"] = self.bn14_g
+
+        gating_net_layers_ordered["conv15_g"] = self.conv15_g
+        gating_net_layers_ordered["bn15_g"] = self.bn15_g
+
+        gating_net_layers_ordered["conv16_g"] = self.conv16_g
+        gating_net_layers_ordered["bn16_g"] = self.bn16_g
+
+        # gating_net_layers_ordered["avgpool"] = self.avgpool
+
+        # gating_net_layers_ordered["fc1_g"] = self.fc1_g
+        # gating_net_layers_ordered["fc2_g"] = self.fc2_g
+
+        return gating_net_layers_ordered
+
+    def forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        merged_conv_layer_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_layer = None
+        orig_out = x
+        if(self.conv1_g.weight.get_device() < 0):
+            idevice = torch.device("cpu")
+        else:
+            idevice = self.conv1_g.weight.get_device()
+        lay_type = self.conv1_g.weight.dtype
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_layer, _ = merge_layers_operations_in_modules(
+                    layer_obj, current_tensor_size, lay_type, idevice, merged_conv_layer)
+                merged_conv_layer_in_each_layer[layer_name] = merged_conv_layer
+
+                orig_out = layer_obj(orig_out)
+
+                merged_conv_output = merged_conv_layer(x)
+                current_tensor_size = merged_conv_output.size()[1:]
+
+                print("orig_out.size():{} merged_conv_output.size():{}".format(
+                    orig_out.size(), merged_conv_output.size()))
+                assert orig_out.size() == merged_conv_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    orig_out - merged_conv_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return merged_conv_layer_in_each_layer, None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Feature/Gating Network
+        # Layer 1 : 64
+
+        x_g = self.conv1_g(x)
+        x_g = self.bn1_g(x_g)
+        g_1 = self.sig(10*x_g)
+        #x_g = F.relu(x_g)
+
+        # Layer 2: 64
+        x_g = self.conv2_g(x_g)
+        x_g = self.bn2_g(x_g)
+        g_2 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 1
+        x_g = self.pool(x_g)
+
+        # Layer 3 : 128
+        x_g = self.conv3_g(x_g)
+        x_g = self.bn3_g(x_g)
+        g_3 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 4 : 128
+        x_g = self.conv4_g(x_g)
+        x_g = self.bn4_g(x_g)
+        g_4 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 2
+        x_g = self.pool(x_g)
+
+        # Layer 5 : 256
+        x_g = self.conv5_g(x_g)
+        x_g = self.bn5_g(x_g)
+        g_5 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 6 : 256
+        x_g = self.conv6_g(x_g)
+        x_g = self.bn6_g(x_g)
+        g_6 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 7 : 256
+        x_g = self.conv7_g(x_g)
+        x_g = self.bn7_g(x_g)
+        g_7 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 8 : 256
+        x_g = self.conv8_g(x_g)
+        x_g = self.bn8_g(x_g)
+        g_8 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 3
+        x_g = self.pool(x_g)
+
+        # Layer 9 : 512
+        x_g = self.conv9_g(x_g)
+        x_g = self.bn9_g(x_g)
+        g_9 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 10 : 512
+        x_g = self.conv10_g(x_g)
+        x_g = self.bn10_g(x_g)
+        g_10 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 11 : 512
+        x_g = self.conv11_g(x_g)
+        x_g = self.bn11_g(x_g)
+        g_11 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 12 : 512
+        x_g = self.conv12_g(x_g)
+        x_g = self.bn12_g(x_g)
+        g_12 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 4
+        x_g = self.pool(x_g)
+
+        # Layer 13 : 512
+        x_g = self.conv13_g(x_g)
+        x_g = self.bn13_g(x_g)
+        g_13 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 14 : 512
+        x_g = self.conv14_g(x_g)
+        x_g = self.bn14_g(x_g)
+        g_14 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 15 : 512
+        x_g = self.conv15_g(x_g)
+        x_g = self.bn15_g(x_g)
+        g_15 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 16 : 512
+        x_g = self.conv16_g(x_g)
+        x_g = self.bn16_g(x_g)
+        g_16 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 5
+        # x_g = self.pool(x_g)
+
+        x_g = self.avgpool(x_g)
+        x_g = torch.flatten(x_g, 1)
+        x_g = self.fc1_g(x_g)
+        g_17 = self.sig(10*x_g)
+        #x = F.relu(x)
+        #x_g = self.dropout(x_g)
+        x_g = self.fc2_g(x_g)
+        g_18 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Value Network
+
+        # Layer 1 : 64
+        x_v = self.conv1_v(self.allones.cuda())
+        x_v = self.bn1_v(x_v)
+        x_v = x_v*g_1
+        #x_v = F.relu(x_v)
+
+        # Layer 2: 64
+        x_v = self.conv2_v(x_v)
+        x_v = self.bn2_v(x_v)
+        x_v = x_v*g_2
+        #x = F.relu(x)
+
+        # Max-Pool : 1
+        x_v = self.pool(x_v)
+
+        # Layer 3 : 128
+        x_v = self.conv3_v(x_v)
+        x_v = self.bn3_v(x_v)
+        x_v = x_v*g_3
+        #x = F.relu(x)
+
+        # Layer 4 : 128
+        x_v = self.conv4_v(x_v)
+        x_v = self.bn4_v(x_v)
+        x_v = x_v*g_4
+        #x = F.relu(x)
+
+        # Max-Pool : 2
+        x_v = self.pool(x_v)
+
+        # Layer 5 : 256
+        x_v = self.conv5_v(x_v)
+        x_v = self.bn5_v(x_v)
+        x_v = x_v*g_5
+        #x = F.relu(x)
+
+        # Layer 6 : 256
+        x_v = self.conv6_v(x_v)
+        x_v = self.bn6_v(x_v)
+        x_v = x_v*g_6
+        #x = F.relu(x)
+
+        # Layer 7 : 256
+        x_v = self.conv7_v(x_v)
+        x_v = self.bn7_v(x_v)
+        x_v = x_v*g_7
+        #x = F.relu(x)
+
+        # Layer 8 : 256
+        x_v = self.conv8_v(x_v)
+        x_v = self.bn8_v(x_v)
+        x_v = x_v*g_8
+        #x = F.relu(x)
+
+        # Max-Pool : 3
+        x_v = self.pool(x_v)
+
+        # Layer 9 : 512
+        x_v = self.conv9_v(x_v)
+        x_v = self.bn9_v(x_v)
+        x_v = x_v*g_9
+        #x = F.relu(x)
+
+        # Layer 10 : 512
+        x_v = self.conv10_v(x_v)
+        x_v = self.bn10_v(x_v)
+        x_v = x_v*g_10
+        #x = F.relu(x)
+
+        # Layer 11 : 512
+        x_v = self.conv11_v(x_v)
+        x_v = self.bn11_v(x_v)
+        x_v = x_v*g_11
+        #x = F.relu(x)
+
+        # Layer 12 : 512
+        x_v = self.conv12_v(x_v)
+        x_v = self.bn12_v(x_v)
+        x_v = x_v*g_12
+        #x = F.relu(x)
+
+        # Max-Pool : 4
+        x_v = self.pool(x_v)
+
+        # Layer 13 : 512
+        x_v = self.conv13_v(x_v)
+        x_v = self.bn13_v(x_v)
+        x_v = x_v*g_13
+        #x = F.relu(x)
+
+        # Layer 14 : 512
+        x_v = self.conv14_v(x_v)
+        x_v = self.bn14_v(x_v)
+        x_v = x_v*g_14
+        #x = F.relu(x)
+
+        # Layer 15 : 512
+        x_v = self.conv15_v(x_v)
+        x_v = self.bn15_v(x_v)
+        x_v = x_v*g_15
+        #x = F.relu(x)
+
+        # Layer 16 : 512
+        x_v = self.conv16_v(x_v)
+        x_v = self.bn16_v(x_v)
+        x_v = x_v*g_16
+        #x = F.relu(x)
+
+        # Max-Pool : 5
+        x_v = self.avgpool(x_v)
+
+        x_v = torch.flatten(x_v, 1)
+        x_v = self.fc1_v(x_v)
+        x_v = x_v*g_17
+
+        #x_v = self.dropout(x_v)
+        x_v = self.fc2_v(x_v)
+        x_v = x_v*g_18
+        #x = F.relu(x)
+        #x_v = self.dropout(x_v)
+        x_v = self.fc3_v(x_v)
+
+        return x_v
+
+
+class st1_pad2_vgg16_bn_wo_bias(nn.Module):
+    def __init__(self, init_weights: bool = True, num_classes: int = 10) -> None:
+        super().__init__()
+        self.conv1_g = nn.Conv2d(3, 64, kernel_size=3, padding=2, bias=False)
+        self.conv2_g = nn.Conv2d(64, 64, kernel_size=3, padding=2, bias=False)
+        self.conv3_g = nn.Conv2d(64, 128, kernel_size=3, padding=2, bias=False)
+        self.conv4_g = nn.Conv2d(
+            128, 128, kernel_size=3, padding=2, bias=False)
+        self.conv5_g = nn.Conv2d(
+            128, 256, kernel_size=3, padding=2, bias=False)
+        self.conv6_g = nn.Conv2d(
+            256, 256, kernel_size=3, padding=2, bias=False)
+        self.conv7_g = nn.Conv2d(
+            256, 256, kernel_size=3, padding=2, bias=False)
+        self.conv8_g = nn.Conv2d(
+            256, 256, kernel_size=3, padding=2, bias=False)
+        self.conv9_g = nn.Conv2d(
+            256, 512, kernel_size=3, padding=2, bias=False)
+        self.conv10_g = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv11_g = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv12_g = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv13_g = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv14_g = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv15_g = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv16_g = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+
+        self.conv1_v = nn.Conv2d(3, 64, kernel_size=3, padding=2, bias=False)
+        self.conv2_v = nn.Conv2d(64, 64, kernel_size=3, padding=2, bias=False)
+        self.conv3_v = nn.Conv2d(64, 128, kernel_size=3, padding=2, bias=False)
+        self.conv4_v = nn.Conv2d(
+            128, 128, kernel_size=3, padding=2, bias=False)
+        self.conv5_v = nn.Conv2d(
+            128, 256, kernel_size=3, padding=2, bias=False)
+        self.conv6_v = nn.Conv2d(
+            256, 256, kernel_size=3, padding=2, bias=False)
+        self.conv7_v = nn.Conv2d(
+            256, 256, kernel_size=3, padding=2, bias=False)
+        self.conv8_v = nn.Conv2d(
+            256, 256, kernel_size=3, padding=2, bias=False)
+        self.conv9_v = nn.Conv2d(
+            256, 512, kernel_size=3, padding=2, bias=False)
+        self.conv10_v = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv11_v = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv12_v = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv13_v = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv14_v = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv15_v = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+        self.conv16_v = nn.Conv2d(
+            512, 512, kernel_size=3, padding=2, bias=False)
+
+        self.bn1_g = nn.BatchNorm2d(64)
+        self.bn2_g = nn.BatchNorm2d(64)
+        self.bn3_g = nn.BatchNorm2d(128)
+        self.bn4_g = nn.BatchNorm2d(128)
+
+        self.bn5_g = nn.BatchNorm2d(256)
+        self.bn6_g = nn.BatchNorm2d(256)
+        self.bn7_g = nn.BatchNorm2d(256)
+        self.bn8_g = nn.BatchNorm2d(256)
+
+        self.bn9_g = nn.BatchNorm2d(512)
+        self.bn10_g = nn.BatchNorm2d(512)
+        self.bn11_g = nn.BatchNorm2d(512)
+        self.bn12_g = nn.BatchNorm2d(512)
+
+        self.bn13_g = nn.BatchNorm2d(512)
+        self.bn14_g = nn.BatchNorm2d(512)
+        self.bn15_g = nn.BatchNorm2d(512)
+        self.bn16_g = nn.BatchNorm2d(512)
+
+        self.bn1_v = nn.BatchNorm2d(64)
+        self.bn2_v = nn.BatchNorm2d(64)
+        self.bn3_v = nn.BatchNorm2d(128)
+        self.bn4_v = nn.BatchNorm2d(128)
+
+        self.bn5_v = nn.BatchNorm2d(256)
+        self.bn6_v = nn.BatchNorm2d(256)
+        self.bn7_v = nn.BatchNorm2d(256)
+        self.bn8_v = nn.BatchNorm2d(256)
+
+        self.bn9_v = nn.BatchNorm2d(512)
+        self.bn10_v = nn.BatchNorm2d(512)
+        self.bn11_v = nn.BatchNorm2d(512)
+        self.bn12_v = nn.BatchNorm2d(512)
+
+        self.bn13_v = nn.BatchNorm2d(512)
+        self.bn14_v = nn.BatchNorm2d(512)
+        self.bn15_v = nn.BatchNorm2d(512)
+        self.bn16_v = nn.BatchNorm2d(512)
+
+        self.fc1_g = nn.Linear(512*1*1, 4096)
+        self.fc2_g = nn.Linear(4096, 4096)
+
+        self.fc1_v = nn.Linear(512*1*1, 4096)
+        self.fc2_v = nn.Linear(4096, 4096)
+        self.fc3_v = nn.Linear(4096, num_classes)
+
+        self.sig = nn.Sigmoid()
+        self.pool = nn.AvgPool2d(kernel_size=2, stride=1, padding=1)
+        self.dropout = nn.Dropout()
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        # self.globalpool = nn.AdaptiveAvgPool2d((1,1))
+        self.allones = torch.ones(size=(1, 3, 32, 32))
+
+        if init_weights:
+            self._initialize_weights()
+
+    def _initialize_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(
+                    m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+                elif isinstance(m, nn.BatchNorm2d):
+                    nn.init.constant_(m.weight, 1)
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+
+    def get_gate_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        gating_net_layers_ordered["conv1_g"] = self.conv1_g
+        gating_net_layers_ordered["bn1_g"] = self.bn1_g
+
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["bn2_g"] = self.bn2_g
+
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["bn2_g"] = self.bn2_g
+
+        gating_net_layers_ordered["pool1"] = self.pool
+
+        gating_net_layers_ordered["conv3_g"] = self.conv3_g
+        gating_net_layers_ordered["bn3_g"] = self.bn3_g
+
+        gating_net_layers_ordered["conv4_g"] = self.conv4_g
+        gating_net_layers_ordered["bn4_g"] = self.bn4_g
+
+        gating_net_layers_ordered["pool2"] = self.pool
+
+        gating_net_layers_ordered["conv5_g"] = self.conv5_g
+        gating_net_layers_ordered["bn5_g"] = self.bn5_g
+
+        gating_net_layers_ordered["conv6_g"] = self.conv6_g
+        gating_net_layers_ordered["bn6_g"] = self.bn6_g
+
+        gating_net_layers_ordered["conv7_g"] = self.conv7_g
+        gating_net_layers_ordered["bn7_g"] = self.bn7_g
+
+        gating_net_layers_ordered["conv8_g"] = self.conv8_g
+        gating_net_layers_ordered["bn8_g"] = self.bn8_g
+
+        gating_net_layers_ordered["pool3"] = self.pool
+
+        gating_net_layers_ordered["conv9_g"] = self.conv9_g
+        gating_net_layers_ordered["bn9_g"] = self.bn9_g
+
+        gating_net_layers_ordered["conv10_g"] = self.conv10_g
+        gating_net_layers_ordered["bn10_g"] = self.bn10_g
+
+        gating_net_layers_ordered["conv11_g"] = self.conv11_g
+        gating_net_layers_ordered["bn11_g"] = self.bn11_g
+
+        gating_net_layers_ordered["conv12_g"] = self.conv12_g
+        gating_net_layers_ordered["bn12_g"] = self.bn12_g
+
+        gating_net_layers_ordered["pool4"] = self.pool
+
+        gating_net_layers_ordered["conv13_g"] = self.conv13_g
+        gating_net_layers_ordered["bn13_g"] = self.bn13_g
+
+        gating_net_layers_ordered["conv14_g"] = self.conv14_g
+        gating_net_layers_ordered["bn14_g"] = self.bn14_g
+
+        gating_net_layers_ordered["conv15_g"] = self.conv15_g
+        gating_net_layers_ordered["bn15_g"] = self.bn15_g
+
+        gating_net_layers_ordered["conv16_g"] = self.conv16_g
+        gating_net_layers_ordered["bn16_g"] = self.bn16_g
+
+        # gating_net_layers_ordered["avgpool"] = self.avgpool
+
+        # gating_net_layers_ordered["fc1_g"] = self.fc1_g
+        # gating_net_layers_ordered["fc2_g"] = self.fc2_g
+
+        return gating_net_layers_ordered
+
+    def forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        merged_conv_layer_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_layer = None
+        orig_out = x
+        if(self.conv1_g.weight.get_device() < 0):
+            idevice = torch.device("cpu")
+        else:
+            idevice = self.conv1_g.weight.get_device()
+        lay_type = self.conv1_g.weight.dtype
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_layer, _ = merge_layers_operations_in_modules(
+                    layer_obj, current_tensor_size, lay_type, idevice, merged_conv_layer)
+                merged_conv_layer_in_each_layer[layer_name] = merged_conv_layer
+
+                orig_out = layer_obj(orig_out)
+
+                merged_conv_output = merged_conv_layer(x)
+                current_tensor_size = merged_conv_output.size()[1:]
+
+                print("orig_out.size():{} merged_conv_output.size():{}".format(
+                    orig_out.size(), merged_conv_output.size()))
+                assert orig_out.size() == merged_conv_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    orig_out - merged_conv_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return merged_conv_layer_in_each_layer, None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Feature/Gating Network
+        # Layer 1 : 64
+
+        x_g = self.conv1_g(x)
+        x_g = self.bn1_g(x_g)
+        g_1 = self.sig(10*x_g)
+        #x_g = F.relu(x_g)
+
+        # Layer 2: 64
+        x_g = self.conv2_g(x_g)
+        x_g = self.bn2_g(x_g)
+        g_2 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 1
+        x_g = self.pool(x_g)
+
+        # Layer 3 : 128
+        x_g = self.conv3_g(x_g)
+        x_g = self.bn3_g(x_g)
+        g_3 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 4 : 128
+        x_g = self.conv4_g(x_g)
+        x_g = self.bn4_g(x_g)
+        g_4 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 2
+        x_g = self.pool(x_g)
+
+        # Layer 5 : 256
+        x_g = self.conv5_g(x_g)
+        x_g = self.bn5_g(x_g)
+        g_5 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 6 : 256
+        x_g = self.conv6_g(x_g)
+        x_g = self.bn6_g(x_g)
+        g_6 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 7 : 256
+        x_g = self.conv7_g(x_g)
+        x_g = self.bn7_g(x_g)
+        g_7 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 8 : 256
+        x_g = self.conv8_g(x_g)
+        x_g = self.bn8_g(x_g)
+        g_8 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 3
+        x_g = self.pool(x_g)
+
+        # Layer 9 : 512
+        x_g = self.conv9_g(x_g)
+        x_g = self.bn9_g(x_g)
+        g_9 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 10 : 512
+        x_g = self.conv10_g(x_g)
+        x_g = self.bn10_g(x_g)
+        g_10 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 11 : 512
+        x_g = self.conv11_g(x_g)
+        x_g = self.bn11_g(x_g)
+        g_11 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 12 : 512
+        x_g = self.conv12_g(x_g)
+        x_g = self.bn12_g(x_g)
+        g_12 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 4
+        x_g = self.pool(x_g)
+
+        # Layer 13 : 512
+        x_g = self.conv13_g(x_g)
+        x_g = self.bn13_g(x_g)
+        g_13 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 14 : 512
+        x_g = self.conv14_g(x_g)
+        x_g = self.bn14_g(x_g)
+        g_14 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 15 : 512
+        x_g = self.conv15_g(x_g)
+        x_g = self.bn15_g(x_g)
+        g_15 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Layer 16 : 512
+        x_g = self.conv16_g(x_g)
+        x_g = self.bn16_g(x_g)
+        g_16 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Max-Pool : 5
+        # x_g = self.pool(x_g)
+
+        x_g = self.avgpool(x_g)
+        x_g = torch.flatten(x_g, 1)
+        x_g = self.fc1_g(x_g)
+        g_17 = self.sig(10*x_g)
+        #x = F.relu(x)
+        #x_g = self.dropout(x_g)
+        x_g = self.fc2_g(x_g)
+        g_18 = self.sig(10*x_g)
+        #x = F.relu(x)
+
+        # Value Network
+
+        # Layer 1 : 64
+        x_v = self.conv1_v(self.allones.cuda())
+        x_v = self.bn1_v(x_v)
+        x_v = x_v*g_1
+        #x_v = F.relu(x_v)
+
+        # Layer 2: 64
+        x_v = self.conv2_v(x_v)
+        x_v = self.bn2_v(x_v)
+        x_v = x_v*g_2
+        #x = F.relu(x)
+
+        # Max-Pool : 1
+        x_v = self.pool(x_v)
+
+        # Layer 3 : 128
+        x_v = self.conv3_v(x_v)
+        x_v = self.bn3_v(x_v)
+        x_v = x_v*g_3
+        #x = F.relu(x)
+
+        # Layer 4 : 128
+        x_v = self.conv4_v(x_v)
+        x_v = self.bn4_v(x_v)
+        x_v = x_v*g_4
+        #x = F.relu(x)
+
+        # Max-Pool : 2
+        x_v = self.pool(x_v)
+
+        # Layer 5 : 256
+        x_v = self.conv5_v(x_v)
+        x_v = self.bn5_v(x_v)
+        x_v = x_v*g_5
+        #x = F.relu(x)
+
+        # Layer 6 : 256
+        x_v = self.conv6_v(x_v)
+        x_v = self.bn6_v(x_v)
+        x_v = x_v*g_6
+        #x = F.relu(x)
+
+        # Layer 7 : 256
+        x_v = self.conv7_v(x_v)
+        x_v = self.bn7_v(x_v)
+        x_v = x_v*g_7
+        #x = F.relu(x)
+
+        # Layer 8 : 256
+        x_v = self.conv8_v(x_v)
+        x_v = self.bn8_v(x_v)
+        x_v = x_v*g_8
+        #x = F.relu(x)
+
+        # Max-Pool : 3
+        x_v = self.pool(x_v)
+
+        # Layer 9 : 512
+        x_v = self.conv9_v(x_v)
+        x_v = self.bn9_v(x_v)
+        x_v = x_v*g_9
+        #x = F.relu(x)
+
+        # Layer 10 : 512
+        x_v = self.conv10_v(x_v)
+        x_v = self.bn10_v(x_v)
+        x_v = x_v*g_10
+        #x = F.relu(x)
+
+        # Layer 11 : 512
+        x_v = self.conv11_v(x_v)
+        x_v = self.bn11_v(x_v)
+        x_v = x_v*g_11
+        #x = F.relu(x)
+
+        # Layer 12 : 512
+        x_v = self.conv12_v(x_v)
+        x_v = self.bn12_v(x_v)
+        x_v = x_v*g_12
+        #x = F.relu(x)
+
+        # Max-Pool : 4
+        x_v = self.pool(x_v)
+
+        # Layer 13 : 512
+        x_v = self.conv13_v(x_v)
+        x_v = self.bn13_v(x_v)
+        x_v = x_v*g_13
+        #x = F.relu(x)
+
+        # Layer 14 : 512
+        x_v = self.conv14_v(x_v)
+        x_v = self.bn14_v(x_v)
+        x_v = x_v*g_14
+        #x = F.relu(x)
+
+        # Layer 15 : 512
+        x_v = self.conv15_v(x_v)
+        x_v = self.bn15_v(x_v)
+        x_v = x_v*g_15
+        #x = F.relu(x)
+
+        # Layer 16 : 512
+        x_v = self.conv16_v(x_v)
+        x_v = self.bn16_v(x_v)
+        x_v = x_v*g_16
+        #x = F.relu(x)
+        # print("x_v", x_v.size())
 
         # Max-Pool : 5
         x_v = self.avgpool(x_v)
@@ -1791,7 +2750,7 @@ class TorchVision_Deep_Gating_Network(nn.Module):
 
 
 class TorchVision_DLGN(nn.Module):
-    def __init__(self, arch_type, input_channel, beta=4, seed=2022, num_classes=1000, pretrained=False):
+    def __init__(self, arch_type, input_channel, beta=4, seed=2022, num_classes=1000, pretrained=False, is_convert_maxpool_to_avgpool=True):
         super().__init__()
         torch.manual_seed(seed)
         self.num_classes = num_classes
@@ -1800,6 +2759,7 @@ class TorchVision_DLGN(nn.Module):
         self.beta = beta
         self.seed = seed
         self.pretrained = pretrained
+        self.is_convert_maxpool_to_avgpool = is_convert_maxpool_to_avgpool
 
         self.initialize_network()
 
@@ -1810,7 +2770,7 @@ class TorchVision_DLGN(nn.Module):
             self.gating_node_outputs[str(each_device)] = OrderedDict()
 
         self.gating_network = TorchVision_Gating_Network(
-            self.arch_type, self.input_channel, pretrained=self.pretrained)
+            self.arch_type, self.input_channel, pretrained=self.pretrained, is_convert_maxpool_to_avgpool=self.is_convert_maxpool_to_avgpool)
         print("self.gating_network", self.gating_network)
         print("Gating net params:", sum(p.numel()
               for p in self.gating_network.parameters()))
@@ -1868,8 +2828,9 @@ class TorchVision_DLGN(nn.Module):
 
 
 class TorchVision_Gating_Network(nn.Module):
-    def __init__(self, arch_type, input_channel, pretrained=False):
+    def __init__(self, arch_type, input_channel, pretrained=False, is_convert_maxpool_to_avgpool=True):
         super().__init__()
+        self.is_convert_maxpool_to_avgpool = is_convert_maxpool_to_avgpool
         self.arch_type = arch_type
         self.input_channel = input_channel
         self.pretrained = pretrained
@@ -1897,7 +2858,8 @@ class TorchVision_Gating_Network(nn.Module):
             self.model_instance, last_relu_name)
         # Replace relu activations with Identity functions
         convert_relu_to_identity(self.model_instance)
-        convert_maxpool_to_avgpool(self.model_instance)
+        if(self.is_convert_maxpool_to_avgpool):
+            convert_maxpool_to_avgpool(self.model_instance)
 
         self.list_of_modules.append(self.model_instance)
 
@@ -2091,13 +3053,24 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
         net = DGN_FC_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
     elif(model_arch_type == "dlgn__vgg16_bn__"):
-        net = vgg16_bn(num_classes=num_classes)
+        allones = np.ones((1, 3, 32, 32)).astype(np.float32)
+        net = vgg16_bn(allones, num_classes=num_classes)
+    elif(model_arch_type == "dlgn__pad2_vgg16_bn__"):
+        allones = np.ones((1, 3, 32, 32)).astype(np.float32)
+        net = pad2_vgg16_bn()
+    elif(model_arch_type == "dlgn__st1_pad2_vgg16_bn_wo_bias__"):
+        allones = np.ones((1, 3, 32, 32)).astype(np.float32)
+        net = st1_pad2_vgg16_bn_wo_bias()
     elif(model_arch_type == "dlgn__googlenet__"):
         net = Custom_GoogLeNet(
             "dlgn", num_classes, aux_logits)
     elif(model_arch_type == "dgn__googlenet__"):
         net = Custom_GoogLeNet(
             "dgn", num_classes, aux_logits)
+    elif(model_arch_type == "dlgn__gatempool_resnet18__"):
+        model_arch_type = model_arch_type.replace("gatempool_", "")
+        net = TorchVision_DLGN(
+            model_arch_type, inp_channel, seed=seed, num_classes=num_classes, pretrained=pretrained, is_convert_maxpool_to_avgpool=False)
 
     # If no specific implementation was found for model arch type, then try to instantiate from torchvision
     if(net is None):

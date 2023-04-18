@@ -26,6 +26,7 @@ from conv4_models import get_model_instance_from_dataset, get_model_save_path
 temp_names = sorted(name for name in models.__dict__
                     if name.islower() and not name.startswith("__")
                     and callable(models.__dict__[name]))
+temp_names.append("gatempool_resnet18")
 prefixes = ["dlgn", "dgn", "dnn"]
 model_names = temp_names.copy()
 for each_pf in prefixes:
@@ -318,6 +319,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     final_model_save_path = get_model_save_path(
         args.arch+"_PRET_"+str(args.pretrained), dataset, args.seed)
+    print("final_model_save_path ",final_model_save_path)
 
     is_log_wandb = not(wand_project_name is None)
     if(is_log_wandb):

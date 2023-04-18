@@ -16,11 +16,13 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 import numpy as np
-from conv4_models import get_model_instance_from_dataset, get_model_save_path
+from conv4_models import get_model_instance_from_dataset, get_model_save_path, vgg16_bn, pad2_vgg16_bn, st1_pad2_vgg16_bn_wo_bias
 
 temp_names = sorted(name for name in models.__dict__
                     if name.islower() and not name.startswith("__") and "vgg" in name
                     and callable(models.__dict__[name]))
+temp_names.append("pad2_vgg16_bn")
+temp_names.append("st1_pad2_vgg16_bn_wo_bias")
 prefixes = ["dlgn", "dgn", "dnn"]
 model_names = temp_names.copy()
 for each_pf in prefixes:
@@ -349,11 +351,16 @@ def main():
     elif(args.arch == "dlgn__vgg16_bn__"):
         allones = np.ones((1, 3, 32, 32)).astype(np.float32)
         model = vgg16_bn(allones)
+    elif(args.arch == "dlgn__pad2_vgg16_bn__"):
+        model = pad2_vgg16_bn()
+    elif(args.arch == "dlgn__st1_pad2_vgg16_bn_wo_bias__"):
+        model = st1_pad2_vgg16_bn_wo_bias()
     # model = get_model_instance_from_dataset(
     #     dataset=dataset, model_arch_type=args.arch, num_classes=10, pretrained=args.pretrained)
 
-    # model = torch.nn.DataParallel(model)
-    model = model.to(av_device)
+    model = torch.nn.DataParallel(model).cuda()
+    print("model", model)
+    # model = model.to(av_device)
 
     # define loss function (criterion) and pptimizer
     criterion = nn.CrossEntropyLoss().to(av_device)
