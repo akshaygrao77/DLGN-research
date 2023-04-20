@@ -141,21 +141,22 @@ def segregate_classes(model, trainloader, testloader, num_classes, is_template_i
     input_data_list_per_class = None
 
     if(is_template_image_on_train):
-        train_repdicted_input_data_list_per_class = segregate_input_over_labels(
-            model, trainloader, num_classes)
+        if(not is_class_segregation_on_ground_truth):
+            train_repdicted_input_data_list_per_class = segregate_input_over_labels(
+                model, trainloader, num_classes)
 
-        print("train Model segregation of classes:")
-        print_segregation_info(train_repdicted_input_data_list_per_class)
-
-        train_true_input_data_list_per_class = true_segregation(
-            trainloader, num_classes)
-
-        print("trainset Ground truth segregation of classes:")
-        print_segregation_info(train_true_input_data_list_per_class)
-        if(is_class_segregation_on_ground_truth):
-            input_data_list_per_class = train_true_input_data_list_per_class
-        else:
+            print("train Model segregation of classes:")
+            print_segregation_info(train_repdicted_input_data_list_per_class)
             input_data_list_per_class = train_repdicted_input_data_list_per_class
+        else:
+            train_true_input_data_list_per_class = true_segregation(
+                trainloader, num_classes)
+
+            print("trainset Ground truth segregation of classes:")
+            print_segregation_info(train_true_input_data_list_per_class)
+
+            input_data_list_per_class = train_true_input_data_list_per_class
+
     else:
         test_predicted_input_data_list_per_class = segregate_input_over_labels(
             model, testloader, num_classes)
@@ -259,6 +260,7 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
 
 def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):
     transform_list = []
+    test_transform_list = []
     if(dataset_config.name == 'cifar10'):
         if(model_arch_type == 'cifar10_vgg_dlgn_16'):
             transform_list = [
@@ -365,7 +367,15 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
             ]
-
+        elif(model_arch_type in ['dlgn__vgg16_bn__', 'dlgn__pad2_vgg16_bn__', 'dlgn__st1_pad2_vgg16_bn_wo_bias__', 'dlgn__st1_pad1_vgg16_bn_wo_bias__']):
+            transform_list = [
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]
+            test_transform_list = [
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]
             # transform = transforms.Compose([
             #     transforms.ToTensor()])
 
@@ -379,6 +389,11 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
         if(transform is None):
             return None, None, None
 
+        if(len(test_transform_list) == 0):
+            test_transform = transform
+        else:
+            test_transform = transforms.Compose(test_transform_list)
+
         trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                                 download=True, transform=transform)
         if(is_split_validation):
@@ -386,7 +401,7 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
                 0.9 * len(trainset)), len(trainset) - (math.ceil(0.9 * len(trainset)))])
 
         testset = torchvision.datasets.CIFAR10(root='./data', train=False,
-                                               download=False, transform=transform)
+                                               download=False, transform=test_transform)
 
         return trainset, val_set, testset
 

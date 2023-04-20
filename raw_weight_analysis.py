@@ -4,7 +4,7 @@ import os
 import numpy as np
 from utils.weight_utils import get_gating_layer_weights
 from utils.visualise_utils import generate_list_of_plain_images_from_data, generate_plain_image, generate_plain_image_data, save_image, recreate_image, generate_plot_pca_variance_curve, determine_row_col_from_features
-from conv4_models import get_model_instance_from_dataset
+from conv4_models import get_model_instance_from_dataset, get_img_size
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader, seed_worker, true_segregation
 from structure.generic_structure import PerClassDataset, CustomSimpleDataset
 from structure.dlgn_conv_config_structure import DatasetConfig
@@ -14,7 +14,7 @@ from adversarial_attacks_tester import load_or_generate_adv_examples, generate_a
 import torchvision.transforms as T
 import cv2
 from configs.dlgn_conv_config import HardRelu
-import copy
+from collections import OrderedDict
 import cv2
 from sklearn.decomposition import PCA
 
@@ -59,7 +59,16 @@ def standarize_list_of_numpy(list_of_np_array):
     return list_of_np_array
 
 
-def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_expvar, top_pca_components, pca_variance_curve):
+def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_expvar, top_pca_components, pca_variance_curve, lweights):
+    merged_weights_in_each_layer = lweights
+    if(not isinstance(lweights, OrderedDict)):
+        merged_weights_in_each_layer = OrderedDict()
+        for i in range(len(lweights)):
+            curr_weights = lweights[i]
+            if(not isinstance(curr_weights, torch.Tensor)):
+                curr_weights = torch.tensor(curr_weights)
+            merged_weights_in_each_layer[str(i)] = curr_weights
+
     save_folder = root_save_prefix + "/" + \
         str(final_postfix_for_save)+"/PCA_INFO/"
     if not os.path.exists(save_folder):
@@ -71,7 +80,9 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
         os.makedirs(txt_save_folder)
 
     f_outs_DFT_norms = []
-    for layer_num in range(len(top_pca_components)):
+    for layer_num in top_pca_components:
+        current_merged_weight_size = merged_weights_in_each_layer[layer_num].size(
+        )
         current_layer_pca_comp = top_pca_components[layer_num]
         cur_k_or_var = ret_k_or_expvar[layer_num]
 
@@ -81,38 +92,47 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
             pc_inf = "_K_"+str(cur_k_or_var)
 
         print("PCA Component {} size:{}".format(
-            final_postfix_for_save, current_layer_pca_comp.shape))
+            final_postfix_for_save+layer_num, current_layer_pca_comp.shape))
 
         current_layer_pca_comp = np.transpose(current_layer_pca_comp, (1, 0))
-        k1, k2 = determine_row_col_from_features(
-            current_layer_pca_comp.shape[1])
+        # k1, k2 = determine_row_col_from_features(
+        #     current_layer_pca_comp.shape[1])
         current_layer_pca_comp = np.reshape(
-            current_layer_pca_comp, (current_layer_pca_comp.shape[0], k1, k2))
+            current_layer_pca_comp, (current_layer_pca_comp.shape[0], current_merged_weight_size[1], current_merged_weight_size[2], current_merged_weight_size[3]))
         print("PCA Component {} after resize size:{}".format(
-            final_postfix_for_save, current_layer_pca_comp.shape))
+            final_postfix_for_save+layer_num, current_layer_pca_comp.shape))
 
         if(isinstance(current_layer_pca_comp, np.ndarray)):
             current_layer_pca_comp = torch.from_numpy(
                 current_layer_pca_comp).to(av_device)
 
-        curr_chanl_DFT_outputs = None
-        for current_indx_cur_lay_pca_comp in current_layer_pca_comp:
-            pad_factor = 5
-            raw_dft_out = generate_centralized_DTimeFT(
-                current_indx_cur_lay_pca_comp, pad_factor)
+        curr_fil_DFT_outputs = None
+        for current_filt_cur_lay_pca_comp in current_layer_pca_comp:
+            curr_chanl_DFT_outputs = None
+            for current_indx_cur_lay_pca_comp in current_filt_cur_lay_pca_comp:
+                outsizereq = 50
+                raw_dft_out = generate_centralized_DTimeFT(
+                    current_indx_cur_lay_pca_comp, outsizereq)
 
-            for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
-            std01_vis_dft_out = normalize_in_range_01(
-                for_vis_dft_out)
-            if(curr_chanl_DFT_outputs is None):
-                curr_chanl_DFT_outputs = torch.unsqueeze(std01_vis_dft_out, 0)
+                for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
+                std01_vis_dft_out = normalize_in_range_01(
+                    for_vis_dft_out)
+                if(curr_chanl_DFT_outputs is None):
+                    curr_chanl_DFT_outputs = torch.unsqueeze(
+                        std01_vis_dft_out, 0)
+                else:
+                    curr_chanl_DFT_outputs = torch.vstack(
+                        (curr_chanl_DFT_outputs, torch.unsqueeze(std01_vis_dft_out, 0)))
+            if(curr_fil_DFT_outputs is None):
+                curr_fil_DFT_outputs = torch.unsqueeze(
+                    curr_chanl_DFT_outputs, 0)
             else:
-                curr_chanl_DFT_outputs = torch.vstack(
-                    (curr_chanl_DFT_outputs, torch.unsqueeze(std01_vis_dft_out, 0)))
+                curr_fil_DFT_outputs = torch.vstack(
+                    (curr_fil_DFT_outputs, torch.unsqueeze(curr_chanl_DFT_outputs, 0)))
 
-        f_outs_DFT_norms.append(curr_chanl_DFT_outputs)
+        f_outs_DFT_norms.append(curr_fil_DFT_outputs)
 
-    for i in range(len(top_pca_components)):
+    for i in top_pca_components:
         current_pca_comp_np = top_pca_components[i]
 
         print("Norm of {} of layer:{} => {}".format(
@@ -122,7 +142,7 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
             final_postfix_for_save, i, current_pca_comp_np))
 
     with open(txt_save_folder+"raw_pca_component"+str(pc_inf)+".txt", "w") as myfile:
-        for l_ind in range(len(top_pca_components)):
+        for l_ind in top_pca_components:
             curr_layer = top_pca_components[l_ind]
             myfile.write(
                 "\n ************************************ Next Layer:{} size:{} *********************************** \n".format(l_ind, curr_layer.shape))
@@ -134,7 +154,7 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
 
     with open(txt_save_folder+"formatted_raw_pca_component"+str(pc_inf)+".txt", "w") as f:
         f.write("\n ************************************ Next Layer *********************************** \n".join(
-            "\n".join(map(str, generate_plain_image_data(np.squeeze(x)))) for x in top_pca_components))
+            "\n".join(map(str, generate_plain_image_data(np.squeeze(x)))) for _, x in top_pca_components.items()))
 
     is_all_3D_DFTs = True
     ind = 0
@@ -179,41 +199,48 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
     generate_plot_pca_variance_curve(pca_variance_curve, save_folder+"PCA_var_curve.jpg",
                                      "Number of components", "Cumulative Explained Variance")
 
-    for i in range(len(top_pca_components)):
+    for i, (key, val) in enumerate(top_pca_components.items()):
+        current_merged_weight_size = merged_weights_in_each_layer[key].size()
         current_layer_DFT = f_outs_DFT_norms[i]
-        current_pca_comp_np = top_pca_components[i]
-        cur_k_or_var = ret_k_or_expvar[i]
+        current_pca_comp_np = top_pca_components[key]
+        cur_k_or_var = ret_k_or_expvar[key]
 
         current_pca_comp_np = np.transpose(current_pca_comp_np, (1, 0))
-        k1, k2 = determine_row_col_from_features(current_pca_comp_np.shape[1])
+        # k1, k2 = determine_row_col_from_features(current_pca_comp_np.shape[1])
         current_pca_comp_np = np.reshape(
-            current_pca_comp_np, (current_pca_comp_np.shape[0], k1, k2))
+            current_pca_comp_np, (current_pca_comp_np.shape[0], current_merged_weight_size[1], current_merged_weight_size[2], current_merged_weight_size[3]))
 
         if(cur_k_or_var < 1):
             pc_inf = "_VAR_"+str(cur_k_or_var)
         else:
             pc_inf = "_K_"+str(cur_k_or_var)
 
-        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"/" + \
+        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"_"+str(key)+"/" + \
             "DFT_filter_pca_components"+str(pc_inf)+"_*.jpg"
         generate_list_of_plain_images_from_data(
             current_layer_DFT, save_each_img_path=current_full_img_save_path, is_standarize=False)
         current_pca_comp_np = np.squeeze(current_pca_comp_np)
-        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"/" + \
+        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"_"+str(key)+"/" + \
             "pca_components"+str(pc_inf)+"_*.jpg"
         generate_list_of_plain_images_from_data(
             current_pca_comp_np, save_each_img_path=current_full_img_save_path, is_standarize=False)
         generate_plain_image(
-            current_pca_comp_np, save_folder+"layer_num_"+str(i)+"_sh"+str(current_pca_comp_np.shape)+".jpg", is_standarize=False)
+            current_pca_comp_np, save_folder+"layer_num_"+str(i)+"_"+str(key)+"_sh"+str(current_pca_comp_np.shape)+".jpg", is_standarize=False)
         current_layer_DFT = np.squeeze(current_layer_DFT)
         generate_plain_image(
-            current_layer_DFT, save_folder+"DFT_lay_num_"+str(i)+"_sh"+str(current_layer_DFT.shape)+".jpg", is_standarize=False)
+            current_layer_DFT, save_folder+"DFT_lay_num_"+str(i)+"_"+str(key)+"_sh"+str(current_layer_DFT.shape)+".jpg", is_standarize=False)
         if(is_all_3D_DFTs):
             generate_plain_image(
                 merged_padded_fouts, save_folder+"merged_DFTs.jpg", is_standarize=False)
 
 
-def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
+def output_params(lweights, root_save_prefix, final_postfix_for_save):
+    list_of_weights = lweights
+    if(not isinstance(lweights, OrderedDict)):
+        list_of_weights = OrderedDict()
+        for i in range(len(lweights)):
+            list_of_weights[str(i)] = lweights[i]
+
     save_folder = root_save_prefix + "/" + \
         str(final_postfix_for_save)+"/PlainImages/KernelParams/"
     if not os.path.exists(save_folder):
@@ -225,11 +252,10 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
         os.makedirs(txt_save_folder)
 
     f_outs_DFT_norms = []
-    for layer_num in range(len(list_of_weights)):
-        current_layer_weights = list_of_weights[layer_num]
+    for layer_num, current_layer_weights in list_of_weights.items():
 
         print("Param {} size:{}".format(
-            final_postfix_for_save, current_layer_weights.shape))
+            final_postfix_for_save+"__"+layer_num, current_layer_weights.shape))
 
         current_f_outs_DFT_norm = None
         for filter_ind in range(len(current_layer_weights)):
@@ -253,9 +279,9 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
                         current_filter_chnl_weights)
                     current_filter_chnl_weights = current_filter_chnl_weights.to(
                         av_device)
-                pad_factor = 21
+                outsizereq = 60
                 raw_dft_out = generate_centralized_DTimeFT(
-                    current_filter_chnl_weights, pad_factor)
+                    current_filter_chnl_weights, outsizereq)
 
                 for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
                 std01_vis_dft_out = normalize_in_range_01(
@@ -275,14 +301,13 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
                 current_f_outs_DFT_norm = torch.vstack(
                     (current_f_outs_DFT_norm, torch.unsqueeze(current_f_channel_norm_dft_outs, 0)))
 
-        f_outs_DFT_norms.append(current_f_outs_DFT_norm)
+        f_outs_DFT_norms.append(current_f_outs_DFT_norm.cpu())
 
-    for i in range(len(list_of_weights)):
+    for i, current_weight_np in list_of_weights.items():
         # current_full_img_save_path = save_folder + \
         # "weight_plot_n_{}.jpg".format(i)
-
-        current_weight_np = list_of_weights[i]
-
+        if(isinstance(current_weight_np, torch.Tensor)):
+            current_weight_np = current_weight_np.cpu().numpy()
         print("Norm of {} of layer:{} => {}".format(
             final_postfix_for_save, i, np.linalg.norm(current_weight_np)))
 
@@ -294,7 +319,7 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
         # generate_plain_image(current_weight_np, current_full_img_save_path)
 
     with open(txt_save_folder+"raw_params.txt", "w") as myfile:
-        for l_ind in range(len(list_of_weights)):
+        for l_ind in list_of_weights:
             curr_layer = list_of_weights[l_ind]
             myfile.write(
                 "\n ************************************ Next Layer:{} *********************************** \n".format(l_ind))
@@ -306,7 +331,7 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
 
     with open(txt_save_folder+"formatted_raw_params.txt", "w") as f:
         f.write("\n ************************************ Next Layer *********************************** \n".join(
-            "\n".join(map(str, generate_plain_image_data(np.squeeze(x)))) for x in list_of_weights))
+            "\n".join(map(str, generate_plain_image_data(np.squeeze(x)))) for _, x in list_of_weights.items()))
 
     is_all_3D_DFTs = True
     ind = 0
@@ -348,11 +373,10 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
 
         print("merged_padded_fouts shape", merged_padded_fouts.size())
 
-    for i in range(len(list_of_weights)):
+    for i, (key, current_weight_np) in enumerate(list_of_weights.items()):
         current_layer_DFT = f_outs_DFT_norms[i]
-        current_weight_np = list_of_weights[i]
 
-        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"/" + \
+        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"_"+str(key)+"/" + \
             "filter_params_*.jpg"
 
         print("current_full_img_save_path:", current_full_img_save_path)
@@ -363,16 +387,16 @@ def output_params(list_of_weights, root_save_prefix, final_postfix_for_save):
         generate_list_of_plain_images_from_data(
             current_weight_np, save_each_img_path=current_full_img_save_path, is_standarize=False)
 
-        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"/" + \
+        current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"_"+str(key)+"/" + \
             "DFT_filter_params_*.jpg"
         generate_list_of_plain_images_from_data(
             current_layer_DFT, save_each_img_path=current_full_img_save_path, is_standarize=False)
         current_weight_np = np.squeeze(current_weight_np)
         generate_plain_image(
-            current_weight_np, save_folder+"layer_num_"+str(i)+".jpg", is_standarize=False)
+            current_weight_np, save_folder+"layer_num_"+str(i)+"_"+str(key)+"_sh"+str(current_weight_np.shape)+".jpg", is_standarize=False)
         current_layer_DFT = np.squeeze(current_layer_DFT)
         generate_plain_image(
-            current_layer_DFT, save_folder+"DFT_lay_num_"+str(i)+".jpg", is_standarize=False)
+            current_layer_DFT, save_folder+"DFT_lay_num_"+str(i)+"_"+str(key)+"_sh"+str(current_layer_DFT.shape)+".jpg", is_standarize=False)
         if(is_all_3D_DFTs):
             generate_plain_image(
                 merged_padded_fouts, save_folder+"merged_DFTs.jpg", is_standarize=False)
@@ -465,16 +489,24 @@ def run_generate_raw_weight_analysis(models_base_path, it_start=1, num_iter=None
 
 def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    temp_model = torch.load(model_path, map_location=device)
     custom_model = get_model_instance_from_dataset(
         dataset, model_arch_type)
     if("masked" in model_arch_type):
         custom_model = get_model_instance_from_dataset(
             dataset, model_arch_type, mask_percentage=mask_percentage)
+    if(isinstance(temp_model, dict)):
+        if("module." in [*temp_model['state_dict'].keys()][0]):
+            new_state_dict = OrderedDict()
+            for k, v in temp_model['state_dict'].items():
+                name = k[7:]  # remove 'module.' of dataparallel
+                new_state_dict[name] = v
+            custom_model.load_state_dict(new_state_dict)
+        else:
+            custom_model.load_state_dict(temp_model['state_dict'])
+    else:
+        custom_model.load_state_dict(temp_model.state_dict())
 
-    custom_temp_model = torch.load(
-        model_path, map_location=device)
-    custom_model.load_state_dict(custom_temp_model.state_dict())
-    custom_model = custom_model.to(device)
     return custom_model
 
 
@@ -1731,11 +1763,12 @@ def generate_centralized_DFT(img_data):
     return img_c3
 
 
-def generate_centralized_DTimeFT(img_data, pad_factor=5):
+def generate_centralized_DTimeFT(img_data, outsizereq=20):
     if(isinstance(img_data, np.ndarray)):
         img_data = torch.from_numpy(img_data).to(av_device)
-    pd1 = pad_factor*img_data.size()[0]
-    pd2 = pad_factor*img_data.size()[1]
+
+    pd1 = max(0, (outsizereq-img_data.size()[0])//2)
+    pd2 = max(0, (outsizereq-img_data.size()[1])//2)
     img_data = torch.nn.functional.pad(
         img_data, (pd1, pd1, pd2, pd2), 'constant', value=0)
     with torch.no_grad():
@@ -2059,23 +2092,38 @@ def perform_sanity_check_over_merged_conv_filter(merged_conv, list_of_convs):
     print("merged_conv_out::::", merged_conv_out)
 
 
-def perform_pca_analysis_on_weights(list_of_weights, explained_var_required=None, num_comp=None, cin_dom=False):
-    n = len(list_of_weights)
+def is_prime(num):
+    for i in range(2, (num//2)+1):
+        if (num % i) == 0:
+            return False
+    return True
+
+
+def perform_pca_analysis_on_weights(lweights, explained_var_required=None, num_comp=None, cin_dom=False):
+    list_of_weights = lweights
+    if(not isinstance(lweights, OrderedDict)):
+        list_of_weights = OrderedDict()
+        for i in range(len(lweights)):
+            list_of_weights[str(i)] = lweights[i]
+
     if(cin_dom):
-        for i in range(n):
+        for i in list_of_weights:
             list_of_weights[i] = np.array(list_of_weights[i])
             print("list_of_weights[i] orig size", list_of_weights[i].shape)
             list_of_weights[i] = np.transpose(
                 list_of_weights[i], (1, 0, 2, 3))
             print("list_of_weights[i] latest size", list_of_weights[i].shape)
-    transformed_weights = [None] * n
-    ret_k_or_expvar = [None] * n
-    top_pca_components = [None] * n
-    pca_variance_curve = [None] * n
-    for current_lay in range(0, len(list_of_weights)):
+    transformed_weights = OrderedDict()
+    ret_k_or_expvar = OrderedDict()
+    top_pca_components = OrderedDict()
+    pca_variance_curve = OrderedDict()
+    for current_lay in list_of_weights:
         current_weights = list_of_weights[current_lay]
         if(not isinstance(current_weights, np.ndarray)):
-            current_weights = np.array(current_weights)
+            if(isinstance(current_weights, torch.Tensor)):
+                current_weights = current_weights.cpu().numpy()
+            else:
+                current_weights = np.array(current_weights)
 
         flattened_weights = current_weights.reshape(
             current_weights.shape[0], current_weights.shape[1]*current_weights.shape[2]*current_weights.shape[3])
@@ -2087,6 +2135,10 @@ def perform_pca_analysis_on_weights(list_of_weights, explained_var_required=None
             while(current_variance < explained_var_required):
                 current_variance = sum(pca.explained_variance_ratio_[:k])
                 k = k + 1
+
+            if(is_prime(k)):
+                k += 1
+                current_variance = sum(pca.explained_variance_ratio_[:k])
 
             print("Number of PCA components used for layer:{} is:{} with required explained variance:{}".format(
                 current_lay, k, current_variance))
@@ -2157,21 +2209,21 @@ def get_modified_dataset(analyse_on, dataloader, adv_postfix_for_save, filter_vi
 if __name__ == '__main__':
     av_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # fashion_mnist , mnist , cifar10
-    dataset = 'mnist'
+    dataset = 'cifar10'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small
-    model_arch_type = 'conv4_dlgn_n16_small'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , dlgn__st1_pad2_vgg16_bn_wo_bias__
+    model_arch_type = 'dlgn__st1_pad2_vgg16_bn_wo_bias__'
 
     torch_seed = 2022
 
-    # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER
+    # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER , APPROX_IMAGE_OUT_PER_RES_FILTER
     # list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
     list_of_scheme_type = [
-        "IMAGE_OUT_PER_RES_FILTER"]
+        "APPROX_IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist , fashion_mnist
-    list_of_filter_vis_dataset = ["mnist"]
+    list_of_filter_vis_dataset = ["cifar10"]
 
     batch_size = 14
 
@@ -2266,7 +2318,7 @@ if __name__ == '__main__':
             print("Running scheme", scheme_type)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+                model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__st1_pad2_vgg16_bn_wo_bias___PRET_False_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 
@@ -2451,7 +2503,7 @@ if __name__ == '__main__':
                               final_postfix_for_save="MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str)
 
                 outputs_pca_information(save_prefix, "MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str,
-                                        ret_k_or_expvar, top_pca_components, pca_variance_curve)
+                                        ret_k_or_expvar, top_pca_components, pca_variance_curve, list_of_weights)
 
                 # for is_template_image_on_train in [True, False]:
                 #     if(is_template_image_on_train):
@@ -2488,5 +2540,51 @@ if __name__ == '__main__':
                 #         generate_filter_outputs_per_image(filter_vis_dataset, inp_channel, class_label, c_indx,
                 #                                           per_class_dataset, list_of_weights, save_prefix, num_batches_to_visualize,
                 #                                           final_postfix_for_save=postfix_for_save, scheme_type_tag="RES_FILT_OUTS")
+            elif(scheme_type == "APPROX_IMAGE_OUT_PER_RES_FILTER"):
+                device = torch.device(
+                    "cuda" if torch.cuda.is_available() else "cpu")
+                # device = "cpu"
+
+                sub_scheme_type = 'IND'
+                explained_var_required = None
+                num_comp = None
+                cin_dom = False
+
+                explained_var_required = 0.9
+
+                dummy_input = torch.rand(
+                    get_img_size(dataset)).unsqueeze(0)
+                model = model.to(device)
+                model.eval()
+                dummy_input = dummy_input.to(device)
+                merged_conv_layer_in_each_layer, _ = model.forward_vis(
+                    dummy_input)
+
+                with torch.no_grad():
+                    merged_weights_in_each_layer = OrderedDict()
+                    for i, (key, value) in enumerate(merged_conv_layer_in_each_layer.items()):
+                        merged_weights_in_each_layer[key] = value.weight
+
+                    output_params(merged_weights_in_each_layer, root_save_prefix=save_prefix,
+                                  final_postfix_for_save="AP_MERGED_WEIGHTS")
+
+                    print("Doing merged weights analysis for model:{} PCA INFO:=> explained_var_required:{} num_comp:{}".format(
+                        model_path, explained_var_required, num_comp))
+
+                    transformed_weights, ret_k_or_expvar, top_pca_components, pca_variance_curve = perform_pca_analysis_on_weights(
+                        merged_weights_in_each_layer, explained_var_required=explained_var_required, num_comp=num_comp, cin_dom=cin_dom)
+                    pca_str = ""
+                    if(explained_var_required is not None):
+                        pca_str = "/EXP_VAR_"+str(explained_var_required)
+                    else:
+                        pca_str = "/NUM_COMP_"+str(num_comp)
+
+                    print("ret_k_or_expvar:{}".format(ret_k_or_expvar))
+
+                    output_params(transformed_weights, root_save_prefix=save_prefix,
+                                  final_postfix_for_save="AP_MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str)
+
+                    outputs_pca_information(save_prefix, "AP_MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str,
+                                            ret_k_or_expvar, top_pca_components, pca_variance_curve, merged_weights_in_each_layer)
 
     print("Finished execution!!!")
