@@ -220,6 +220,20 @@ class TemplateImageGenerator():
         self.entropy_active_list = None
         self.overall_entropy_list = None
 
+    def get_convouts(self):
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            conv_outs = self.model.module.linear_conv_outputs
+        else:
+            conv_outs = self.model.linear_conv_outputs
+
+        if(self.layer_nums_to_visualize is None):
+            return conv_outs
+        ret_outs = []
+        for i in self.layer_nums_to_visualize:
+            ret_outs.append(conv_outs[i])
+
+        return ret_outs
+
     def initialise_layerwise_states(self, layers_to_visualize=None):
         self.total_tcollect_img_count = 0
         self.total_lay_coll_img_count = 0
@@ -245,10 +259,8 @@ class TemplateImageGenerator():
         self.y_plus_list = []
         self.y_minus_list = []
         self.total_tcollect_img_count = 0
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+
+        conv_outs = self.get_convouts()
         for each_conv_output in conv_outs:
             current_y_plus = torch.zeros(size=each_conv_output.size()[
                 1:], requires_grad=True, device=self.device)
@@ -262,10 +274,7 @@ class TemplateImageGenerator():
         self.entropy_active_list = []
         self.total_entr_img_count = 0
 
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
         for each_conv_output in conv_outs:
             current_entropy_active = torch.zeros(size=each_conv_output.size()[
                 1:], requires_grad=True, device=self.device)
@@ -283,10 +292,7 @@ class TemplateImageGenerator():
                 hook_handles.append(handle)
 
     def update_y_lists(self):
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
         with torch.no_grad():
             for indx in range(len(conv_outs)):
                 # for indx in range(0, 4):
@@ -327,10 +333,7 @@ class TemplateImageGenerator():
             self.total_lay_coll_img_count += bs
 
     def update_entropy_y_lists(self):
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
         with torch.no_grad():
             for indx in range(len(conv_outs)):
                 each_conv_output = conv_outs[indx]
@@ -546,10 +549,7 @@ class TemplateImageGenerator():
 
     def calculate_loss_for_template_image(self):
         loss = None
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
         total_pixel_points = 0
         active_pixel_points = 0
         for indx in range(len(conv_outs)):
@@ -599,10 +599,7 @@ class TemplateImageGenerator():
 
     def calculate_template_loss_with_entropy(self):
         loss = 0
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
 
         total_pixel_points = 0
         active_pixel_points = 0
@@ -639,10 +636,7 @@ class TemplateImageGenerator():
         return loss, active_pixel_points, total_pixel_points
 
     def get_active_maps(self):
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
 
         list_of_active_maps = []
         for indx in range(len(conv_outs)):
@@ -655,10 +649,7 @@ class TemplateImageGenerator():
     def calculate_tanh_loss_for_template_image(self):
         tanh = torch.nn.Tanh()
         loss = 0
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
 
         total_pixel_points = 0
         active_pixel_points = 0
@@ -696,10 +687,7 @@ class TemplateImageGenerator():
 
     def new_calculate_loss_for_template_image(self, verbose=1):
         loss = 0
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
 
         total_pixel_points = 0
         active_pixel_points = 0
@@ -779,10 +767,7 @@ class TemplateImageGenerator():
         active_pixel_points = 0
         non_zero_pixel_points = 0
 
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
         cur_conv_out = conv_outs[layer_indx][0]
 
         expected_out = self.layer_wise_average_feature_maps_dict[layer_indx]
@@ -800,10 +785,7 @@ class TemplateImageGenerator():
 
     def calculate_only_active_loss_for_template_image(self):
         loss = 0
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
-        else:
-            conv_outs = self.model.linear_conv_outputs
+        conv_outs = self.get_convouts()
 
         total_pixel_points = 0
         active_pixel_points = 0
@@ -961,9 +943,17 @@ class TemplateImageGenerator():
         if(is_class_segregation_on_ground_truth):
             seg_over_what_str = 'GT'
 
+        layer_nums_str = ""
+        if(self.layer_nums_to_visualize is not None):
+            layer_nums_str = "/LV_"
+            for i in self.layer_nums_to_visualize:
+                layer_nums_str += str(i)+" "
+            layer_nums_str = layer_nums_str.strip()
+            layer_nums_str = layer_nums_str.replace(" ", "_")
+
         self.model.train(False)
         self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/Ver_"+str(vis_version)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+"/" + str(final_postfix_for_save) + "/"
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+str(layer_nums_str)+"/" + str(final_postfix_for_save) + "/"
 
         per_class_per_batch_data_loader = tqdm(
             per_class_per_batch_data_loader, desc='Image being processed:'+str(class_label))
@@ -2093,9 +2083,17 @@ class TemplateImageGenerator():
         if(is_class_segregation_on_ground_truth):
             seg_over_what_str = 'GT'
 
+        layer_nums_str = ""
+        if(self.layer_nums_to_visualize is not None):
+            layer_nums_str = "/LV_"
+            for i in self.layer_nums_to_visualize:
+                layer_nums_str += str(i)+" "
+            layer_nums_str = layer_nums_str.strip()
+            layer_nums_str = layer_nums_str.replace(" ", "_")
+
         alpha = 0
         self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/Ver_"+str(vis_version)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+"/" + str(final_postfix_for_save) + "/"
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+str(layer_nums_str)+"/" + str(final_postfix_for_save) + "/"
 
         self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
         normalize_image = False
@@ -2134,7 +2132,7 @@ class TemplateImageGenerator():
             if(repeat == 1):
                 alpha = 0.1
             self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/Ver_"+str(vis_version)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
-                seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+"/" + str(final_postfix_for_save) + "/"
+                seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+str(layer_nums_str)+"/" + str(final_postfix_for_save) + "/"
 
             self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
             if("ENTR" in template_loss_type):
@@ -2546,7 +2544,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
-        dataset, valid_split_size)
+        dataset, valid_split_size, batch_size=32)
 
     if(custom_data_loader is None):
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
@@ -2585,7 +2583,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
 
         tmp_gen = TemplateImageGenerator(
             model, get_initial_image(dataset, template_initial_image_type))
-
+        tmp_gen.layer_nums_to_visualize = layer_nums_to_visualize
         if(exp_type == "GENERATE_TEMPLATE_IMAGES"):
             tmp_gen.generate_template_image_per_class(exp_type,
                                                       per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
@@ -2641,22 +2639,22 @@ if __name__ == '__main__':
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
-    # dlgn__resnet18__ , dgn__resnet18__,dnn__resnet18__
-    model_arch_type = 'conv4_dlgn_n16_small'
+    # dlgn__resnet18__ , dgn__resnet18__,dnn__resnet18__ , dlgn__vgg16_bn__ , dlgn__st1_pad1_vgg16_bn_wo_bias__ ,dlgn__st1_pad2_vgg16_bn_wo_bias__, dnn__st1_pad2_vgg16_bn_wo_bias__
+    model_arch_type = 'dlgn__vgg16_bn__'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     # uniform_init_image , zero_init_image , gaussian_init_image
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 32
+    template_image_calculation_batch_size = 1
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
     # MSE_LAYER_LOSS
-    template_loss_type = "MSE_LAYER_LOSS"
-    number_of_batch_to_collect = None
+    template_loss_type = "TANH_TEMP_LOSS"
+    number_of_batch_to_collect = 1
     vis_version = "V2"
-    wand_project_name = "layerwise_avg_template_visualisation_augmentation"
+    # wand_project_name = "layerwise_avg_template_visualisation_augmentation"
     # wand_project_name = "fresh_template_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "test_template_visualisation_augmentation"
@@ -2668,8 +2666,8 @@ if __name__ == '__main__':
     torch_seed = 2022
     number_of_image_optimization_steps = 161
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES , GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG
-    exp_type = "GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG"
-    temp_collect_threshold = 0.75
+    exp_type = "GENERATE_TEMPLATE_IMAGES"
+    temp_collect_threshold = 0.99
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
@@ -2677,6 +2675,8 @@ if __name__ == '__main__':
     # random_per_layer_sample_gate_percent = 1000
 
     layer_nums_to_visualize = None
+    layer_nums_to_visualize = [2]
+    # layer_nums_to_visualize = [i for i in range(16)]
 
     class_indx_to_visualize = None
     if(dataset == 'imagenet_1000'):
@@ -2711,10 +2711,11 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+    custom_model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__vgg16_bn___PRET_False_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print("device", device)
         inp_channel = get_img_size(dataset)[0]
 
         wandb_config["custom_model_path"] = custom_model_path
