@@ -17,6 +17,7 @@ from configs.dlgn_conv_config import HardRelu
 from collections import OrderedDict
 import cv2
 from sklearn.decomposition import PCA
+import pickle
 
 
 def convert_list_tensor_to_numpy(list_of_tensors):
@@ -169,10 +170,10 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
             max_col = temp.shape[-1]
         ind = ind + 1
 
+    merged_padded_fouts = None
     if(is_all_3D_DFTs):
         # print("max_row", max_row)
         # print("max_col", max_col)
-        merged_padded_fouts = None
         for i in range(len(f_outs_DFT_norms)):
             current_layer_DFT = np.squeeze(f_outs_DFT_norms[i].cpu().numpy())
             # print("current_layer_DFT shape", current_layer_DFT.shape)
@@ -232,6 +233,8 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
         if(is_all_3D_DFTs):
             generate_plain_image(
                 merged_padded_fouts, save_folder+"merged_DFTs.jpg", is_standarize=False)
+
+    return f_outs_DFT_norms, merged_padded_fouts
 
 
 def output_params(lweights, root_save_prefix, final_postfix_for_save):
@@ -346,10 +349,10 @@ def output_params(lweights, root_save_prefix, final_postfix_for_save):
             max_col = temp.shape[-1]
         ind = ind + 1
 
+    merged_padded_fouts = None
     if(is_all_3D_DFTs):
         # print("max_row", max_row)
         # print("max_col", max_col)
-        merged_padded_fouts = None
         for i in range(len(f_outs_DFT_norms)):
             current_layer_DFT = np.squeeze(f_outs_DFT_norms[i].cpu().numpy())
             # print("current_layer_DFT shape", current_layer_DFT.shape)
@@ -400,6 +403,8 @@ def output_params(lweights, root_save_prefix, final_postfix_for_save):
         if(is_all_3D_DFTs):
             generate_plain_image(
                 merged_padded_fouts, save_folder+"merged_DFTs.jpg", is_standarize=False)
+
+    return f_outs_DFT_norms, merged_padded_fouts
 
 
 def run_raw_weight_analysis_on_config(model, root_save_prefix='root/RAW_WEIGHT_ANALYSIS', final_postfix_for_save="",
@@ -2212,8 +2217,8 @@ if __name__ == '__main__':
     dataset = 'cifar10'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , dlgn__st1_pad2_vgg16_bn_wo_bias__
-    model_arch_type = 'dlgn__st1_pad2_vgg16_bn_wo_bias__'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , dlgn__st1_pad2_vgg16_bn_wo_bias__ , dlgn__st1_pad1_vgg16_bn_wo_bias__
+    model_arch_type = 'dlgn__st1_pad1_vgg16_bn_wo_bias__'
 
     torch_seed = 2022
 
@@ -2318,7 +2323,7 @@ if __name__ == '__main__':
             print("Running scheme", scheme_type)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__st1_pad2_vgg16_bn_wo_bias___PRET_False_dir.pt"
+                model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__st1_pad1_vgg16_bn_wo_bias___PRET_False_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 
@@ -2565,8 +2570,8 @@ if __name__ == '__main__':
                     for i, (key, value) in enumerate(merged_conv_layer_in_each_layer.items()):
                         merged_weights_in_each_layer[key] = value.weight
 
-                    output_params(merged_weights_in_each_layer, root_save_prefix=save_prefix,
-                                  final_postfix_for_save="AP_MERGED_WEIGHTS")
+                    o_f_outs_DFT_norms, o_merged_padded_fouts = output_params(merged_weights_in_each_layer, root_save_prefix=save_prefix,
+                                                                              final_postfix_for_save="AP_MERGED_WEIGHTS")
 
                     print("Doing merged weights analysis for model:{} PCA INFO:=> explained_var_required:{} num_comp:{}".format(
                         model_path, explained_var_required, num_comp))
@@ -2581,10 +2586,17 @@ if __name__ == '__main__':
 
                     print("ret_k_or_expvar:{}".format(ret_k_or_expvar))
 
-                    output_params(transformed_weights, root_save_prefix=save_prefix,
-                                  final_postfix_for_save="AP_MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str)
+                    mm_f_outs_DFT_norms, mm_merged_padded_fouts = output_params(transformed_weights, root_save_prefix=save_prefix,
+                                                                                final_postfix_for_save="AP_MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str)
 
-                    outputs_pca_information(save_prefix, "AP_MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str,
-                                            ret_k_or_expvar, top_pca_components, pca_variance_curve, merged_weights_in_each_layer)
+                    top_pcacomp_f_outs_DFT_norms, top_pcacomp_merged_padded_fouts = outputs_pca_information(save_prefix, "AP_MERGED_WEIGHTS_PCA_Cin_dom_"+str(cin_dom)+pca_str,
+                                                                                                            ret_k_or_expvar, top_pca_components, pca_variance_curve, merged_weights_in_each_layer)
+                    dmp_save_filename = save_prefix + "/AP_MERGED_WEIGHTS/"+"dump.pkl"
+                    with open(dmp_save_filename, 'wb') as file:
+                        pickle.dump(
+                            {"or_weights": merged_weights_in_each_layer, "or_fouts": o_f_outs_DFT_norms, "or_merged_fouts": o_merged_padded_fouts,
+                             "mr_weights": transformed_weights, "mr_fouts": mm_f_outs_DFT_norms, "mr_merged_fouts": mm_merged_padded_fouts,
+                             "topcomp_weights": top_pca_components, "topcomp_fouts": top_pcacomp_f_outs_DFT_norms,
+                             "topcomp_merged_fouts": top_pcacomp_merged_padded_fouts}, file)
 
     print("Finished execution!!!")
