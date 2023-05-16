@@ -1840,9 +1840,6 @@ class st1_pad2_vgg16_bn_wo_bias(nn.Module):
         gating_net_layers_ordered["conv2_g"] = self.conv2_g
         gating_net_layers_ordered["bn2_g"] = self.bn2_g
 
-        gating_net_layers_ordered["conv2_g"] = self.conv2_g
-        gating_net_layers_ordered["bn2_g"] = self.bn2_g
-
         gating_net_layers_ordered["pool1"] = self.pool
 
         gating_net_layers_ordered["conv3_g"] = self.conv3_g
@@ -2449,7 +2446,6 @@ class st1_pad0_vgg16_bn(nn.Module):
         return merged_conv_layer_in_each_layer, None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        self.allones = torch.ones_like(x)
         # Feature/Gating Network
         # Layer 1 : 64
         self.linear_conv_outputs = []
@@ -3760,6 +3756,142 @@ class Conv4_DLGN_Net(nn.Module):
             elif(layer_num == 5):
                 return self.fc1
 
+class Conv4_DLGN_Net_pad0_wo_bn(nn.Module):
+    def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.input_channel = input_channel
+        self.beta = beta
+
+        self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=0)
+        self.conv2_g = nn.Conv2d(128, 128, 3, padding=0)
+        self.conv3_g = nn.Conv2d(128, 128, 3, padding=0)
+        self.conv4_g = nn.Conv2d(128, 128, 3, padding=0)
+        self.conv1_w = nn.Conv2d(input_channel, 128, 3, padding=0)
+        self.conv2_w = nn.Conv2d(128, 128, 3, padding=0)
+        self.conv3_w = nn.Conv2d(128, 128, 3, padding=0)
+        self.conv4_w = nn.Conv2d(128, 128, 3, padding=0)
+        self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
+        self.fc1 = nn.Linear(128, num_classes)
+
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
+    def forward(self, inp):
+        device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
+        conv_outs = []
+        x_g1 = self.conv1_g(inp)
+        conv_outs.append(x_g1)
+        x_g2 = self.conv2_g(x_g1)
+        conv_outs.append(x_g2)
+        x_g3 = self.conv3_g(x_g2)
+        conv_outs.append(x_g3)
+        x_g4 = self.conv4_g(x_g3)
+        conv_outs.append(x_g4)
+
+        self.linear_conv_outputs = conv_outs
+
+        g1 = nn.Sigmoid()(self.beta * x_g1)
+        g2 = nn.Sigmoid()(self.beta * x_g2)
+        g3 = nn.Sigmoid()(self.beta * x_g3)
+        g4 = nn.Sigmoid()(self.beta * x_g4)
+
+        inp_all_ones = torch.ones(inp.size(),
+                                  requires_grad=True, device=device)
+
+        x_w1 = self.conv1_w(inp_all_ones) * g1
+        x_w2 = self.conv2_w(x_w1) * g2
+        x_w3 = self.conv3_w(x_w2) * g3
+        x_w4 = self.conv4_w(x_w3) * g4
+
+        x_w5 = self.pool(x_w4)
+        x_w5 = torch.flatten(x_w5, 1)
+        x_w6 = self.fc1(x_w5)
+
+        return x_w6
+
+    def get_layer_object(self, network_type, layer_num):
+        if(network_type == "GATE_NET"):
+            if(layer_num == 0):
+                return self.conv1_g
+            elif(layer_num == 1):
+                return self.conv2_g
+            elif(layer_num == 2):
+                return self.conv3_g
+            elif(layer_num == 3):
+                return self.conv4_g
+        elif(network_type == "WEIGHT_NET"):
+            if(layer_num == 0):
+                return self.conv1_w
+            elif(layer_num == 1):
+                return self.conv2_w
+            elif(layer_num == 2):
+                return self.conv3_w
+            elif(layer_num == 3):
+                return self.conv4_w
+            elif(layer_num == 4):
+                return self.pool
+            elif(layer_num == 5):
+                return self.fc1
+    
+    def get_gate_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        gating_net_layers_ordered["conv1_g"] = self.conv1_g
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["conv3_g"] = self.conv3_g
+        gating_net_layers_ordered["conv4_g"] = self.conv4_g
+        gating_net_layers_ordered["pool1"] = self.pool
+
+        return gating_net_layers_ordered
+
+    def forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        merged_conv_layer_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_layer = None
+        orig_out = x
+        if(self.conv1_g.weight.get_device() < 0):
+            idevice = torch.device("cpu")
+        else:
+            idevice = self.conv1_g.weight.get_device()
+        lay_type = self.conv1_g.weight.dtype
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_layer, _ = merge_layers_operations_in_modules(
+                    layer_obj, current_tensor_size, lay_type, idevice, merged_conv_layer)
+                merged_conv_layer_in_each_layer[layer_name] = merged_conv_layer
+
+                orig_out = layer_obj(orig_out)
+
+                merged_conv_output = merged_conv_layer(x)
+                current_tensor_size = merged_conv_output.size()[1:]
+
+                print("orig_out.size():{} merged_conv_output.size():{}".format(
+                    orig_out.size(), merged_conv_output.size()))
+                assert orig_out.size() == merged_conv_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    orig_out - merged_conv_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return merged_conv_layer_in_each_layer, None
+
+
 
 class Conv4_DeepGated_Net(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
@@ -4718,6 +4850,8 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
         net = Plain_CONV4_Net(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_dlgn'):
         net = Conv4_DLGN_Net(inp_channel, seed=seed, num_classes=num_classes)
+    elif(model_arch_type == 'dlgn__conv4_dlgn_pad0_st1_bn__'):
+        net = Conv4_DLGN_Net_pad0_wo_bn(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_dlgn_n16_small'):
         net = Conv4_DLGN_Net_N16_Small(
             inp_channel, seed=seed, num_classes=num_classes)
