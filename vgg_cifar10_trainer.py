@@ -16,7 +16,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 import numpy as np
-from conv4_models import get_model_instance_from_dataset, get_model_save_path, vgg16_bn, pad2_vgg16_bn, st1_pad2_vgg16_bn_wo_bias, st1_pad1_vgg16_bn_wo_bias, dnn_vgg16_bn, dnn_st1_pad1_vgg16_bn_wo_bias
+from conv4_models import get_model_instance_from_dataset, get_model_save_path, vgg16_bn, pad2_vgg16_bn, st1_pad2_vgg16_bn_wo_bias, st1_pad1_vgg16_bn_wo_bias, dnn_vgg16_bn, dnn_st1_pad1_vgg16_bn_wo_bias,st1_pad0_vgg16_bn
 
 temp_names = sorted(name for name in models.__dict__
                     if name.islower() and not name.startswith("__") and "vgg" in name
@@ -25,6 +25,7 @@ temp_names.append("pad2_vgg16_bn")
 temp_names.append("st1_pad2_vgg16_bn_wo_bias")
 temp_names.append("st1_pad1_vgg16_bn_wo_bias")
 temp_names.append("cvgg16_bn")
+temp_names.append("st1_pad0_vgg16_bn")
 
 prefixes = ["dlgn", "dgn", "dnn"]
 model_names = temp_names.copy()
@@ -356,6 +357,8 @@ def main():
         model = vgg16_bn(allones)
     elif(args.arch == "dlgn__pad2_vgg16_bn__"):
         model = pad2_vgg16_bn()
+    elif(args.arch == "dlgn__st1_pad0_vgg16_bn__"):
+        model = st1_pad0_vgg16_bn()
     elif(args.arch == "dlgn__st1_pad2_vgg16_bn_wo_bias__"):
         model = st1_pad2_vgg16_bn_wo_bias()
     elif(args.arch == "dlgn__st1_pad1_vgg16_bn_wo_bias__"):
