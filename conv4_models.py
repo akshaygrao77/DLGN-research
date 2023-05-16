@@ -923,7 +923,7 @@ class vgg16_bn(nn.Module):
 
         return gating_net_layers_ordered
 
-    def forward_vis(self, x) -> torch.Tensor:
+    def exact_forward_vis(self, x) -> torch.Tensor:
         """
         x - Dummy input with batch size =1 to generate linear transformations
         """
@@ -931,18 +931,23 @@ class vgg16_bn(nn.Module):
         gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
         conv_matrix_operations_in_each_layer = OrderedDict()
         conv_bias_operations_in_each_layer = OrderedDict()
+        channel_outs_size_in_each_layer = OrderedDict()
         current_tensor_size = x.size()[1:]
         print("current_tensor_size ", current_tensor_size)
         merged_conv_matrix = None
         merged_conv_bias = None
         orig_out = x
+        x = x.type(torch.float16)
 
         with torch.no_grad():
             for layer_name, layer_obj in gating_net_layers_ordered.items():
                 merged_conv_matrix, merged_conv_bias, current_tensor_size = merge_operations_in_modules(
                     layer_obj, current_tensor_size, merged_conv_matrix, merged_conv_bias)
-                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix
-                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias
+                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix.cpu(
+                )
+                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias.cpu(
+                )
+                channel_outs_size_in_each_layer[layer_name] = current_tensor_size[0]
 
                 orig_out = layer_obj(orig_out)
 
@@ -956,7 +961,7 @@ class vgg16_bn(nn.Module):
                     orig_out - convmatrix_output).abs().sum()
                 print("difference_in_output ", difference_in_output)
 
-        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer
+        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Feature/Gating Network
@@ -2442,6 +2447,46 @@ class st1_pad1_vgg16_bn_wo_bias(nn.Module):
                 # print("difference_in_output ", difference_in_output)
 
         return merged_conv_layer_in_each_layer, None
+
+    def exact_forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        conv_matrix_operations_in_each_layer = OrderedDict()
+        conv_bias_operations_in_each_layer = OrderedDict()
+        channel_outs_size_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_matrix = None
+        merged_conv_bias = None
+        orig_out = x
+        x = x.type(torch.float16)
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_matrix, merged_conv_bias, current_tensor_size = merge_operations_in_modules(
+                    layer_obj, current_tensor_size, merged_conv_matrix, merged_conv_bias)
+                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix.cpu(
+                )
+                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias.cpu(
+                )
+                channel_outs_size_in_each_layer[layer_name] = current_tensor_size[0]
+
+                orig_out = layer_obj(orig_out)
+
+                convmatrix_output = apply_input_on_conv_matrix(
+                    x, merged_conv_matrix, merged_conv_bias)
+                convmatrix_output = torch.unsqueeze(torch.reshape(
+                    convmatrix_output, current_tensor_size), 0)
+                assert orig_out.size() == convmatrix_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    orig_out - convmatrix_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Feature/Gating Network

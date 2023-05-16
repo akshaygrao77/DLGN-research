@@ -60,6 +60,56 @@ def standarize_list_of_numpy(list_of_np_array):
     return list_of_np_array
 
 
+def outputs_pca_convm_information(root_save_prefix, final_postfix_for_save, ret_k_or_expvar, top_pca_components, pca_variance_curve, merged_convm_in_each_layer, transformed_convmatrix):
+    save_folder = root_save_prefix + "/" + \
+        str(final_postfix_for_save)+"/INFO/"
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
+    txt_save_folder = root_save_prefix + "/" + \
+        str(final_postfix_for_save)+"/PCA_INFO_RAW_TXT/"
+    if not os.path.exists(txt_save_folder):
+        os.makedirs(txt_save_folder)
+
+    for i in top_pca_components:
+        current_pca_comp_np = top_pca_components[i]
+
+        print("Norm of {} of layer:{} => {}".format(
+            final_postfix_for_save, i, np.linalg.norm(current_pca_comp_np)))
+
+        print("PCA Component:{} of layer:{} => {}".format(
+            final_postfix_for_save, i, current_pca_comp_np))
+
+    generate_plot_pca_variance_curve(pca_variance_curve, save_folder+"PCA_var_curve.jpg",
+                                     "Number of components", "Cumulative Explained Variance")
+
+    for i, (key, val) in enumerate(transformed_convmatrix.items()):
+        # current_merged_convm = merged_convm_in_each_layer[key]
+        # current_pca_comp_np = top_pca_components[key]
+        # cur_k_or_var = ret_k_or_expvar[key]
+        pcared_convm = transformed_convmatrix[key]
+
+        # if(cur_k_or_var < 1):
+        #     pc_inf = "_VAR_"+str(cur_k_or_var)
+        # else:
+        #     pc_inf = "_K_"+str(cur_k_or_var)
+
+        # current_pca_comp_np = np.squeeze(current_pca_comp_np)
+        # current_full_img_save_path = save_folder+"/LAY_NUM_"+str(i)+"_"+str(key)+"/" + \
+        #     "pca_components"+str(pc_inf)+"_*.jpg"
+        # generate_list_of_plain_images_from_data(
+        #     current_pca_comp_np, save_each_img_path=current_full_img_save_path, is_standarize=False)
+        # generate_plain_image(
+        #     current_pca_comp_np, save_folder+"pcacomp_convm_layer_num_"+str(i)+"_"+str(key)+"_sh"+str(current_pca_comp_np.shape)+".jpg", is_standarize=False)
+        generate_plain_image(
+            pcared_convm, save_folder+"pcared_convm_layer_num_"+str(i)+"_"+str(key)+"_sh"+str(pcared_convm.shape)+".jpg", is_standarize=False)
+
+        # generate_plain_image(
+        #     current_merged_convm, save_folder+"merged_convm_lay_num_"+str(i)+"_"+str(key)+"_sh"+str(current_merged_convm.shape)+".jpg", is_standarize=False)
+
+    return
+
+
 def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_expvar, top_pca_components, pca_variance_curve, lweights):
     merged_weights_in_each_layer = lweights
     if(not isinstance(lweights, OrderedDict)):
@@ -2104,6 +2154,59 @@ def is_prime(num):
     return True
 
 
+def perform_pca_analysis_on_convmatrix(conv_matrix_in_each_layer, channel_outs_size_in_each_layer, explained_var_required=None, num_comp=None):
+    for i in conv_matrix_in_each_layer:
+        conv_matrix_in_each_layer[i] = np.array(conv_matrix_in_each_layer[i])
+        print("conv_matrix_in_each_layer[i] orig size",
+              conv_matrix_in_each_layer[i].shape)
+        num_out_chans = channel_outs_size_in_each_layer[i]
+        conv_matrix_in_each_layer[i] = np.reshape(
+            conv_matrix_in_each_layer[i], (num_out_chans, np.prod(conv_matrix_in_each_layer[i].shape)//num_out_chans))
+        print("conv_matrix_in_each_layer[i] latest size",
+              conv_matrix_in_each_layer[i].shape)
+    transformed_weights = OrderedDict()
+    ret_k_or_expvar = OrderedDict()
+    top_pca_components = OrderedDict()
+    pca_variance_curve = OrderedDict()
+    for current_lay in conv_matrix_in_each_layer:
+        flattened_conv_matrix = conv_matrix_in_each_layer[current_lay]
+
+        pca = PCA().fit(flattened_conv_matrix)
+        if(explained_var_required is not None):
+            k = 0
+            current_variance = 0
+            while(current_variance < explained_var_required):
+                current_variance = sum(pca.explained_variance_ratio_[:k])
+                k = k + 1
+
+            if(is_prime(k)):
+                k += 1
+                current_variance = sum(pca.explained_variance_ratio_[:k])
+
+            print("Number of PCA components used for layer:{} is:{} with required explained variance:{}".format(
+                current_lay, k, current_variance))
+            ret_k_or_expvar[current_lay] = k
+        else:
+            k = num_comp
+            actual_variance = sum(pca.explained_variance_ratio_[:k])
+            ret_k_or_expvar[current_lay] = actual_variance
+            print("Number of PCA components used for layer:{} is:{} which had explained variance:{}".format(
+                current_lay, k, actual_variance))
+        pca_variance_curve[current_lay] = np.cumsum(
+            pca.explained_variance_ratio_)
+        k_pca = PCA(n_components=k)
+        temp = k_pca.fit_transform(
+            flattened_conv_matrix)
+        transformed_weights[current_lay] = temp
+        print("transformed_weights[current_lay] shape:",
+              transformed_weights[current_lay].shape)
+        top_pca_components[current_lay] = k_pca.components_.T
+        print("top_pca_components[current_lay] shape:",
+              top_pca_components[current_lay].shape)
+
+    return transformed_weights, ret_k_or_expvar, top_pca_components, pca_variance_curve
+
+
 def perform_pca_analysis_on_weights(lweights, explained_var_required=None, num_comp=None, cin_dom=False):
     list_of_weights = lweights
     if(not isinstance(lweights, OrderedDict)):
@@ -2218,14 +2321,14 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , dlgn__st1_pad2_vgg16_bn_wo_bias__ , dlgn__st1_pad1_vgg16_bn_wo_bias__
-    model_arch_type = 'dlgn__st1_pad1_vgg16_bn_wo_bias__'
+    model_arch_type = 'dlgn__vgg16_bn__'
 
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER , APPROX_IMAGE_OUT_PER_RES_FILTER
     # list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
     list_of_scheme_type = [
-        "APPROX_IMAGE_OUT_PER_RES_FILTER"]
+        "EXACT_IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist , fashion_mnist
     list_of_filter_vis_dataset = ["cifar10"]
@@ -2323,7 +2426,7 @@ if __name__ == '__main__':
             print("Running scheme", scheme_type)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__st1_pad1_vgg16_bn_wo_bias___PRET_False_dir.pt"
+                model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__vgg16_bn___PRET_False_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 
@@ -2598,5 +2701,46 @@ if __name__ == '__main__':
                              "mr_weights": transformed_weights, "mr_fouts": mm_f_outs_DFT_norms, "mr_merged_fouts": mm_merged_padded_fouts,
                              "topcomp_weights": top_pca_components, "topcomp_fouts": top_pcacomp_f_outs_DFT_norms,
                              "topcomp_merged_fouts": top_pcacomp_merged_padded_fouts}, file)
+            elif(scheme_type == "EXACT_IMAGE_OUT_PER_RES_FILTER"):
+                device = torch.device(
+                    "cuda" if torch.cuda.is_available() else "cpu")
+                # device = "cpu"
+
+                sub_scheme_type = 'IND'
+                explained_var_required = None
+                num_comp = None
+
+                explained_var_required = 0.9
+
+                dummy_input = torch.rand(
+                    get_img_size(dataset)).unsqueeze(0)
+                model = model.to(device)
+                model.eval()
+                dummy_input = dummy_input.to(device)
+                merged_conv_matrix_operations_in_each_layer, merged_conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer = model.exact_forward_vis(
+                    dummy_input)
+
+                with torch.no_grad():
+                    transformed_convmatrix, ret_k_or_expvar, top_pca_components, pca_variance_curve = perform_pca_analysis_on_convmatrix(
+                        merged_conv_matrix_operations_in_each_layer, channel_outs_size_in_each_layer, explained_var_required=explained_var_required, num_comp=num_comp)
+                    pca_str = ""
+                    if(explained_var_required is not None):
+                        pca_str = "/EXP_VAR_"+str(explained_var_required)
+                    else:
+                        pca_str = "/NUM_COMP_"+str(num_comp)
+
+                    print("ret_k_or_expvar:{}".format(ret_k_or_expvar))
+
+                    tmpfold = save_prefix + "/EXACT_MERGED_WEIGHTS/"
+                    dmp_save_filename = tmpfold+"dump.pkl"
+                    if not os.path.exists(tmpfold):
+                        os.makedirs(tmpfold)
+                    with open(dmp_save_filename, 'wb') as file:
+                        pickle.dump(
+                            {"pcared_convm": transformed_convmatrix, "topcomp_convm": top_pca_components, "ret_k_or_expvar": ret_k_or_expvar,
+                             "pca_variance_curve": pca_variance_curve}, file)
+
+                    outputs_pca_convm_information(save_prefix, "EXACT_MERGED_WEIGHTS"+pca_str, ret_k_or_expvar,
+                                                  top_pca_components, pca_variance_curve, merged_conv_matrix_operations_in_each_layer, transformed_convmatrix)
 
     print("Finished execution!!!")

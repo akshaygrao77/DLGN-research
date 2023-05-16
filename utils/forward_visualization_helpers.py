@@ -91,24 +91,45 @@ def merge_batchnorm_into_conv(bn, conv):
 
 
 def conv2d_to_conv_matrix(conv, image_shape):
-    print("conv.weight.get_device()", conv.weight.get_device())
-    if(conv.weight.get_device() < 0):
+    return conv2dparams_to_conv_matrix(conv.weight, conv.bias, conv.stride, conv.padding, image_shape)
+
+
+def conv2dparams_to_conv_matrix(cweight, cbias, cstride, cpad, image_shape):
+    print("cweight.get_device()", cweight.get_device())
+    cweight = cweight.type(torch.float16)
+    if(cweight.get_device() < 0):
         idevice = torch.device("cpu")
     else:
-        idevice = conv.weight.get_device()
+        idevice = cweight.get_device()
 
-    identity = torch.eye(np.prod(image_shape).item(
-    ), dtype=conv.weight.dtype, device=idevice).reshape([-1] + list(image_shape))
-    output = F.conv2d(identity, conv.weight, None, conv.stride, conv.padding)
-    output_shape = output.size()[1:]
-    W = output.reshape(-1, np.prod(output_shape).item()).T
-    tbias = conv.bias
-    if(conv.bias is None):
-        tbias = torch.zeros(conv.weight.size()[
-                            0], dtype=conv.weight.dtype, device=idevice)
-    b = torch.stack(
-        [torch.ones(output_shape[1:], dtype=conv.weight.dtype, device=idevice) * bi for bi in tbias])
-    b = b.reshape(-1, np.prod(output_shape).item())
+    with torch.no_grad():
+        identity = torch.eye(np.prod(image_shape).item(
+        ), dtype=cweight.dtype, device=idevice).reshape([-1] + list(image_shape))
+        # output = conv_layer(identity)
+        output = []
+        for i in range(cweight.size()[0]):
+            conv_layer = torch.nn.Conv2d(1, cweight.size()[0], kernel_size=(cweight.size()[
+                2], cweight.size()[3]), stride=cstride, padding=cpad, dtype=cweight.dtype, bias=False)
+            conv_layer.weight = torch.nn.Parameter(
+                torch.unsqueeze(cweight[i], 0))
+            if(not cweight.get_device() < 0):
+                conv_layer = torch.nn.DataParallel(conv_layer).cuda()
+            # output.append(
+            #     F.conv2d(identity, torch.unsqueeze(cweight[i], 0), None, cstride, cpad))
+            output.append(conv_layer(identity))
+        output = torch.squeeze(torch.stack(output, 1), 2)
+        # output = F.conv2d(identity, cweight, None, cstride, cpad)
+        output_shape = output.size()[1:]
+        W = output.reshape(-1, np.prod(output_shape).item()).T
+
+        if(cbias is None):
+            b = torch.stack(
+                [torch.ones(output_shape[1:], dtype=cweight.dtype, device=idevice) * bi for bi in torch.zeros(cweight.size()[
+                    0], dtype=cweight.dtype, device=idevice)])
+        else:
+            b = torch.stack(
+                [torch.ones(output_shape[1:], dtype=cweight.dtype, device=idevice) * bi for bi in cbias])
+        b = b.reshape(-1, np.prod(output_shape).item())
     return W, b, output_shape
 
 
@@ -133,18 +154,15 @@ def merge_batchnorm_into_convmatrix(bn, raw_conv_matrix, raw_conv_bias):
 
     mweight = conv_matrix
     div_term = torch.sqrt(bn.running_var + bn.eps)
-    m_bias = torch.zeros_like(conv_bias, dtype=conv_bias.dtype)
-    for i in range(len(conv_bias)):
-        m_bias[i] = ((conv_bias[i] - bn.running_mean[i]) /
-                     (div_term[i]))*bn.weight.data[i] + bn.bias.data[i]
+    conv_bias = ((conv_bias - bn.running_mean[:, None].type(raw_conv_matrix.dtype)) /
+                 (div_term[:, None]).type(raw_conv_matrix.dtype))*bn.weight.data[:, None].type(raw_conv_matrix.dtype) + bn.bias.data[:, None].type(raw_conv_matrix.dtype)
 
-    scale_factor = (bn.weight / div_term)
-    for i in range(len(conv_matrix)):
-        mweight[i] *= scale_factor[i]
+    scale_factor = (bn.weight / div_term).type(raw_conv_matrix.dtype)
+    mweight *= scale_factor[:, None]
 
     mweight = mweight.reshape(original_conv_matrix_shape)
-    m_bias = m_bias.reshape(original_conv_bias_shape)
-    return mweight, m_bias
+    conv_bias = conv_bias.reshape(original_conv_bias_shape)
+    return mweight, conv_bias
 
 
 def merge_conv_matrix(W1, b1, W2, b2):
@@ -154,15 +172,15 @@ def merge_conv_matrix(W1, b1, W2, b2):
     return W, b
 
 
-def convert_avgpool_to_conv(avgp, ch, dtype=torch.float32):
+def convert_avgpool_to_convmatrix(avgp, image_shape, dtype=torch.float16):
+    device = "cuda"
+    ch = image_shape[0]
     ks = avgp.kernel_size
-    tp_weights = torch.zeros(size=(ch, ch, ks, ks))
+    tp_weights = torch.zeros(size=(ch, ch, ks, ks), device=device)
     for i in range(len(tp_weights)):
-        tp_weights[i][i] = torch.ones(size=(ks, ks))/(ks*ks)
-    merged_layer = torch.nn.Conv2d(
-        ch, ch, ks, stride=avgp.stride, padding=avgp.padding, bias=False, dtype=dtype)
-    merged_layer.weight = torch.nn.Parameter(tp_weights.type(dtype))
-    return merged_layer
+        tp_weights[i][i] = torch.ones(size=(ks, ks), device=device)/(ks*ks)
+    tp_weights = tp_weights.type(dtype)
+    return conv2dparams_to_conv_matrix(tp_weights, None, avgp.stride, avgp.padding, image_shape)
 
 
 def apply_input_on_conv_matrix(input, W, b):
@@ -211,32 +229,30 @@ def merge_operations_in_modules(modObj, current_tensor_size, merged_conv_matrix=
     list_to_loop = list(enumerate(modObj.children()))
     if(len(list_to_loop) == 0):
         list_to_loop = [(0, modObj)]
-
-    for (i, current_layer) in list_to_loop:
-        print("current_layer", current_layer)
-        if(isinstance(current_layer, torch.nn.Conv2d)):
-            if(merged_conv_matrix is None):
-                merged_conv_matrix, merged_conv_bias, current_tensor_size = conv2d_to_conv_matrix(
-                    current_layer, current_tensor_size)
-            else:
-                cur_conv_matrix, cur_conv_bias, current_tensor_size = conv2d_to_conv_matrix(
+    with torch.no_grad():
+        for (i, current_layer) in list_to_loop:
+            print("current_layer", current_layer)
+            if(isinstance(current_layer, torch.nn.Conv2d)):
+                if(merged_conv_matrix is None):
+                    merged_conv_matrix, merged_conv_bias, current_tensor_size = conv2d_to_conv_matrix(
+                        current_layer, current_tensor_size)
+                else:
+                    cur_conv_matrix, cur_conv_bias, current_tensor_size = conv2d_to_conv_matrix(
+                        current_layer, current_tensor_size)
+                    merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
+                        merged_conv_matrix, merged_conv_bias, cur_conv_matrix, cur_conv_bias)
+            elif(isinstance(current_layer, torch.nn.BatchNorm2d)):
+                merged_conv_matrix, merged_conv_bias = merge_batchnorm_into_convmatrix(
+                    current_layer, merged_conv_matrix, merged_conv_bias)
+            elif(isinstance(current_layer, torch.nn.AvgPool2d)):
+                cur_conv_matrix, cur_conv_bias, current_tensor_size = convert_avgpool_to_convmatrix(
                     current_layer, current_tensor_size)
                 merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
                     merged_conv_matrix, merged_conv_bias, cur_conv_matrix, cur_conv_bias)
-        elif(isinstance(current_layer, torch.nn.BatchNorm2d)):
-            merged_conv_matrix, merged_conv_bias = merge_batchnorm_into_convmatrix(
-                current_layer, merged_conv_matrix, merged_conv_bias)
-        elif(isinstance(current_layer, torch.nn.AvgPool2d)):
-            tp_conv_avg = convert_avgpool_to_conv(
-                current_layer, current_tensor_size[0])
-            cur_conv_matrix, cur_conv_bias, current_tensor_size = conv2d_to_conv_matrix(
-                tp_conv_avg, current_tensor_size)
-            merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
-                merged_conv_matrix, merged_conv_bias, cur_conv_matrix, cur_conv_bias)
-        elif(isinstance(current_layer, torch.nn.Linear)):
-            merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
-                merged_conv_matrix, merged_conv_bias, current_layer.weight, current_layer.bias)
-            current_tensor_size = (current_layer.out_features,)
+            elif(isinstance(current_layer, torch.nn.Linear)):
+                merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
+                    merged_conv_matrix, merged_conv_bias, current_layer.weight, current_layer.bias)
+                current_tensor_size = (current_layer.out_features,)
 
         print("merged_conv_matrix:{} merged_conv_bias:{} current_tensor_size:{}".format(
             merged_conv_matrix.size(), merged_conv_bias.size(), current_tensor_size))
