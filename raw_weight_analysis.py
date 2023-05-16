@@ -2321,14 +2321,15 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , dlgn__st1_pad2_vgg16_bn_wo_bias__ , dlgn__st1_pad1_vgg16_bn_wo_bias__
-    model_arch_type = 'dlgn__vgg16_bn__'
+    # dlgn__conv4_dlgn_pad0_st1_bn__ , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
+    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
 
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER , APPROX_IMAGE_OUT_PER_RES_FILTER
     # list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
     list_of_scheme_type = [
-        "EXACT_IMAGE_OUT_PER_RES_FILTER"]
+        "APPROX_IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist , fashion_mnist
     list_of_filter_vis_dataset = ["cifar10"]
@@ -2426,7 +2427,7 @@ if __name__ == '__main__':
             print("Running scheme", scheme_type)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__vgg16_bn___PRET_False_dir.pt"
+                model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___PRET_False_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 

@@ -367,7 +367,7 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
             ]
-        elif(model_arch_type in ['dlgn__vgg16_bn__', 'dlgn__pad2_vgg16_bn__', 'dlgn__st1_pad2_vgg16_bn_wo_bias__', 'dlgn__st1_pad1_vgg16_bn_wo_bias__', 'dnn__cvgg16_bn__', 'dnn__st1_pad2_vgg16_bn_wo_bias__']):
+        elif(model_arch_type in ['dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__','dlgn__conv4_dlgn_pad0_st1_bn__','dlgn__st1_pad0_vgg16_bn__','dlgn__vgg16_bn__', 'dlgn__pad2_vgg16_bn__', 'dlgn__st1_pad2_vgg16_bn_wo_bias__', 'dlgn__st1_pad1_vgg16_bn_wo_bias__', 'dnn__cvgg16_bn__', 'dnn__st1_pad2_vgg16_bn_wo_bias__']):
             transform_list = [
                 transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
