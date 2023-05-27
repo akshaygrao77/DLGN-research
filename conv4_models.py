@@ -937,7 +937,8 @@ class vgg16_bn(nn.Module):
         merged_conv_matrix = None
         merged_conv_bias = None
         orig_out = x
-        x = x.type(torch.float16)
+        if(x.get_device() >= 0):
+            x = x.type(torch.float16)
 
         with torch.no_grad():
             for layer_name, layer_obj in gating_net_layers_ordered.items():
@@ -2969,7 +2970,8 @@ class st1_pad1_vgg16_bn_wo_bias(nn.Module):
         merged_conv_matrix = None
         merged_conv_bias = None
         orig_out = x
-        x = x.type(torch.float16)
+        if(x.get_device() >= 0):
+            x = x.type(torch.float16)
 
         with torch.no_grad():
             for layer_name, layer_obj in gating_net_layers_ordered.items():
@@ -3756,6 +3758,214 @@ class Conv4_DLGN_Net(nn.Module):
             elif(layer_num == 5):
                 return self.fc1
 
+class IM_Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
+    def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.input_channel = input_channel
+        self.beta = beta
+
+        self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=2,bias=False)
+        self.conv2_g = nn.Conv2d(128, 128, 3, padding=2,bias=False)
+        self.conv3_g = nn.Conv2d(128, 128, 3, padding=2,bias=False)
+        self.conv4_g = nn.Conv2d(128, 128, 3, padding=2,bias=False)
+        self.conv1_w = nn.Conv2d(input_channel, 128, 3, padding=2,bias=False)
+        self.conv2_w = nn.Conv2d(128, 128, 3, padding=2,bias=False)
+        self.conv3_w = nn.Conv2d(128, 128, 3, padding=2,bias=False)
+        self.conv4_w = nn.Conv2d(128, 128, 3, padding=2,bias=False)
+        self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
+        self.fc1 = nn.Linear(128, num_classes)
+
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
+    def forward(self, inp):
+        device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+        
+        if(self.conv1_g.weight.get_device() < 0):
+            idevice = torch.device("cpu")
+        else:
+            idevice = self.conv1_g.weight.get_device()
+        lay_type = self.conv1_g.weight.dtype
+        
+        inp = inp.flip(-1,-2)
+
+        current_tensor_size = inp.size()[1:]
+        merged_conv_layer = None
+        conv_outs = []
+        merged_conv_layer, _ = merge_layers_operations_in_modules(
+                        self.conv1_g, current_tensor_size, lay_type, idevice, merged_conv_layer)
+        x_g1 = merged_conv_layer(inp).flip(-1,-2)
+        current_tensor_size = x_g1.size()[1:]
+        conv_outs.append(x_g1)
+
+        merged_conv_layer, _ = merge_layers_operations_in_modules(
+                        self.conv2_g, current_tensor_size, lay_type, idevice, merged_conv_layer)
+        x_g2 = merged_conv_layer(inp).flip(-1,-2)
+        current_tensor_size = x_g2.size()[1:]
+        conv_outs.append(x_g2)
+
+        merged_conv_layer, _ = merge_layers_operations_in_modules(
+                        self.conv3_g, current_tensor_size, lay_type, idevice, merged_conv_layer)
+        x_g3 = merged_conv_layer(inp).flip(-1,-2)
+        current_tensor_size = x_g3.size()[1:]
+        conv_outs.append(x_g3)
+
+        merged_conv_layer, _ = merge_layers_operations_in_modules(
+                        self.conv4_g, current_tensor_size, lay_type, idevice, merged_conv_layer)
+        x_g4 = merged_conv_layer(inp).flip(-1,-2)
+        current_tensor_size = x_g4.size()[1:]
+        conv_outs.append(x_g4)
+
+        self.linear_conv_outputs = conv_outs
+
+        g1 = nn.Sigmoid()(self.beta * x_g1)
+        g2 = nn.Sigmoid()(self.beta * x_g2)
+        g3 = nn.Sigmoid()(self.beta * x_g3)
+        g4 = nn.Sigmoid()(self.beta * x_g4)
+
+        inp_all_ones = torch.ones(inp.size(),
+                                  requires_grad=True, device=device)
+
+        x_w1 = self.conv1_w(inp_all_ones) * g1
+        x_w2 = self.conv2_w(x_w1) * g2
+        x_w3 = self.conv3_w(x_w2) * g3
+        x_w4 = self.conv4_w(x_w3) * g4
+        x_w4 = x_w4.flip(-1,-2)
+
+        x_w5 = self.pool(x_w4)
+        x_w5 = torch.flatten(x_w5, 1)
+        x_w6 = self.fc1(x_w5)
+
+        return x_w6
+
+    def get_layer_object(self, network_type, layer_num):
+        if(network_type == "GATE_NET"):
+            if(layer_num == 0):
+                return self.conv1_g
+            elif(layer_num == 1):
+                return self.conv2_g
+            elif(layer_num == 2):
+                return self.conv3_g
+            elif(layer_num == 3):
+                return self.conv4_g
+        elif(network_type == "WEIGHT_NET"):
+            if(layer_num == 0):
+                return self.conv1_w
+            elif(layer_num == 1):
+                return self.conv2_w
+            elif(layer_num == 2):
+                return self.conv3_w
+            elif(layer_num == 3):
+                return self.conv4_w
+            elif(layer_num == 4):
+                return self.pool
+            elif(layer_num == 5):
+                return self.fc1
+    
+    def get_gate_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        gating_net_layers_ordered["conv1_g"] = self.conv1_g
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["conv3_g"] = self.conv3_g
+        gating_net_layers_ordered["conv4_g"] = self.conv4_g
+        gating_net_layers_ordered["pool1"] = self.pool
+
+        return gating_net_layers_ordered
+
+    
+    def exact_forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        conv_matrix_operations_in_each_layer = OrderedDict()
+        conv_bias_operations_in_each_layer = OrderedDict()
+        channel_outs_size_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_matrix = None
+        merged_conv_bias = None
+        orig_out = x
+        if(x.get_device() >= 0):
+            x = x.type(torch.float16)
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_matrix, merged_conv_bias, current_tensor_size = merge_operations_in_modules(
+                    layer_obj, current_tensor_size, merged_conv_matrix, merged_conv_bias)
+                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix.cpu(
+                )
+                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias.cpu(
+                )
+                channel_outs_size_in_each_layer[layer_name] = current_tensor_size[0]
+
+                orig_out = layer_obj(orig_out)
+
+                convmatrix_output = apply_input_on_conv_matrix(
+                    x, merged_conv_matrix, merged_conv_bias)
+                convmatrix_output = torch.unsqueeze(torch.reshape(
+                    convmatrix_output, current_tensor_size), 0)
+                assert orig_out.size() == convmatrix_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    orig_out - convmatrix_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer
+
+
+    def forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        merged_conv_layer_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_layer = None
+        x = x.flip(-1,-2)
+        orig_out = x
+        if(self.conv1_g.weight.get_device() < 0):
+            idevice = torch.device("cpu")
+        else:
+            idevice = self.conv1_g.weight.get_device()
+        lay_type = self.conv1_g.weight.dtype
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                if(not isinstance(layer_obj, nn.AdaptiveAvgPool2d) and not isinstance(layer_obj,nn.Linear)):
+                    merged_conv_layer, _ = merge_layers_operations_in_modules(
+                        layer_obj, current_tensor_size, lay_type, idevice, merged_conv_layer)
+                    merged_conv_layer_in_each_layer[layer_name] = merged_conv_layer
+
+                    orig_out = layer_obj(orig_out).flip(-1,-2)
+
+                    merged_conv_output = merged_conv_layer(x).flip(-1,-2)
+                    current_tensor_size = merged_conv_output.size()[1:]
+
+                    print("orig_out.size():{} merged_conv_output.size():{}".format(
+                        orig_out.size(), merged_conv_output.size()))
+                    assert orig_out.size() == merged_conv_output.size(
+                    ), "Size of effective and actual output unequal"
+                    difference_in_output = (
+                        orig_out - merged_conv_output).abs().sum()
+                    print("difference_in_output ", difference_in_output)
+                    orig_out = orig_out.flip(-1,-2)
+
+        return merged_conv_layer_in_each_layer, None
+
+
 class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
@@ -3853,6 +4063,49 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
 
         return gating_net_layers_ordered
 
+    
+    def exact_forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        conv_matrix_operations_in_each_layer = OrderedDict()
+        conv_bias_operations_in_each_layer = OrderedDict()
+        channel_outs_size_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_matrix = None
+        merged_conv_bias = None
+        orig_out = x
+        if(x.get_device() >= 0):
+            x = x.type(torch.float16)
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_matrix, merged_conv_bias, current_tensor_size = merge_operations_in_modules(
+                    layer_obj, current_tensor_size, merged_conv_matrix, merged_conv_bias)
+                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix.cpu(
+                )
+                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias.cpu(
+                )
+                channel_outs_size_in_each_layer[layer_name] = current_tensor_size[0]
+
+                orig_out = layer_obj(orig_out)
+
+                convmatrix_output = apply_input_on_conv_matrix(
+                    x, merged_conv_matrix, merged_conv_bias)
+                convmatrix_output = torch.unsqueeze(torch.reshape(
+                    convmatrix_output, current_tensor_size), 0)
+                assert orig_out.size() == convmatrix_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    orig_out - convmatrix_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer
+
+
     def forward_vis(self, x) -> torch.Tensor:
         """
         x - Dummy input with batch size =1 to generate linear transformations
@@ -3863,6 +4116,7 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
         current_tensor_size = x.size()[1:]
         print("current_tensor_size ", current_tensor_size)
         merged_conv_layer = None
+        x = x.flip(-1,-2)
         orig_out = x
         if(self.conv1_g.weight.get_device() < 0):
             idevice = torch.device("cpu")
@@ -3877,9 +4131,9 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
                         layer_obj, current_tensor_size, lay_type, idevice, merged_conv_layer)
                     merged_conv_layer_in_each_layer[layer_name] = merged_conv_layer
 
-                    orig_out = layer_obj(orig_out)
+                    orig_out = layer_obj(orig_out).flip(-1,-2)
 
-                    merged_conv_output = merged_conv_layer(x)
+                    merged_conv_output = merged_conv_layer(x).flip(-1,-2)
                     current_tensor_size = merged_conv_output.size()[1:]
 
                     print("orig_out.size():{} merged_conv_output.size():{}".format(
@@ -3889,6 +4143,7 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
                     difference_in_output = (
                         orig_out - merged_conv_output).abs().sum()
                     print("difference_in_output ", difference_in_output)
+                    orig_out = orig_out.flip(-1,-2)
 
         return merged_conv_layer_in_each_layer, None
     
@@ -4028,6 +4283,47 @@ class Conv4_DLGN_Net_pad0_wo_bn(nn.Module):
                     print("difference_in_output ", difference_in_output)
 
         return merged_conv_layer_in_each_layer, None
+
+    def exact_forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        conv_matrix_operations_in_each_layer = OrderedDict()
+        conv_bias_operations_in_each_layer = OrderedDict()
+        channel_outs_size_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_matrix = None
+        merged_conv_bias = None
+        orig_out = x
+        if(x.get_device() >= 0):
+            x = x.type(torch.float16)
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_matrix, merged_conv_bias, current_tensor_size = merge_operations_in_modules(
+                    layer_obj, current_tensor_size, merged_conv_matrix, merged_conv_bias)
+                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix.cpu(
+                )
+                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias.cpu(
+                )
+                channel_outs_size_in_each_layer[layer_name] = current_tensor_size[0]
+
+                orig_out = layer_obj(orig_out)
+
+                convmatrix_output = apply_input_on_conv_matrix(
+                    x, merged_conv_matrix, merged_conv_bias)
+                convmatrix_output = torch.unsqueeze(torch.reshape(
+                    convmatrix_output, current_tensor_size), 0)
+                assert orig_out.size() == convmatrix_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    orig_out - convmatrix_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer
 
 
 
@@ -4992,6 +5288,8 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
         net = Conv4_DLGN_Net_pad0_wo_bn(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'):
         net = Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(inp_channel, seed=seed, num_classes=num_classes)
+    elif(model_arch_type == 'dlgn__im_conv4_dlgn_pad_k_1_st1_bn_wo_bias__'):
+        net = IM_Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_dlgn_n16_small'):
         net = Conv4_DLGN_Net_N16_Small(
             inp_channel, seed=seed, num_classes=num_classes)

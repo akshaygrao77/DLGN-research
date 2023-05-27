@@ -5,27 +5,34 @@ import torch.nn.functional as F
 
 def merge_conv_layers(conv1, conv2):
     """
+    
+    ================ ATTENTION =====================
+      Both the conv needs to be flipped in (-1,-2) dimensions or alternatively the input to the convolution can be flipped
+    ================================================
+
     :input k1: A tensor of shape ``(out1, in1, s1, s1)``
     :input k1: A tensor of shape ``(out2, in2, s2, s2)``
     :returns: A tensor of shape ``(out2, in1, s1+s2-1, s1+s2-1)``
       so that convolving with it equals convolving with k1 and
       then with k2.
     """
+    conv1_weight = conv1.weight.data.flip(-1,-2)
     if(conv2.weight.get_device() < 0):
         idevice = torch.device("cpu")
     else:
         idevice = conv2.weight.get_device()
 
     m_bias = True
-    padding = conv2.weight.data.size()[-1] - 1
+    padding = (conv2.weight.data.size()[-2] - 1,conv2.weight.data.size()[-1] - 1)
     # Flip because this is actually correlation, and permute to adapt to BHCW
-    new_conv_weights = torch.conv2d(conv1.weight.data.permute(1, 0, 2, 3), conv2.weight.data.flip(-1, -2),
+    new_conv_weights = torch.conv2d(conv1_weight.data.permute(1, 0, 2, 3), conv2.weight.data,
                                     padding=padding).permute(1, 0, 2, 3)
+
     if(conv1.bias is None and conv2.bias is not None):
         new_conv_bias = conv2.bias.data
     elif((conv1.bias is not None and conv2.bias is not None) or (conv2.bias is None and conv1.bias is not None)):
         add_x = torch.ones(1, conv1.out_channels, *conv2.kernel_size,
-                           dtype=conv1.weight.dtype, device=idevice) * (conv1.bias.data[None, :, None, None]).to(idevice)
+                           dtype=conv1_weight.dtype, device=idevice) * (conv1.bias.data[None, :, None, None]).to(idevice)
         # This operation simultaneously transfers the bias from the first convolution and adds the bias from the second.
         tc = conv2.padding
         conv2.padding = 0
@@ -35,13 +42,12 @@ def merge_conv_layers(conv1, conv2):
         m_bias = False
 
     # merged_layer = torch.nn.Conv2d(new_conv_weights.size()[1],new_conv_weights.size()[0],new_conv_weights.size()[2],stride=1,padding=new_conv_weights.size()[2]-1,bias=m_bias)
-    merged_layer = torch.nn.Conv2d(new_conv_weights.size()[1], new_conv_weights.size()[0], new_conv_weights.size()[
-                                   2], stride=1, padding=new_conv_weights.size()[2] - 1, bias=m_bias, dtype=conv1.weight.dtype, device=idevice)
-    merged_layer.weight = torch.nn.Parameter(new_conv_weights)
+    merged_layer = torch.nn.Conv2d(new_conv_weights.size()[1], new_conv_weights.size()[0], (new_conv_weights.size()[
+                                   -2],new_conv_weights.size()[-1]), stride=1, padding=(new_conv_weights.size()[-2] - 1,new_conv_weights.size()[-1] - 1), bias=m_bias, dtype=conv1.weight.dtype, device=idevice)
+    merged_layer.weight = torch.nn.Parameter(new_conv_weights.flip(-1,-2))
     if(m_bias):
         merged_layer.bias = torch.nn.Parameter(new_conv_bias)
     return merged_layer
-
 
 def convert_avgpool_to_conv_layer(avgp, ch, dtype=torch.float32, idevice=torch.device("cuda")):
     ks = avgp.kernel_size
@@ -85,7 +91,7 @@ def merge_batchnorm_into_conv(bn, conv):
 
     merged_layer = torch.nn.Conv2d(conv.weight.size()[1], conv.weight.size()[
                                    0], conv.weight.size()[2], stride=1, padding=conv.padding, bias=True, dtype=conv.weight.dtype, device=idevice)
-    merged_layer.weight = torch.nn.Parameter(mweight)
+    merged_layer.weight = torch.nn.Parameter(mweight.flip(-1,-2))
     merged_layer.bias = torch.nn.Parameter(m_bias)
     return merged_layer
 
@@ -96,10 +102,10 @@ def conv2d_to_conv_matrix(conv, image_shape):
 
 def conv2dparams_to_conv_matrix(cweight, cbias, cstride, cpad, image_shape):
     print("cweight.get_device()", cweight.get_device())
-    cweight = cweight.type(torch.float16)
     if(cweight.get_device() < 0):
         idevice = torch.device("cpu")
     else:
+        cweight = cweight.type(torch.float16)
         idevice = cweight.get_device()
 
     with torch.no_grad():
@@ -203,7 +209,7 @@ def merge_layers_operations_in_modules(modObj, current_tensor_size, lay_type, id
         list_to_loop = [(0, modObj)]
 
     for (i, current_layer) in list_to_loop:
-        print("current_layer", current_layer)
+        # print("current_layer", current_layer)
         if(isinstance(current_layer, torch.nn.Conv2d)):
             if(merged_conv_layer is None):
                 merged_conv_layer = current_layer
@@ -219,8 +225,8 @@ def merge_layers_operations_in_modules(modObj, current_tensor_size, lay_type, id
             merged_conv_layer = merge_conv_layers(
                 merged_conv_layer, tp_conv_avg)
 
-        print("merged_conv_layer:{} current_tensor_size:{}".format(
-            merged_conv_layer, current_tensor_size))
+        # print("merged_conv_layer:{} current_tensor_size:{}".format(
+        #     merged_conv_layer, current_tensor_size))
 
     return merged_conv_layer, current_tensor_size
 
