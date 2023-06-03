@@ -318,13 +318,13 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'cifar10'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'conv4_deep_gated_net_n16_small'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
+    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
     # iterative_augmenting , nil , APR_exps
-    scheme_type = 'APR_exps'
+    scheme_type = 'nil'
     # scheme_type = ''
     batch_size = 32
 
@@ -332,8 +332,8 @@ if __name__ == '__main__':
     torch_seed = 2022
 
     wand_project_name = None
-    wand_project_name = "APR_experiments"
-    # wand_project_name = "common_model_init_exps"
+    # wand_project_name = "APR_experiments"
+    wand_project_name = "common_model_init_exps"
     # wand_project_name = "V2_template_visualisation_augmentation"
 
     # Percentage of information retention during PCA (values between 0-1)

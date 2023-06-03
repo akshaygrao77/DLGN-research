@@ -18,7 +18,7 @@ from structure.dlgn_conv_config_structure import DatasetConfig
 from conv4_models import get_model_instance, get_model_instance_from_dataset
 
 
-def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375):
+def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375,dataset=None):
     print("Model will be saved at", model_save_path)
     device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
     if device_str == 'cuda':
@@ -40,6 +40,9 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
     criterion = nn.CrossEntropyLoss()
     epoch = 0
+    if(dataset is not None and dataset == "cifar10"):
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt, T_max=200)
     while(epoch < epochs and (start_net_path is None or (stop_at_adv_test_acc is None or best_test_acc < stop_at_adv_test_acc))):
         correct = 0
         total = 0
@@ -117,6 +120,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             torch.save(model, model_save_path)
             print("Saved model at", model_save_path)
         epoch += 1
+        if(dataset is not None and dataset == "cifar10"):
+            scheduler.step()
 
     save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
     if not os.path.exists(save_adv_image_prefix):
@@ -131,15 +136,15 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 
 if __name__ == '__main__':
-    # fashion_mnist , mnist
-    dataset = 'mnist'
+    # fashion_mnist , mnist,cifar10
+    dataset = 'cifar10'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'conv4_dlgn_n16_small'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
+    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
     # batch_size = 128
-    wand_project_name = "fast_adv_tr_visualisation"
-    # wand_project_name = "common_model_init_exps"
+    # wand_project_name = "fast_adv_tr_visualisation"
+    wand_project_name = "common_model_init_exps"
     # wand_project_name = None
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL
     exp_type = "ADV_TRAINING"
@@ -182,7 +187,7 @@ if __name__ == '__main__':
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    pca_exp_percent = 0.95
+    # pca_exp_percent = 0.85
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -221,7 +226,7 @@ if __name__ == '__main__':
                 fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
         print("Training over "+dataset)
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         num_classes_trained_on = num_classes
         dataset_str = dataset
@@ -275,12 +280,12 @@ if __name__ == '__main__':
 
         start_net_path = None
 
-        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir.pt"
+        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_n16_small_PCA_K12_P_0.5_dir.pt"
         if(start_net_path is not None):
             custom_temp_model = torch.load(start_net_path)
             net.load_state_dict(custom_temp_model.state_dict())
             stop_at_adv_test_acc = None
-            stop_at_adv_test_acc = 97
+            stop_at_adv_test_acc = 70.68
 
         net = net.to(device)
 
@@ -350,7 +355,7 @@ if __name__ == '__main__':
                             )
 
                         best_test_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name, alpha=eps_step_size)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name, alpha=eps_step_size,dataset=dataset)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc})
                             wandb.finish()

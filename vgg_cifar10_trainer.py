@@ -530,18 +530,19 @@ def train(train_loader, model, criterion, optimizer, epoch):
         len(train_loader),
         [batch_time, data_time, losses, top1],
         prefix="Epoch: [{}]".format(epoch))
-
+    model = model.double()
     # switch to train mode
     model.train()
 
     end = time.time()
     for i, (input, target) in enumerate(train_loader):
-
         # measure data loading time
         data_time.update(time.time() - end)
 
         input = input.to(av_device, non_blocking=True)
         target = target.to(av_device, non_blocking=True)
+
+        input = input.double()
 
         # compute output
         output = model(input)
@@ -555,8 +556,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
         args.start_step += 1
         # custom_piecewise_lr_decay_scheduler(optimizer, args.start_step)
 
-        output = output.float()
-        loss = loss.float()
+        # output = output.float()
+        # loss = loss.float()
         # measure accuracy and record loss
         prec1 = accuracy(output.data, target)[0]
         losses.update(loss.item(), input.size(0))
@@ -590,6 +591,7 @@ def validate(val_loader, model, criterion):
 
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
+        input = input.double()
         if args.cpu == False:
             input = input.cuda()
             target = target.cuda()

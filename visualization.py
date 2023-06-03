@@ -532,12 +532,12 @@ class TemplateImageGenerator():
         cce_loss = self.calculate_loss_for_output_class_max_image(
             outputs, labels)
         if(temp_loss_type == "TEMP_LOSS"):
-            template_loss, active_pixel_points, total_pixel_points = self.new_calculate_loss_for_template_image()
+            template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.new_calculate_loss_for_template_image()
         elif(temp_loss_type == "TEMP_ACT_ONLY_LOSS"):
-            template_loss, active_pixel_points, total_pixel_points = self.calculate_only_active_loss_for_template_image()
+            template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.calculate_only_active_loss_for_template_image()
 
         overall_loss = alpha * cce_loss + (1-alpha)*template_loss
-        return overall_loss, active_pixel_points, total_pixel_points
+        return overall_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points
 
     def calculate_mixed_loss_output_class_and_template_image_with_entropy(self, outputs, labels, alpha=0.1):
         cce_loss = self.calculate_loss_for_output_class_max_image(
@@ -880,7 +880,7 @@ class TemplateImageGenerator():
         elif(template_loss_type == "CCE_TEMP_LOSS_MIXED"):
             actual = torch.tensor(
                 [class_indx] * len(outputs), device=self.device)
-            loss, active_pixel_points, total_pixel_points = self.calculate_mixed_loss_output_class_and_template_image(
+            loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.calculate_mixed_loss_output_class_and_template_image(
                 outputs, actual, "TEMP_LOSS", alpha)
         elif(template_loss_type == "CCE_TEMP_ACT_ONLY_LOSS_MIXED"):
             actual = torch.tensor(
@@ -960,7 +960,9 @@ class TemplateImageGenerator():
         total = 0
         reconst_correct = 0
         original_correct = 0
-        alpha = 0
+        alpha = 0.01
+        if(alpha != 0):
+            self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
         normalize_image = False
         overall_step = 0
         average_percent_active_pixels = 0.
@@ -2628,7 +2630,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
 if __name__ == '__main__':
     print("Start")
     # mnist , cifar10 , fashion_mnist , imagenet_1000
-    dataset = 'cifar10'
+    dataset = 'fashion_mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -2640,7 +2642,7 @@ if __name__ == '__main__':
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # dlgn__resnet18__ , dgn__resnet18__,dnn__resnet18__ , dlgn__vgg16_bn__ , dlgn__st1_pad1_vgg16_bn_wo_bias__ ,dlgn__st1_pad2_vgg16_bn_wo_bias__, dnn__st1_pad2_vgg16_bn_wo_bias__
-    model_arch_type = 'dlgn__vgg16_bn__'
+    model_arch_type = 'conv4_dlgn_n16_small'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
@@ -2651,14 +2653,14 @@ if __name__ == '__main__':
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
     # MSE_LAYER_LOSS
-    template_loss_type = "TANH_TEMP_LOSS"
-    number_of_batch_to_collect = 1
+    template_loss_type = "CCE_TEMP_LOSS_MIXED"
+    number_of_batch_to_collect = None
     vis_version = "V2"
     # wand_project_name = "layerwise_avg_template_visualisation_augmentation"
-    # wand_project_name = "fresh_template_visualisation_augmentation"
+    wand_project_name = "fresh_template_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "test_template_visualisation_augmentation"
-    wand_project_name = None
+    # wand_project_name = None
     wandb_group_name = "TP_"+str(template_loss_type) + \
         "_DS_"+str(dataset)+"_MT_"+str(model_arch_type)
     is_split_validation = False
@@ -2666,7 +2668,7 @@ if __name__ == '__main__':
     torch_seed = 2022
     number_of_image_optimization_steps = 161
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES , GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG
-    exp_type = "GENERATE_TEMPLATE_IMAGES"
+    exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
     temp_collect_threshold = 0.99
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
@@ -2675,7 +2677,7 @@ if __name__ == '__main__':
     # random_per_layer_sample_gate_percent = 1000
 
     layer_nums_to_visualize = None
-    layer_nums_to_visualize = [2]
+    # layer_nums_to_visualize = [2]
     # layer_nums_to_visualize = [i for i in range(16)]
 
     class_indx_to_visualize = None
@@ -2711,7 +2713,7 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__vgg16_bn___PRET_False_dir.pt"
+    custom_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

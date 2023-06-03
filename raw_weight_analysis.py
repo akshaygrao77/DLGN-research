@@ -2321,12 +2321,12 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , dlgn__st1_pad2_vgg16_bn_wo_bias__ , dlgn__st1_pad1_vgg16_bn_wo_bias__
-    # dlgn__conv4_dlgn_pad0_st1_bn__ , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
+    # dlgn__conv4_dlgn_pad0_st1_bn__ , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , dlgn__im_conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
 
     torch_seed = 2022
 
-    # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER , APPROX_IMAGE_OUT_PER_RES_FILTER
+    # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER , APPROX_IMAGE_OUT_PER_RES_FILTER,EXACT_IMAGE_OUT_PER_RES_FILTER
     # list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
     list_of_scheme_type = [
         "APPROX_IMAGE_OUT_PER_RES_FILTER"]
@@ -2660,9 +2660,8 @@ if __name__ == '__main__':
                 cin_dom = False
 
                 explained_var_required = 0.9
-
-                dummy_input = torch.rand(
-                    get_img_size(dataset)).unsqueeze(0)
+                dummy_input = next(enumerate(trainloader))[1][0][0].unsqueeze(0)
+                dummy_input = dummy_input.type(next(model.parameters()).dtype)
                 model = model.to(device)
                 model.eval()
                 dummy_input = dummy_input.to(device)
@@ -2705,7 +2704,7 @@ if __name__ == '__main__':
             elif(scheme_type == "EXACT_IMAGE_OUT_PER_RES_FILTER"):
                 device = torch.device(
                     "cuda" if torch.cuda.is_available() else "cpu")
-                # device = "cpu"
+                device = "cpu"
 
                 sub_scheme_type = 'IND'
                 explained_var_required = None

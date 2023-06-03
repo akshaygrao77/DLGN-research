@@ -3833,7 +3833,7 @@ class IM_Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
         g4 = nn.Sigmoid()(self.beta * x_g4)
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device)
+                                  requires_grad=True, device=device,dtype=inp.dtype)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
@@ -3997,7 +3997,8 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)
-
+        
+        inp = inp.flip(-1,-2)
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         conv_outs.append(x_g1)
@@ -4016,7 +4017,7 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
         g4 = nn.Sigmoid()(self.beta * x_g4)
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device)
+                                  requires_grad=True, device=device,dtype=inp.dtype)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
