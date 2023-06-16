@@ -181,6 +181,8 @@ def outputs_pca_information(root_save_prefix, final_postfix_for_save, ret_k_or_e
                 curr_fil_DFT_outputs = torch.vstack(
                     (curr_fil_DFT_outputs, torch.unsqueeze(curr_chanl_DFT_outputs, 0)))
 
+        if(len(curr_fil_DFT_outputs.size())==4):
+            curr_fil_DFT_outputs = torch.reshape(curr_fil_DFT_outputs,(curr_fil_DFT_outputs.size()[0]*curr_fil_DFT_outputs.size()[1],curr_fil_DFT_outputs.size()[2],curr_fil_DFT_outputs.size()[3]))
         f_outs_DFT_norms.append(curr_fil_DFT_outputs)
 
     for i in top_pca_components:
@@ -353,9 +355,13 @@ def output_params(lweights, root_save_prefix, final_postfix_for_save):
             else:
                 current_f_outs_DFT_norm = torch.vstack(
                     (current_f_outs_DFT_norm, torch.unsqueeze(current_f_channel_norm_dft_outs, 0)))
-
+        
+        if(len(current_f_outs_DFT_norm.size())==4):
+            current_f_outs_DFT_norm = torch.reshape(current_f_outs_DFT_norm,(current_f_outs_DFT_norm.size()[0]*current_f_outs_DFT_norm.size()[1],current_f_outs_DFT_norm.size()[2],current_f_outs_DFT_norm.size()[3]))
+        
         f_outs_DFT_norms.append(current_f_outs_DFT_norm.cpu())
 
+    
     for i, current_weight_np in list_of_weights.items():
         # current_full_img_save_path = save_folder + \
         # "weight_plot_n_{}.jpg".format(i)
@@ -2427,7 +2433,7 @@ if __name__ == '__main__':
             print("Running scheme", scheme_type)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___PRET_False_dir.pt"
+                model_path = "root/model/save/cifar10/adversarial_training/MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 
