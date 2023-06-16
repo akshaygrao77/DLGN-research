@@ -408,10 +408,16 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
     elif(dataset_config.name == 'mnist' or dataset_config.name == 'fashion_mnist'):
         X_valid = None
         y_valid = None
-        if(dataset_config.name == 'mnist'):
-            (X_train, y_train), (X_test, y_test) = mnist.load_data()
-        elif(dataset_config.name == 'fashion_mnist'):
-            (X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()
+        if(dataset_config.custom_dataset_path is None):
+            if(dataset_config.name == 'mnist'):
+                (X_train, y_train), (X_test, y_test) = mnist.load_data()
+            elif(dataset_config.name == 'fashion_mnist'):
+                (X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()
+        else:
+            with np.load(dataset_config.custom_dataset_path, allow_pickle=True) as f:
+                X_train, y_train = f['X_train'], f['y_train']
+                X_test, y_test = f['X_test'], f['y_test']
+
         X_train = X_train.astype(np.float32)
         X_test = X_test.astype(np.float32)
 

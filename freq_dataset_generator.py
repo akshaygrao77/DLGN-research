@@ -38,30 +38,31 @@ def modify_get_dataset(loader,mode,filter_percent):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
-    datasetname = "fashion_mnist"
+    datasetname = "mnist"
     mode = "HFC"
     filter_percent = 0.30
 
-    if(datasetname == "mnist"):
-        (X_train, y_train), (X_test, y_test) = mnist.load_data()
-    elif(datasetname == "fashion_mnist"):
-        (X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()
-    
-    loader = torch.utils.data.DataLoader(list(zip(X_train, y_train)), shuffle=False, batch_size=256)
-    (mod_X_train, mod_y_train) = modify_get_dataset(loader,mode,filter_percent)
+    for filter_percent in [0.3,0.5,0.65,0.8]:
+        if(datasetname == "mnist"):
+            (X_train, y_train), (X_test, y_test) = mnist.load_data()
+        elif(datasetname == "fashion_mnist"):
+            (X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()
+        
+        loader = torch.utils.data.DataLoader(list(zip(X_train, y_train)), shuffle=False, batch_size=256)
+        (mod_X_train, mod_y_train) = modify_get_dataset(loader,mode,filter_percent)
 
-    assert mod_X_train.shape == X_train.shape and (mod_y_train == y_train).all(), "Error in creating train set"
-    
-    loader = torch.utils.data.DataLoader(list(zip(X_test, y_test)), shuffle=False, batch_size=256)
-    (mod_X_test, mod_y_test) = modify_get_dataset(loader,mode,filter_percent)
+        assert mod_X_train.shape == X_train.shape and (mod_y_train == y_train).all(), "Error in creating train set"
+        
+        # loader = torch.utils.data.DataLoader(list(zip(X_test, y_test)), shuffle=False, batch_size=256)
+        # (mod_X_test, mod_y_test) = modify_get_dataset(loader,mode,filter_percent)
 
-    assert mod_X_test.shape == X_test.shape and (mod_y_test == y_test).all(), "Error in creating test set"
+        # assert mod_X_test.shape == X_test.shape and (mod_y_test == y_test).all(), "Error in creating test set"
 
-    save_folder = "data/custom_datasets/"
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
+        save_folder = "data/custom_datasets/"
+        if not os.path.exists(save_folder):
+            os.makedirs(save_folder)
 
-    with open(save_folder+str(datasetname)+"_"+str(mode)+"_FP_"+str(filter_percent)+".npy", 'wb') as file:
-            np.savez(file, X_train=mod_X_train,y_train=mod_y_train,X_test=mod_X_test,y_test=mod_y_test)
+        with open(save_folder+str(datasetname)+"_"+str(mode)+"_FP_"+str(filter_percent)+".npy", 'wb') as file:
+                np.savez(file, X_train=mod_X_train,y_train=mod_y_train,X_test=X_test,y_test=y_test)
     
     print("Completed creation of dataset")

@@ -347,7 +347,7 @@ if __name__ == '__main__':
     train_transforms = None
     is_normalize_data = True
 
-    custom_dataset_path = "data/custom_datasets/mnist_LFC_FP_0.65.npy"
+    custom_dataset_path = "data/custom_datasets/fashion_mnist_HFC_FP_0.8.npy"
     # custom_dataset_path = None
 
     if(scheme_type == "APR_exps"):
@@ -369,24 +369,25 @@ if __name__ == '__main__':
         classes = ('plane', 'car', 'bird', 'cat',
                    'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
         num_classes = len(classes)
-        if(custom_dataset_path is None):
-            data_config = DatasetConfig(
-                'cifar10', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, train_transforms=train_transforms)
+        
+        data_config = DatasetConfig(
+            'cifar10', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on,
+            train_transforms=train_transforms,custom_dataset_path=custom_dataset_path)
 
-            trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+        trainloader, _, testloader = preprocess_dataset_get_data_loader(
+            data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     elif(dataset == "mnist"):
         inp_channel = 1
         classes = [str(i) for i in range(0, 10)]
         num_classes = len(classes)
         
-        if(custom_dataset_path is None):
-            data_config = DatasetConfig(
-                'mnist', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, train_transforms=train_transforms)
+        data_config = DatasetConfig(
+            'mnist', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, 
+            train_transforms=train_transforms,custom_dataset_path=custom_dataset_path)
 
-            trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+        trainloader, _, testloader = preprocess_dataset_get_data_loader(
+            data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     elif(dataset == "fashion_mnist"):
         inp_channel = 1
@@ -394,29 +395,15 @@ if __name__ == '__main__':
                    'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle-boot')
         num_classes = len(classes)
         
-        if(custom_dataset_path is None):
-            data_config = DatasetConfig(
-                'fashion_mnist', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, train_transforms=train_transforms)
+        data_config = DatasetConfig(
+            'fashion_mnist', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, 
+            train_transforms=train_transforms,custom_dataset_path=custom_dataset_path)
 
-            trainloader, _, testloader = preprocess_dataset_get_data_loader(
-                data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+        trainloader, _, testloader = preprocess_dataset_get_data_loader(
+            data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     if(custom_dataset_path is not None):
-        with np.load(custom_dataset_path, allow_pickle=True) as f:
-            x_train, y_train = f['X_train'], f['y_train']
-            x_test, y_test = f['X_test'], f['y_test']
-        
-        x_train = torch.from_numpy(x_train)
-        y_train = torch.from_numpy(y_train)
-        x_test = torch.from_numpy(x_test)
-        y_test = torch.from_numpy(y_test)
-        if(len(x_train.size())==3):
-            x_train = torch.transpose(torch.unsqueeze(x_train, 0),0,1)
-            x_test = torch.transpose(torch.unsqueeze(x_test, 0),0,1)
-
         dataset = custom_dataset_path[custom_dataset_path.rfind("/")+1:custom_dataset_path.rfind(".npy")]
-        trainloader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_train,y_train), shuffle=False, batch_size=batch_size)
-        testloader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test,y_test), shuffle=False, batch_size=batch_size)
 
     print("Training over "+dataset)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

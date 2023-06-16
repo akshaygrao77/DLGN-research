@@ -5262,6 +5262,10 @@ def get_img_size(dataset):
         return [1, 28, 28]
     elif(dataset == "imagenet_1000"):
         return [3, 224, 224]
+    elif("mnist_" in dataset):
+        return [1, 28, 28]
+    elif("fashion_mnist_" in dataset):
+        return [1, 28, 28]
 
 
 def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], pretrained=False, aux_logits=True):

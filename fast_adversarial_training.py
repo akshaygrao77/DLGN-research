@@ -137,7 +137,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
 if __name__ == '__main__':
     # fashion_mnist , mnist,cifar10
-    dataset = 'cifar10'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
@@ -189,6 +189,9 @@ if __name__ == '__main__':
     pca_exp_percent = None
     # pca_exp_percent = 0.85
 
+    custom_dataset_path = "data/custom_datasets/fashion_mnist_HFC_FP_0.3.npy"
+    # custom_dataset_path = None
+
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
             inp_channel = 3
@@ -197,7 +200,7 @@ if __name__ == '__main__':
             num_classes = len(classes)
 
             cifar10_config = DatasetConfig(
-                'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
+                'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on,custom_dataset_path=custom_dataset_path)
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -208,7 +211,7 @@ if __name__ == '__main__':
             num_classes = len(classes)
 
             mnist_config = DatasetConfig(
-                'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
+                'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on,custom_dataset_path=custom_dataset_path)
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -218,12 +221,15 @@ if __name__ == '__main__':
             classes = ('T-shirt', 'Trouser', 'Pullover', 'Dress', 'Coat',
                        'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle-boot')
             num_classes = len(classes)
-
+            
             fashion_mnist_config = DatasetConfig(
-                'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
+                'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size,list_of_classes=list_of_classes_to_train_on,custom_dataset_path=custom_dataset_path)
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+
+        if(custom_dataset_path is not None):
+            dataset = custom_dataset_path[custom_dataset_path.rfind("/")+1:custom_dataset_path.rfind(".npy")]
 
         print("Training over "+dataset)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -12,6 +12,7 @@ import torch.backends.cudnn as cudnn
 from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_merged_dataset_from_two_loader, generate_dataset_from_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
+from collections import OrderedDict
 
 from visualization import recreate_image, save_image,  PerClassDataset, TemplateImageGenerator, seed_worker, quick_visualization_on_config
 from utils.data_preprocessing import true_segregation
@@ -580,13 +581,34 @@ def extract_common_activation_patterns_between_reconst_and_original(true_input_d
 
     return per_class_common_active_percentages, per_class_common_active_pixel_counts, per_class_common_total_pixel_counts
 
+def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    temp_model = torch.load(model_path, map_location=device)
+    custom_model = get_model_instance_from_dataset(
+        dataset, model_arch_type)
+    if("masked" in model_arch_type):
+        custom_model = get_model_instance_from_dataset(
+            dataset, model_arch_type, mask_percentage=mask_percentage)
+    if(isinstance(temp_model, dict)):
+        if("module." in [*temp_model['state_dict'].keys()][0]):
+            new_state_dict = OrderedDict()
+            for k, v in temp_model['state_dict'].items():
+                name = k[7:]  # remove 'module.' of dataparallel
+                new_state_dict[name] = v
+            custom_model.load_state_dict(new_state_dict)
+        else:
+            custom_model.load_state_dict(temp_model['state_dict'])
+    else:
+        custom_model.load_state_dict(temp_model.state_dict())
+
+    return custom_model
 
 if __name__ == '__main__':
-    # fashion_mnist , mnist
-    dataset = 'fashion_mnist'
+    # fashion_mnist , mnist, cifar10
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
-    # fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'conv4_dlgn_n16_small'
+    # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
+    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -602,12 +624,15 @@ if __name__ == '__main__':
     # pca_exp_percent = 0.85
 
     wandb_config_additional_dict = None
-    wandb_config_additional_dict = {
-        "type_of_APR": "APRP", "is_train_on_phase": True}
+    # wandb_config_additional_dict = {
+    #     "type_of_APR": "APRP", "is_train_on_phase": True}
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/fashion_mnist/APR_TRAINING/TYP_APRP/APRP_MPROB_0.6/TR_PHASE_True/ST_2022/conv4_dlgn_n16_small_dir.pt"
+    direct_model_path = "root/model/save/fashion_mnist_LFC_FP_0.65/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
+
+    custom_dataset_path = "data/custom_datasets/fashion_mnist_LFC_FP_0.65.npy"
+    # custom_dataset_path = None
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -616,7 +641,8 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         cifar10_config = DatasetConfig(
-            'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
+            'cifar10', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, 
+            list_of_classes=list_of_classes_to_train_on,custom_dataset_path=custom_dataset_path)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             cifar10_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -627,7 +653,8 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         mnist_config = DatasetConfig(
-            'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
+            'mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, 
+            list_of_classes=list_of_classes_to_train_on,custom_dataset_path=custom_dataset_path)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
@@ -639,11 +666,15 @@ if __name__ == '__main__':
         num_classes = len(classes)
 
         fashion_mnist_config = DatasetConfig(
-            'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on)
+            'fashion_mnist', is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, 
+            list_of_classes=list_of_classes_to_train_on,custom_dataset_path=custom_dataset_path)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
-
+    
+    if(custom_dataset_path is not None):
+        dataset = custom_dataset_path[custom_dataset_path.rfind("/")+1:custom_dataset_path.rfind(".npy")]
+    
     print("Testing over "+dataset)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -702,7 +733,8 @@ if __name__ == '__main__':
         # wand_project_name = "adv_attack_for_active_pixels_on_reconst_augmentation"
         # wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation_with_orig"
         # wand_project_name = 'V2_adv_attack_on_reconst_augmentation_with_orig'
-        wand_project_name = "APR_experiments"
+        # wand_project_name = "APR_experiments"
+        wand_project_name = "adv_attack_latest"
         # wand_project_name = 'common_active_pixels_on_reconst_augmentation'
         # wand_project_name = None
 
@@ -713,11 +745,11 @@ if __name__ == '__main__':
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST , ADV_ATTACK_PER_CLASS
         exp_type = "ADV_ATTACK_PER_CLASS"
         is_adv_attack_on_train = False
-        eps_step_size = 0.01
+        eps_step_size = 0.06
 
         model_and_data_save_prefix = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/"
 
-        number_of_augment_iterations = 2
+        number_of_augment_iterations = 1
 
         is_targetted = adv_target is not None
         is_log_wandb = not(wand_project_name is None)
@@ -753,8 +785,8 @@ if __name__ == '__main__':
                 isExist = os.path.exists(model_save_path)
                 assert isExist == True, 'Model path does not have saved model'
 
-                custom_temp_model = torch.load(model_save_path)
-                net.load_state_dict(custom_temp_model.state_dict())
+                net = get_model_from_path(
+                    dataset, model_arch_type, model_save_path)
 
                 net = net.to(device)
                 device_str = 'cuda' if torch.cuda.is_available() else 'cpu'

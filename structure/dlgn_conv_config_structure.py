@@ -18,7 +18,7 @@ class Configs(Namespace):
 
 
 class DatasetConfig:
-    def __init__(self, name, is_normalize_data, valid_split_size, batch_size=64, list_of_classes=None, train_transforms=None, test_transforms=None):
+    def __init__(self, name, is_normalize_data, valid_split_size, batch_size=64, list_of_classes=None, train_transforms=None, test_transforms=None,custom_dataset_path=None):
         self.name = name
         self.is_normalize_data = is_normalize_data
         self.valid_split_size = valid_split_size
@@ -26,6 +26,7 @@ class DatasetConfig:
         self.list_of_classes = list_of_classes
         self.train_transforms = train_transforms
         self.test_transforms = test_transforms
+        self.custom_dataset_path = custom_dataset_path
 
 
 class AllParams:
