@@ -175,6 +175,15 @@ class SaveOutput:
             del each_output
         self.outputs = []
 
+class SaveFeatures():
+    def __init__(self, module):
+        self.hook = module.register_forward_hook(self.hook_fn)
+
+    def hook_fn(self, module, input, output):
+        self.features = output
+
+    def close(self):
+        self.hook.remove()
 
 class TemplateImageGenerator():
 
@@ -199,6 +208,8 @@ class TemplateImageGenerator():
 
         self.y_plus_list = None
         self.y_minus_list = None
+
+        self.layer_nums_to_visualize = None
         # Hook the layers to get result of the convolution
         # self.hook_layer()
         # Create the folder to export images if not exists
@@ -215,16 +226,39 @@ class TemplateImageGenerator():
     def reset_collection_state(self):
         self.y_plus_list = None
         self.y_minus_list = None
+        self.layer_nums_to_visualize = None
+        if(hasattr(self,"out_capturer")):
+            for e in self.out_capturer:
+                e.close()
+        tmp = self.original_image.type(torch.float32)
+        self.model(torch.unsqueeze(tmp.to(self.device),0))
+        self.is_use_capturer = False
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            if(not hasattr(self.model.module,"linear_conv_outputs")):
+                self.is_use_capturer = True
+        else:
+            if(not hasattr(self.model,"linear_conv_outputs")):
+                self.is_use_capturer = True
+
+        if(self.is_use_capturer):
+            self.out_capturer = []
+            for _,val in self.model.get_gate_layers_ordered_dict():
+                self.out_capturer = SaveFeatures(val)
 
     def reset_entropy_state(self):
         self.entropy_active_list = None
         self.overall_entropy_list = None
 
     def get_convouts(self):
-        if(isinstance(self.model, torch.nn.DataParallel)):
-            conv_outs = self.model.module.linear_conv_outputs
+        if(not self.is_use_capturer):
+            if(isinstance(self.model, torch.nn.DataParallel)):
+                conv_outs = self.model.module.linear_conv_outputs
+            else:
+                conv_outs = self.model.linear_conv_outputs
         else:
-            conv_outs = self.model.linear_conv_outputs
+            conv_outs = []
+            for ev in self.out_capturer:
+                conv_outs.append(ev.features)
 
         if(self.layer_nums_to_visualize is None):
             return conv_outs
@@ -421,18 +455,75 @@ class TemplateImageGenerator():
             if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
                 break
 
-    def collect_active_pixel_per_batch(self, per_class_per_batch_data):
+    def collect_active_pixel_per_batch(self, per_class_per_batch_data,is_set_rolled_part_zero=None):
         c_inputs, _ = per_class_per_batch_data
         c_inputs = c_inputs.to(self.device)
 
         # Forward pass to store layer outputs from hooks
         self.model(c_inputs)
+        if(is_set_rolled_part_zero is None):
+            # Intiialise the structure to hold i's for which pixels are positive or negative
+            if(self.y_plus_list is None or self.y_minus_list is None):
+                self.initialise_y_plus_and_y_minus()
+            self.update_y_lists()
+        else:
+            if(self.y_plus_list is None or self.y_minus_list is None):
+                self.initialise_y_plus_and_y_minus()
+                self.update_y_lists()
+            else:
+                min_gate_diff = float("inf")
+                min_x = -1
+                min_y = -1
+                min_fl = 0
+                pxlmin = c_inputs.min()
+                for xs in range(c_inputs.size()[-1]):
+                    for ys in range(c_inputs.size()[-2]):
+                        for fl in range(2):
+                            cur_trans = torch.roll(c_inputs,shifts=(xs, ys), dims=(-1, -2))
+                            if(is_set_rolled_part_zero):
+                                cur_trans[:,:,0:ys,:] = pxlmin
+                                cur_trans[:,:,:,0:xs] = pxlmin
+                            if(fl % 2 == 1):
+                                cur_trans = cur_trans.flip(-1)
+                            
+                            self.model(cur_trans)
+                            
+                            conv_outs = self.get_convouts()
+                            y_plus_list = []
+                            y_minus_list = []
+                            with torch.no_grad():
+                                for indx in range(len(conv_outs)):
+                                    each_conv_output = conv_outs[indx]
+                                    positives = HardRelu()(each_conv_output)
+                                    # [B,C,W,H]
+                                    red_pos = torch.sum(positives, dim=0)
+                                    y_plus_list.append(red_pos)
 
-        # Intiialise the structure to hold i's for which pixels are positive or negative
-        if(self.y_plus_list is None or self.y_minus_list is None):
-            self.initialise_y_plus_and_y_minus()
+                                    negatives = HardRelu()(-each_conv_output)
+                                    red_neg = torch.sum(negatives, dim=0)
+                                    y_minus_list.append(red_neg)
+                                
+                                gate_diff = 0
+                                for indx in range(len(self.y_minus_list)):
+                                    gate_diff += torch.sum(torch.abs(self.y_minus_list[indx] - y_minus_list[indx])) + torch.sum(torch.abs(self.y_plus_list[indx] - y_plus_list[indx]))
 
-        self.update_y_lists()
+                                if(gate_diff < min_gate_diff):
+                                    # print(xs,ys,min_gate_diff)
+                                    min_x = xs
+                                    min_y = ys
+                                    min_fl = fl
+                                    min_gate_diff = gate_diff
+
+                c_inputs =  torch.roll(c_inputs,shifts=(min_x, min_y), dims=(-1, -2))
+                if(is_set_rolled_part_zero):
+                    c_inputs[:,:,0:min_y,:] = pxlmin
+                    c_inputs[:,:,:,0:min_x] = pxlmin
+                if(min_fl % 2 == 1):
+                    c_inputs = c_inputs.flip(-1)
+                
+                self.model(c_inputs)
+                self.update_y_lists()
+                return c_inputs
 
     def update_overall_y_maps(self, collect_threshold, random_sample_gate_percent=None, coll_gate_sample_seed_gen=None):
         temp_one = torch.tensor([1.], device=self.y_minus_list[0].get_device())
@@ -2640,7 +2731,7 @@ if __name__ == '__main__':
     # cifar10_conv4_dlgn_with_bn_with_inbuilt_norm_with_flip_crop
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
-    # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
+    # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # dlgn__resnet18__ , dgn__resnet18__,dnn__resnet18__ , dlgn__vgg16_bn__ , dlgn__st1_pad1_vgg16_bn_wo_bias__ ,dlgn__st1_pad2_vgg16_bn_wo_bias__, dnn__st1_pad2_vgg16_bn_wo_bias__
     model_arch_type = 'conv4_dlgn_n16_small'
     # If False, then on test
@@ -2649,18 +2740,18 @@ if __name__ == '__main__':
     is_class_segregation_on_ground_truth = True
     # uniform_init_image , zero_init_image , gaussian_init_image
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 1
+    template_image_calculation_batch_size = 64
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
     # MSE_LAYER_LOSS
-    template_loss_type = "CCE_TEMP_LOSS_MIXED"
+    template_loss_type = "TEMP_LOSS"
     number_of_batch_to_collect = None
     vis_version = "V2"
     # wand_project_name = "layerwise_avg_template_visualisation_augmentation"
-    wand_project_name = "fresh_template_visualisation_augmentation"
+    # wand_project_name = "fresh_template_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "test_template_visualisation_augmentation"
-    # wand_project_name = None
+    wand_project_name = None
     wandb_group_name = "TP_"+str(template_loss_type) + \
         "_DS_"+str(dataset)+"_MT_"+str(model_arch_type)
     is_split_validation = False
@@ -2668,8 +2759,8 @@ if __name__ == '__main__':
     torch_seed = 2022
     number_of_image_optimization_steps = 161
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES , GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG
-    exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
-    temp_collect_threshold = 0.99
+    exp_type = "GENERATE_TEMPLATE_IMAGES"
+    temp_collect_threshold = 0.90
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
 
@@ -2713,7 +2804,7 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    custom_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
