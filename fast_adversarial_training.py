@@ -144,12 +144,12 @@ if __name__ == '__main__':
     model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
     # batch_size = 128
     # wand_project_name = "fast_adv_tr_visualisation"
-    wand_project_name = "common_model_init_exps"
+    # wand_project_name = "common_model_init_exps"
+    wand_project_name = "model_band_frequency_experiments"
     # wand_project_name = None
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL
     exp_type = "ADV_TRAINING"
 
-    epochs = 32
     adv_attack_type = "PGD"
     adv_target = None
 
@@ -189,8 +189,8 @@ if __name__ == '__main__':
     pca_exp_percent = None
     # pca_exp_percent = 0.85
 
-    custom_dataset_path = "data/custom_datasets/fashion_mnist_HFC_FP_0.3.npy"
-    # custom_dataset_path = None
+    custom_dataset_path = None
+    custom_dataset_path = "data/custom_datasets/freq_band_dataset/fashion_mnist__MB.npy"
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -298,17 +298,24 @@ if __name__ == '__main__':
         # eps_list = [0.03, 0.06, 0.1]
         fast_adv_attack_type_list = ['PGD']
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
-        number_of_adversarial_optimization_steps_list = [80]
-
-        eps_list = [0.06]
+        if("mnist" in dataset):
+            number_of_adversarial_optimization_steps_list = [80]
+            eps_list = [0.06]
+            eps_step_size = 0.06
+            epochs = 100
+        elif("cifar10" in dataset):
+            number_of_adversarial_optimization_steps_list = [10]
+            eps_list = [8/255]
+            eps_step_size = 2/255
+            epochs = 200
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         # number_of_adversarial_optimization_steps_list = [80]
 
         for fast_adv_attack_type in fast_adv_attack_type_list:
             for number_of_adversarial_optimization_steps in number_of_adversarial_optimization_steps_list:
                 for eps in eps_list:
-                    eps_step_size = 1 * eps
-
+                    # eps_step_size = 1 * eps
+                    print("iters:{} eps:{} step_size:{},epochs:{}".format(number_of_adversarial_optimization_steps,eps,eps_step_size,epochs))
                     root_save_prefix = "root/ADVER_RECONS_SAVE/"
                     init_prefix = "root/model/save/" + \
                         str(dataset)+"/adversarial_training/"+str(list_of_classes_to_train_on_str)+"/MT_" + \

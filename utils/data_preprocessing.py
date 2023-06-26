@@ -257,6 +257,52 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
 
         return trainloader, None, testloader
 
+def preprocess_mnist_fmnist(X_train,y_train,X_test,y_test,dataset_config,model_arch_type,verbose=1, is_split_validation=True):
+        X_valid = None
+        y_valid = None
+        X_train = X_train.astype(np.float32)
+        X_test = X_test.astype(np.float32)
+
+        if(dataset_config.list_of_classes is None):
+            filtered_X_train, filtered_y_train = X_train, y_train
+            filtered_X_test, filtered_y_test = X_test, y_test
+        else:
+            filtered_X_train, filtered_y_train = filter_dataset_to_contain_certain_classes(
+                X_train, y_train, dataset_config.list_of_classes)
+            filtered_X_test, filtered_y_test = filter_dataset_to_contain_certain_classes(
+                X_test, y_test, dataset_config.list_of_classes)
+            filtered_X_train = filtered_X_train.astype(np.float32)
+            filtered_X_test = filtered_X_test.astype(np.float32)
+
+        if(verbose > 2):
+            print("After filtering dataset")
+            print("filtered_X_train size:{} filtered_y_train size:{}".format(
+                filtered_X_train.shape, filtered_y_train.shape))
+            print("filtered_X_test size:{} filtered_y_test size:{}".format(
+                filtered_X_test.shape, filtered_y_test.shape))
+            print("filtered_y_train[0]", filtered_y_train[0])
+            print("filtered_y_train[1]", filtered_y_train[1])
+
+        if(dataset_config.is_normalize_data == True):
+            max = np.max(filtered_X_train)
+            filtered_X_train = filtered_X_train / max
+            filtered_X_test = filtered_X_test / max
+            if(verbose > 2):
+                print("After normalizing dataset")
+                print("Max value:{}".format(max))
+                print("filtered_X_train size:{} filtered_y_train size:{}".format(
+                    filtered_X_train.shape, filtered_y_train.shape))
+                print("filtered_X_test size:{} filtered_y_test size:{}".format(
+                    filtered_X_test.shape, filtered_y_test.shape))
+
+        if(not("dlgn_fc" in model_arch_type)):
+            filtered_X_train = add_channel_to_image(filtered_X_train)
+            filtered_X_test = add_channel_to_image(filtered_X_test)
+        if(is_split_validation):
+            filtered_X_train, X_valid, filtered_y_train, y_valid = train_test_split(
+                filtered_X_train, filtered_y_train, test_size=dataset_config.valid_split_size, random_state=42)
+
+        return filtered_X_train, filtered_y_train, X_valid, y_valid, filtered_X_test, filtered_y_test
 
 def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):
     transform_list = []
@@ -406,8 +452,6 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
         return trainset, val_set, testset
 
     elif(dataset_config.name == 'mnist' or dataset_config.name == 'fashion_mnist'):
-        X_valid = None
-        y_valid = None
         if(dataset_config.custom_dataset_path is None):
             if(dataset_config.name == 'mnist'):
                 (X_train, y_train), (X_test, y_test) = mnist.load_data()
@@ -418,46 +462,4 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
                 X_train, y_train = f['X_train'], f['y_train']
                 X_test, y_test = f['X_test'], f['y_test']
 
-        X_train = X_train.astype(np.float32)
-        X_test = X_test.astype(np.float32)
-
-        if(dataset_config.list_of_classes is None):
-            filtered_X_train, filtered_y_train = X_train, y_train
-            filtered_X_test, filtered_y_test = X_test, y_test
-        else:
-            filtered_X_train, filtered_y_train = filter_dataset_to_contain_certain_classes(
-                X_train, y_train, dataset_config.list_of_classes)
-            filtered_X_test, filtered_y_test = filter_dataset_to_contain_certain_classes(
-                X_test, y_test, dataset_config.list_of_classes)
-            filtered_X_train = filtered_X_train.astype(np.float32)
-            filtered_X_test = filtered_X_test.astype(np.float32)
-
-        if(verbose > 2):
-            print("After filtering dataset")
-            print("filtered_X_train size:{} filtered_y_train size:{}".format(
-                filtered_X_train.shape, filtered_y_train.shape))
-            print("filtered_X_test size:{} filtered_y_test size:{}".format(
-                filtered_X_test.shape, filtered_y_test.shape))
-            print("filtered_y_train[0]", filtered_y_train[0])
-            print("filtered_y_train[1]", filtered_y_train[1])
-
-        if(dataset_config.is_normalize_data == True):
-            max = np.max(filtered_X_train)
-            filtered_X_train = filtered_X_train / max
-            filtered_X_test = filtered_X_test / max
-            if(verbose > 2):
-                print("After normalizing dataset")
-                print("Max value:{}".format(max))
-                print("filtered_X_train size:{} filtered_y_train size:{}".format(
-                    filtered_X_train.shape, filtered_y_train.shape))
-                print("filtered_X_test size:{} filtered_y_test size:{}".format(
-                    filtered_X_test.shape, filtered_y_test.shape))
-
-        if(not("dlgn_fc" in model_arch_type)):
-            filtered_X_train = add_channel_to_image(filtered_X_train)
-            filtered_X_test = add_channel_to_image(filtered_X_test)
-        if(is_split_validation):
-            filtered_X_train, X_valid, filtered_y_train, y_valid = train_test_split(
-                filtered_X_train, filtered_y_train, test_size=dataset_config.valid_split_size, random_state=42)
-
-        return filtered_X_train, filtered_y_train, X_valid, y_valid, filtered_X_test, filtered_y_test
+        return preprocess_mnist_fmnist(X_train,y_train,X_test,y_test,dataset_config,model_arch_type,verbose, is_split_validation)
