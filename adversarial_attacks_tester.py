@@ -745,7 +745,8 @@ if __name__ == '__main__':
         adv_attack_type = "PGD"
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST , ADV_ATTACK_PER_CLASS , FREQ_BAND_ADV_ATTACK_PER_CLASS
-        exp_type = "ADV_ATTACK_PER_CLASS"
+        # AFTER_ATT_FREQ_BAND_ADV_ATTACK_PER_CLASS
+        exp_type = "AFTER_ATT_FREQ_BAND_ADV_ATTACK_PER_CLASS"
         is_adv_attack_on_train = False
         eps_step_size = 0.06
 
@@ -1140,6 +1141,128 @@ if __name__ == '__main__':
 
                         to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                             adv_dataset, shuffle=False, batch_size=128)
+
+                        true_eval_dataset_per_class = true_segregation(
+                            eval_loader, num_classes_trained_on)
+                        true_tobe_analysed_dataset_per_class = true_segregation(
+                            to_be_analysed_adversarial_dataloader, num_classes_trained_on)
+
+                        for c_indx in class_indx_to_visualize:
+                            class_label = classes[c_indx]
+                            print(
+                                "************************************************************ Class:", class_label)
+                            per_class_eval_dataset = PerClassDataset(
+                                true_eval_dataset_per_class[c_indx], c_indx)
+                            per_class_tobe_analysed_dataset = PerClassDataset(
+                                true_tobe_analysed_dataset_per_class[c_indx], c_indx)
+                            wandb_group_name = "DS_"+str(dataset_str) + \
+                                "_adv_attack_over_aug_"+str(model_arch_type_str)
+
+                            if(is_log_wandb):
+                                wandb_run_name = str(
+                                    model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
+                                wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
+                                                                eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                                wandb_config["aug_iter_num"] = current_aug_iter_num
+                                wandb_config["class_label"] = class_label
+                                wandb_config["c_indx"] = c_indx
+                                wandb_config["freq_band"] = modestr
+                                if(pca_exp_percent is not None):
+                                    wandb_config["pca_exp_percent"] = pca_exp_percent
+                                    wandb_config["num_comp_pca"] = number_of_components_for_pca
+                                if(wandb_config_additional_dict is not None):
+                                    wandb_config.update(
+                                        wandb_config_additional_dict)
+                                wandb.init(
+                                    project=f"{wand_project_name}",
+                                    name=f"{wandb_run_name}",
+                                    group=f"{wandb_group_name}",
+                                    config=wandb_config,
+                                )
+
+                            coll_seed_gen = torch.Generator()
+                            coll_seed_gen.manual_seed(torch_seed)
+
+                            per_class_eval_data_loader = torch.utils.data.DataLoader(per_class_eval_dataset, batch_size=128,
+                                                                                    shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+
+                            coll_seed_gen = torch.Generator()
+                            coll_seed_gen.manual_seed(torch_seed)
+
+                            per_class_tobe_analysed_data_loader = torch.utils.data.DataLoader(per_class_tobe_analysed_dataset, batch_size=128,
+                                                                                            shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+                            save_images_from_dataloader(to_be_analysed_adversarial_dataloader, classes,
+                                                        postfix_folder_for_save='/adver/'+str(modestr)+"/", save_image_prefix=save_folder)
+
+                            eval_orig_acc, _ = plain_evaluate_model(
+                                net, per_class_eval_data_loader)
+                            eval_adv_acc, frequency_pred = plain_evaluate_model(
+                                net, per_class_tobe_analysed_data_loader, classes)
+
+                            frequency_pred = (
+                                frequency_pred / len(per_class_tobe_analysed_dataset))*100
+                            frequency_pred = torch.round(frequency_pred)
+                            print("frequency_pred", frequency_pred)
+
+                            if(is_log_wandb):
+                                wandb.log({"eval_orig_acc": eval_orig_acc,
+                                        "eval_adv_acc": eval_adv_acc,
+                                        "frequency_pred": frequency_pred})
+                                wandb.finish()
+                elif(exp_type == "AFTER_ATT_FREQ_BAND_ADV_ATTACK_PER_CLASS"):
+                    allmodes=[["LTB","MTB","HTB"],
+                        ["MTB","HTB"],
+                        ["LTB","HTB"],
+                        ["LTB","MTB"],
+                        ["LTB"],
+                        ["MTB"],
+                        ["HTB"]]
+                    
+                    for cur_mode in allmodes:
+                        modestr = ""
+                        for ee in cur_mode:
+                            modestr += ee +"_"
+                        modestr = modestr[0:len(modestr)-1]
+
+                        class_indx_to_visualize = [i for i in range(len(classes))]
+                        if(direct_model_path is None):
+                            each_save_postfix = "/aug_indx_{}".format(
+                                current_aug_iter_num)
+                            final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
+                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train, each_save_postfix)
+                        else:
+                            final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/".format(
+                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train)
+                        adv_save_path = model_and_data_save_prefix + \
+                            final_adv_postfix_for_save+"/adv_dataset.npy"
+                        is_current_adv_aug_available = os.path.exists(
+                            adv_save_path)
+                        if(is_current_adv_aug_available):
+                            with open(adv_save_path, 'rb') as file:
+                                npzfile = np.load(adv_save_path)
+                                list_of_adv_images = npzfile['x']
+                                list_of_labels = npzfile['y']
+                                adv_dataset = CustomSimpleDataset(
+                                    list_of_adv_images, list_of_labels)
+                                print("Loading adversarial examples from path:",
+                                      adv_save_path)
+                        else:
+                            adv_dataset = generate_adv_examples(
+                                eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path)
+                            print("adv_save_path:", adv_save_path)
+                        if("fashion_mnist" in dataset):
+                            (X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()
+                        elif("mnist" in dataset):
+                            (X_train, y_train), (X_test, y_test) = mnist.load_data()
+                        
+
+                        to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
+                            adv_dataset, shuffle=False, batch_size=128)
+                        
+                        (X_test, y_test) = modify_bandpass_freq_get_dataset(to_be_analysed_adversarial_dataloader,cur_mode)
+                        _, _, _, _, X_test, y_test = preprocess_mnist_fmnist(X_train,y_train,X_test,y_test,ds_config,model_arch_type,verbose=1, is_split_validation=False)
+                        to_be_analysed_adversarial_dataloader = get_data_loader(
+                            X_test, y_test, ds_config.batch_size, transforms=ds_config.test_transforms)
 
                         true_eval_dataset_per_class = true_segregation(
                             eval_loader, num_classes_trained_on)

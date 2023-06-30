@@ -47,13 +47,13 @@ def frequency_band_pass(imgShape,modes):
     for x in range(cols):
         for y in range(rows):
           dist = euc_distance((y,x),center)
-          if("LB" in modes):
+          if("LB" in modes or "LTB" in modes):
             if(dist <= filter_rad):
               base[y,x] = 1
-          if("HB" in modes):
+          if("HB" in modes or "HTB" in modes):
             if(dist > 2*filter_rad and dist < maxrad):
               base[y,x] = 1
-          if("MB" in modes):
+          if("MB" in modes or "MTB" in modes):
             if(dist > filter_rad and dist <= 2*filter_rad):
               base[y,x] = 1
     
@@ -67,13 +67,16 @@ def modify_bandpass_freq_get_dataset(loader,modes):
     for X_batch, y_batch in loader:
         if(filter_base is None):
             filter_base = frequency_band_pass(X_batch.size(),modes)
+            if(X_batch.get_device() != -1):
+                filter_base = filter_base.cuda()
+        
         X_batch = torch.fft.fft2(X_batch)
         X_batch = torch.fft.fftshift(X_batch)
         X_batch = filter_base * X_batch
         X_batch = torch.fft.ifftshift(X_batch)
         X_batch = torch.real(torch.fft.ifft2(X_batch))
-        mod_x.extend(X_batch.cpu().numpy())
-        ys.extend(y_batch.cpu().numpy())
+        mod_x.extend(X_batch.detach().cpu().numpy())
+        ys.extend(y_batch.detach().cpu().numpy())
     
     return np.array(mod_x),np.array(ys)
 

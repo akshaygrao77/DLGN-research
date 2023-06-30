@@ -296,8 +296,10 @@ def preprocess_mnist_fmnist(X_train,y_train,X_test,y_test,dataset_config,model_a
                     filtered_X_test.shape, filtered_y_test.shape))
 
         if(not("dlgn_fc" in model_arch_type)):
-            filtered_X_train = add_channel_to_image(filtered_X_train)
-            filtered_X_test = add_channel_to_image(filtered_X_test)
+            if(len(filtered_X_train.shape)==3):
+                filtered_X_train = add_channel_to_image(filtered_X_train)
+            if(len(filtered_X_test.shape)==3):
+                filtered_X_test = add_channel_to_image(filtered_X_test)
         if(is_split_validation):
             filtered_X_train, X_valid, filtered_y_train, y_valid = train_test_split(
                 filtered_X_train, filtered_y_train, test_size=dataset_config.valid_split_size, random_state=42)
