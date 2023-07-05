@@ -605,6 +605,20 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
 
     return custom_model
 
+def project_to_eps_inf_ball(loader,eps):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    mod_x = []
+    with torch.no_grad():
+        for X_adv, X_org in loader:
+            X_adv ,X_org = X_adv.to(device),X_org.to(device)
+            eta = X_adv - X_org
+            eta = torch.clamp(eta, -eps, eps)
+            tmp = (X_org + eta).cpu()
+            mod_x.append(tmp)
+    mod_x = torch.cat(mod_x)
+    return mod_x
+
+
 if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
     dataset = 'mnist'
@@ -738,6 +752,7 @@ if __name__ == '__main__':
         # wand_project_name = "APR_experiments"
         # wand_project_name = "adv_attack_latest"
         wand_project_name = 'eval_model_band_frequency_experiments'
+        # wand_project_name = "temp_adv"
         # wand_project_name = None
 
         torch_seed = 2022
@@ -750,7 +765,7 @@ if __name__ == '__main__':
         is_adv_attack_on_train = False
         eps_step_size = 0.06
 
-        model_and_data_save_prefix = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/"
+        model_and_data_save_prefix = "root/model/save/mnist/adversarial_training/MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
         number_of_augment_iterations = 1
 
@@ -1255,12 +1270,18 @@ if __name__ == '__main__':
                         elif("mnist" in dataset):
                             (X_train, y_train), (X_test, y_test) = mnist.load_data()
                         
-
+                        _, _, _, _, X_test, y_test = preprocess_mnist_fmnist(X_train,y_train,X_test,y_test,ds_config,model_arch_type,verbose=1, is_split_validation=False)
                         to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                             adv_dataset, shuffle=False, batch_size=128)
                         
-                        (X_test, y_test) = modify_bandpass_freq_get_dataset(to_be_analysed_adversarial_dataloader,cur_mode)
-                        _, _, _, _, X_test, y_test = preprocess_mnist_fmnist(X_train,y_train,X_test,y_test,ds_config,model_arch_type,verbose=1, is_split_validation=False)
+                        (X_filt_test, y_test) = modify_bandpass_freq_get_dataset(to_be_analysed_adversarial_dataloader,cur_mode)
+                        X_test = np.stack(X_test,axis=0)
+                        X_filt_test ,X_test = torch.from_numpy(X_filt_test),torch.from_numpy(X_test)
+                        X_dataset = torch.utils.data.TensorDataset(X_filt_test,X_test)
+                        to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
+                            X_dataset, shuffle=False, batch_size=256)
+                        X_test = project_to_eps_inf_ball(to_be_analysed_adversarial_dataloader,eps)
+                        
                         to_be_analysed_adversarial_dataloader = get_data_loader(
                             X_test, y_test, ds_config.batch_size, transforms=ds_config.test_transforms)
 

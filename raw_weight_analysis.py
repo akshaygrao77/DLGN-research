@@ -339,8 +339,9 @@ def output_params(lweights, root_save_prefix, final_postfix_for_save):
                     current_filter_chnl_weights, outsizereq)
 
                 for_vis_dft_out = torch.log(1+torch.abs(raw_dft_out))
-                std01_vis_dft_out = normalize_in_range_01(
-                    for_vis_dft_out)
+                std01_vis_dft_out = for_vis_dft_out
+                # std01_vis_dft_out = normalize_in_range_01(
+                #     for_vis_dft_out)
                 std01_vis_dft_out = std01_vis_dft_out[None, :]
 
                 if(current_f_channel_norm_dft_outs is None):
@@ -2323,7 +2324,7 @@ def get_modified_dataset(analyse_on, dataloader, adv_postfix_for_save, filter_vi
 if __name__ == '__main__':
     av_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # fashion_mnist , mnist , cifar10
-    dataset = 'cifar10'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , dlgn__st1_pad2_vgg16_bn_wo_bias__ , dlgn__st1_pad1_vgg16_bn_wo_bias__
@@ -2338,7 +2339,7 @@ if __name__ == '__main__':
         "APPROX_IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist , fashion_mnist
-    list_of_filter_vis_dataset = ["cifar10"]
+    list_of_filter_vis_dataset = ["mnist"]
 
     batch_size = 14
 
@@ -2433,7 +2434,7 @@ if __name__ == '__main__':
             print("Running scheme", scheme_type)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/cifar10/adversarial_training/MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+                model_path = "root/model/save/mnist__MB_HB/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 

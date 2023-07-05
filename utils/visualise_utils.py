@@ -314,12 +314,28 @@ def generate_plain_image_data(image_data):
 
     return reshaped_data
 
+def output_plt_image(images,path,title=""):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    if(isinstance(images, torch.Tensor)):
+        cax = ax.imshow(images.detach().cpu().numpy(), interpolation='nearest')
+    else:
+        cax = ax.imshow(images, interpolation='nearest')
+    ax.set_title(title)
+    cbar = fig.colorbar(cax)
+    fig.tight_layout()
+    fig.savefig(path,bbox_inches='tight')
+
 
 def generate_plain_image(image_data, save_path, is_standarize=True, is_standarize_01=True):
     # print("image_data", image_data.shape)
     # print("image_data len", len(image_data.shape))
 
     reshaped_data = generate_plain_image_data(image_data)
+    tmp = save_path.replace(".jpg",".jpeg")
+    output_plt_image(reshaped_data,tmp)
 
     reshaped_data = recreate_np_image(
         reshaped_data, is_standarize, is_standarize_01)
