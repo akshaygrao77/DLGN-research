@@ -14,12 +14,18 @@ from utils.data_preprocessing import preprocess_dataset_get_data_loader, generat
 from adversarial_attacks_tester import evaluate_model, evaluate_model_via_reconstructed, plain_evaluate_model_via_reconstructed
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
+from collections import OrderedDict
+
 
 from conv4_models import get_model_instance, get_model_instance_from_dataset
 
 
 def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375,dataset=None):
     print("Model will be saved at", model_save_path)
+    save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
+    if not os.path.exists(save_adv_image_prefix):
+        os.makedirs(save_adv_image_prefix)
+    
     device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
     if device_str == 'cuda':
         if(torch.cuda.device_count() > 1):
@@ -113,6 +119,9 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         if(epoch % 2 == 0):
             per_epoch_save_model_path = model_save_path.replace(
                 ".pt", '_epoch_{}.pt'.format(epoch))
+            save_adv_image_prefix = per_epoch_save_model_path[0:per_epoch_save_model_path.rfind("/")+1]
+            if not os.path.exists(save_adv_image_prefix):
+                os.makedirs(save_adv_image_prefix)
             torch.save(model, per_epoch_save_model_path)
 
         if(test_acc > best_test_acc):
@@ -123,9 +132,6 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         if(dataset is not None and dataset == "cifar10"):
             scheduler.step()
 
-    save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
-    if not os.path.exists(save_adv_image_prefix):
-        os.makedirs(save_adv_image_prefix)
     train_acc = evaluate_model(net, train_loader, classes, eps, adv_attack_type,
                                number_of_adversarial_optimization_steps, eps_step_size, adv_target, save_adv_image_prefix)
     if(is_log_wandb):
@@ -134,21 +140,44 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
     print('Finished adversarial Training: Best saved model test acc is:', best_test_acc)
     return best_test_acc, torch.load(model_save_path)
 
+def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    temp_model = torch.load(model_path, map_location=device)
+    custom_model = get_model_instance_from_dataset(
+        dataset, model_arch_type)
+    if("masked" in model_arch_type):
+        custom_model = get_model_instance_from_dataset(
+            dataset, model_arch_type, mask_percentage=mask_percentage)
+    if(isinstance(temp_model, dict)):
+        if("module." in [*temp_model['state_dict'].keys()][0]):
+            new_state_dict = OrderedDict()
+            for k, v in temp_model['state_dict'].items():
+                name = k[7:]  # remove 'module.' of dataparallel
+                new_state_dict[name] = v
+            custom_model.load_state_dict(new_state_dict)
+        else:
+            custom_model.load_state_dict(temp_model['state_dict'])
+    else:
+        custom_model.load_state_dict(temp_model.state_dict())
+
+    return custom_model
 
 if __name__ == '__main__':
     # fashion_mnist , mnist,cifar10
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
     # batch_size = 128
+    wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "common_model_init_exps"
-    wand_project_name = "model_band_frequency_experiments"
-    # wand_project_name = None
-    # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL
-    exp_type = "ADV_TRAINING"
+    # wand_project_name = "model_band_frequency_experiments"
+    wand_project_name = "Part_training_for_robustness"
+    
+    # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING
+    exp_type = "PART_ADV_TRAINING"
 
     adv_attack_type = "PGD"
     adv_target = None
@@ -190,7 +219,7 @@ if __name__ == '__main__':
     # pca_exp_percent = 0.85
 
     custom_dataset_path = None
-    custom_dataset_path = "data/custom_datasets/freq_band_dataset/fashion_mnist__MB.npy"
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/fashion_mnist__MB.npy"
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -302,7 +331,7 @@ if __name__ == '__main__':
             number_of_adversarial_optimization_steps_list = [80]
             eps_list = [0.06]
             eps_step_size = 0.06
-            epochs = 100
+            epochs = 36
         elif("cifar10" in dataset):
             number_of_adversarial_optimization_steps_list = [10]
             eps_list = [8/255]
@@ -348,6 +377,69 @@ if __name__ == '__main__':
                             wandb_config["model_arch_type"] = model_arch_type_str
                             wandb_config["dataset"] = dataset_str
                             wandb_config["eps"] = eps
+                            wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
+                            wandb_config["epochs"] = epochs
+                            wandb_config["batch_size"] = batch_size
+                            wandb_config["torch_seed"] = torch_seed
+                            wandb_config["fast_adv_attack_type"] = fast_adv_attack_type
+                            wandb_config["eps_step_size"] = eps_step_size
+                            wandb_config["model_save_path"] = model_save_path
+                            wandb_config["start_net_path"] = start_net_path
+                            if(pca_exp_percent is not None):
+                                wandb_config["pca_exp_percent"] = pca_exp_percent
+                                wandb_config["num_comp_pca"] = number_of_components_for_pca
+
+                            wandb.init(
+                                project=f"{wand_project_name}",
+                                name=f"{wandb_run_name}",
+                                group=f"{wandb_group_name}",
+                                config=wandb_config,
+                            )
+
+                        best_test_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name, alpha=eps_step_size,dataset=dataset)
+                        if(is_log_wandb):
+                            wandb.log({"adv_tr_best_test_acc": best_test_acc})
+                            wandb.finish()
+                    
+                    elif(exp_type == "PART_ADV_TRAINING"):
+                        # GATE_NET_FREEZE , VAL_NET_FREEZE
+                        transfer_mode = "VAL_NET_FREEZE"
+
+                        teacher_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
+                        net = get_model_from_path(
+                            dataset, model_arch_type, teacher_model_path)
+                        
+                        if(transfer_mode == "GATE_NET_FREEZE"):
+                            net.init_value_net()
+                            ordict = net.get_gate_layers_ordered_dict()
+
+                        elif(transfer_mode == "VAL_NET_FREEZE"):
+                            net.init_gate_net()
+                            ordict = net.get_value_layers_ordered_dict()
+                        
+                        for key in ordict:
+                            for param in  ordict[key].parameters():
+                                param.requires_grad = False
+                            
+                        net = net.to(device)
+                        print("net",net)
+                        model_save_path = model_save_path.replace(
+                            "ADV_TRAINING", "PART_ADV_TRAINING/TEACHER__"+teacher_model_path.replace("/","-")+"/TYP_"+str(transfer_mode))
+                        print("model_save_path: ", model_save_path)
+
+                        if(is_log_wandb):
+                            wandb_run_name = str(
+                                model_arch_type_str)+prefix2.replace(
+                                "/", "_")
+                            wandb_config = dict()
+                            wandb_config["exp_type"] = exp_type
+                            wandb_config["adv_attack_type"] = adv_attack_type
+                            wandb_config["model_arch_type"] = model_arch_type_str
+                            wandb_config["dataset"] = dataset_str
+                            wandb_config["eps"] = eps
+                            wandb_config["teacher_model_path"] = teacher_model_path
+                            wandb_config["transfer_mode"] = transfer_mode
                             wandb_config["number_of_adversarial_optimization_steps"] = number_of_adversarial_optimization_steps
                             wandb_config["epochs"] = epochs
                             wandb_config["batch_size"] = batch_size

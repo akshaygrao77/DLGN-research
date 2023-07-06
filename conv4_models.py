@@ -3970,19 +3970,26 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
         torch.manual_seed(seed)
+        self.num_classes = num_classes
         self.input_channel = input_channel
         self.beta = beta
 
-        self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=2,bias=False)
+        self.init_gate_net()
+        self.init_value_net()
+    
+    def init_gate_net(self):
+        self.conv1_g = nn.Conv2d(self.input_channel, 128, 3, padding=2,bias=False)
         self.conv2_g = nn.Conv2d(128, 128, 3, padding=2,bias=False)
         self.conv3_g = nn.Conv2d(128, 128, 3, padding=2,bias=False)
         self.conv4_g = nn.Conv2d(128, 128, 3, padding=2,bias=False)
-        self.conv1_w = nn.Conv2d(input_channel, 128, 3, padding=2,bias=False)
+    
+    def init_value_net(self):
+        self.conv1_w = nn.Conv2d(self.input_channel, 128, 3, padding=2,bias=False)
         self.conv2_w = nn.Conv2d(128, 128, 3, padding=2,bias=False)
         self.conv3_w = nn.Conv2d(128, 128, 3, padding=2,bias=False)
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=2,bias=False)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(128, num_classes)
+        self.fc1 = nn.Linear(128, self.num_classes)
 
     def initialize_PCA_transformation(self, data, explained_var_required):
         self.pca_layer = CONV_PCA_Layer(
@@ -4064,7 +4071,16 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
 
         return gating_net_layers_ordered
 
-    
+    def get_value_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        gating_net_layers_ordered["conv1_w"] = self.conv1_w
+        gating_net_layers_ordered["conv2_w"] = self.conv2_w
+        gating_net_layers_ordered["conv3_w"] = self.conv3_w
+        gating_net_layers_ordered["conv4_w"] = self.conv4_w
+        gating_net_layers_ordered["fc1"] = self.fc1
+
+        return gating_net_layers_ordered
+
     def exact_forward_vis(self, x) -> torch.Tensor:
         """
         x - Dummy input with batch size =1 to generate linear transformations

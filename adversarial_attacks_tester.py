@@ -621,7 +621,7 @@ def project_to_eps_inf_ball(loader,eps):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
@@ -642,13 +642,16 @@ if __name__ == '__main__':
     wandb_config_additional_dict = None
     # wandb_config_additional_dict = {
     #     "type_of_APR": "APRP", "is_train_on_phase": True}
+    # GATE_NET_FREEZE , VAL_NET_FREEZE
+    wandb_config_additional_dict = {
+        "transfer_mode": "GATE_NET_FREEZE"}
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist__MB_HB/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
+    direct_model_path = "root/model/save/fashion_mnist/PART_TRAINING/TEACHER__root-model-save-fashion_mnist-adversarial_training-MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING-ST_2022-fast_adv_attack_type_PGD-adv_type_PGD-EPS_0.06-batch_size_128-eps_stp_size_0.06-adv_steps_80-adv_model_dir.pt/TYP_GATE_NET_FREEZE/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
 
     custom_dataset_path = None
-    custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB_HB.npy"
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB_HB.npy"
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -745,15 +748,15 @@ if __name__ == '__main__':
             "_P_"+str(pca_exp_percent)
 
     if(scheme_type == 'iterative_augmented_model_attack'):
+        wand_project_name = None
         # wand_project_name = "cifar10_all_images_based_template_visualizations"
         # wand_project_name = "adv_attack_for_active_pixels_on_reconst_augmentation"
         # wand_project_name = "adv_attack_via_reconst_on_reconst_augmentation_with_orig"
         # wand_project_name = 'V2_adv_attack_on_reconst_augmentation_with_orig'
         # wand_project_name = "APR_experiments"
         # wand_project_name = "adv_attack_latest"
-        wand_project_name = 'eval_model_band_frequency_experiments'
-        # wand_project_name = "temp_adv"
-        # wand_project_name = None
+        # wand_project_name = 'eval_model_band_frequency_experiments'
+        wand_project_name = "Part_training_for_robustness"
 
         torch_seed = 2022
         number_of_adversarial_optimization_steps = 161
@@ -761,7 +764,7 @@ if __name__ == '__main__':
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST , ADV_ATTACK_PER_CLASS , FREQ_BAND_ADV_ATTACK_PER_CLASS
         # AFTER_ATT_FREQ_BAND_ADV_ATTACK_PER_CLASS
-        exp_type = "AFTER_ATT_FREQ_BAND_ADV_ATTACK_PER_CLASS"
+        exp_type = "ADV_ATTACK_PER_CLASS"
         is_adv_attack_on_train = False
         eps_step_size = 0.06
 
