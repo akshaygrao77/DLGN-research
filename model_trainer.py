@@ -22,6 +22,7 @@ from utils.weight_utils import get_gating_layer_weights
 from raw_weight_analysis import convert_list_tensor_to_numpy
 from utils.APR import APRecombination, mix_data
 from apr_evaluator import apr_evaluate_model
+from collections import OrderedDict
 
 
 def evaluate_model(net, dataloader, num_classes_trained_on=None):
@@ -300,6 +301,27 @@ def get_wandb_config(exp_type, classes, model_arch_type, dataset, is_template_im
 
     return wandb_config
 
+def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    temp_model = torch.load(model_path, map_location=device)
+    custom_model = get_model_instance_from_dataset(
+        dataset, model_arch_type)
+    if("masked" in model_arch_type):
+        custom_model = get_model_instance_from_dataset(
+            dataset, model_arch_type, mask_percentage=mask_percentage)
+    if(isinstance(temp_model, dict)):
+        if("module." in [*temp_model['state_dict'].keys()][0]):
+            new_state_dict = OrderedDict()
+            for k, v in temp_model['state_dict'].items():
+                name = k[7:]  # remove 'module.' of dataparallel
+                new_state_dict[name] = v
+            custom_model.load_state_dict(new_state_dict)
+        else:
+            custom_model.load_state_dict(temp_model['state_dict'])
+    else:
+        custom_model.load_state_dict(temp_model.state_dict())
+
+    return custom_model
 
 class CustomAugmentDataset(torch.utils.data.Dataset):
     def __init__(self, list_of_x, list_of_y):
@@ -318,13 +340,13 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
-    # iterative_augmenting , nil , APR_exps
-    scheme_type = 'nil'
+    # iterative_augmenting , nil , APR_exps , PART_TRAINING
+    scheme_type = 'PART_TRAINING'
     # scheme_type = ''
     batch_size = 32
 
@@ -333,7 +355,8 @@ if __name__ == '__main__':
 
     wand_project_name = None
     # wand_project_name = "APR_experiments"
-    wand_project_name = "common_model_init_exps"
+    wand_project_name = "Part_training_for_robustness"
+    # wand_project_name = "model_band_frequency_experiments"
     # wand_project_name = "V2_template_visualisation_augmentation"
 
     # Percentage of information retention during PCA (values between 0-1)
@@ -347,8 +370,9 @@ if __name__ == '__main__':
     train_transforms = None
     is_normalize_data = True
 
-    custom_dataset_path = "data/custom_datasets/fashion_mnist_HFC_FP_0.8.npy"
-    # custom_dataset_path = None
+    custom_dataset_path = None
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/fashion_mnist__MB.npy"
+    
 
     if(scheme_type == "APR_exps"):
         # APRP ,APRS, APRSP
@@ -481,7 +505,7 @@ if __name__ == '__main__':
     optimizer = optim.Adam(net.parameters(), lr=lr)
     epochs = 32
 
-    if(scheme_type == 'iterative_augmenting'):
+    if(scheme_type == "iterative_augmenting"):
         # If False, then on test
         is_template_image_on_train = True
         # If False, then segregation is over model prediction
@@ -719,7 +743,7 @@ if __name__ == '__main__':
             augment_trainloader = torch.utils.data.DataLoader(current_augment_dataset, batch_size=batch_size,
                                                               shuffle=True)
 
-    elif(scheme_type == 'APR_exps'):
+    elif(scheme_type == "APR_exps"):
         aprp_postfix = ""
         if("APRS" in type_of_APR):
             aprp_postfix += "/ARPS_PROB_THRES_" + \
@@ -782,6 +806,81 @@ if __name__ == '__main__':
                               final_model_save_path, wand_project_name, aprp_mix_prob, train_on_phase_labels)
 
         if(is_log_wandb):
+            wandb.finish()
+
+    elif(scheme_type == "PART_TRAINING"):
+        # GATE_NET_FREEZE , VAL_NET_FREEZE
+        transfer_mode = "GATE_NET_FREEZE"
+
+        teacher_model_path = "root/model/save/mnist/adversarial_training/MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+        net = get_model_from_path(
+            dataset, model_arch_type, teacher_model_path)
+        
+        if(transfer_mode == "GATE_NET_FREEZE"):
+            net.init_value_net()
+            ordict = net.get_gate_layers_ordered_dict()
+
+        elif(transfer_mode == "VAL_NET_FREEZE"):
+            net.init_gate_net()
+            ordict = net.get_value_layers_ordered_dict()
+        
+        for key in ordict:
+            for param in  ordict[key].parameters():
+                param.requires_grad = False
+            
+        net = net.to(device)
+        print("net",net)
+
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=lr)
+
+        final_model_save_path = final_model_save_path.replace(
+            "CLEAN_TRAINING", "PART_TRAINING/TEACHER__"+teacher_model_path.replace("/","-")+"/TYP_"+str(transfer_mode))
+        print("final_model_save_path: ", final_model_save_path)
+        
+        is_log_wandb = not(wand_project_name is None)
+        if(is_log_wandb):
+            wandb_group_name = "DS_"+str(dataset_str) + \
+                "_MT_"+str(model_arch_type_str)+"_SEED_"+str(torch_seed)
+            wandb_run_name = "MT_" + \
+                str(model_arch_type_str)+"/SEED_"+str(torch_seed)+"/EP_"+str(epochs)+"/LR_" + \
+                str(lr)+"/OPT_"+str(optimizer)+"/LOSS_TYPE_" + \
+                str(criterion)+"/BS_"+str(batch_size) + \
+                "/SCH_TYP_"+str(scheme_type)
+            wandb_run_name = wandb_run_name.replace("/", "")
+
+            wandb_config = dict()
+            wandb_config["dataset"] = dataset_str
+            wandb_config["model_arch_type"] = model_arch_type_str
+            wandb_config["torch_seed"] = torch_seed
+            wandb_config["teacher_model_path"] = teacher_model_path
+            wandb_config["scheme_type"] = scheme_type
+            wandb_config["transfer_mode"] = transfer_mode
+            wandb_config["final_model_save_path"] = final_model_save_path
+            wandb_config["epochs"] = epochs
+            wandb_config["optimizer"] = optimizer
+            wandb_config["criterion"] = criterion
+            wandb_config["lr"] = lr
+            wandb_config["batch_size"] = batch_size
+            if(pca_exp_percent is not None):
+                wandb_config["pca_exp_percent"] = pca_exp_percent
+                wandb_config["num_comp_pca"] = number_of_components_for_pca
+
+            wandb.init(
+                project=f"{wand_project_name}",
+                name=f"{wandb_run_name}",
+                group=f"{wandb_group_name}",
+                config=wandb_config,
+            )
+
+        model_save_folder = final_model_save_path[0:final_model_save_path.rfind(
+            "/")+1]
+        if not os.path.exists(model_save_folder):
+            os.makedirs(model_save_folder)
+
+        best_test_acc, net = train_model(net,
+                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name)
+        if(is_log_wandb):
+            wandb.log({"best_test_acc": best_test_acc})
             wandb.finish()
 
     else:
