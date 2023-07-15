@@ -97,6 +97,8 @@ if __name__ == '__main__':
 
 
     # for filter_percent in [0.3,0.5,0.65,0.8]:
+    aug_x_train = []
+    aug_y_train = []
     for cur_mode in allmodes:
         if(datasetname == "mnist"):
             (X_train, y_train), (X_test, y_test) = mnist.load_data()
@@ -126,5 +128,22 @@ if __name__ == '__main__':
         #         np.savez(file, X_train=mod_X_train,y_train=mod_y_train,X_test=X_test,y_test=y_test)
         with open(save_folder+str(datasetname)+"__"+str(modestr)+".npy", 'wb') as file:
                 np.savez(file, X_train=mod_X_train,y_train=mod_y_train,X_test=X_test,y_test=y_test)
+        aug_x_train.append(mod_X_train)
+        aug_y_train.append(mod_y_train)
+
+    if(datasetname == "mnist"):
+        (X_train, y_train), (X_test, y_test) = mnist.load_data()
+    elif(datasetname == "fashion_mnist"):
+        (X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()
+    aug_x_train.append(X_train)
+    aug_y_train.append(y_train)
+
+    aug_x_train = np.concatenate(aug_x_train)
+    aug_y_train = np.concatenate(aug_y_train)
+    print("aug_x_train",aug_x_train.shape)
+    print("aug_y_train",aug_y_train.shape)
+
+    with open(save_folder+str(datasetname)+"__ALL_FREQ_AUG.npy", 'wb') as file:
+                np.savez(file, X_train=aug_x_train,y_train=aug_y_train,X_test=X_test,y_test=y_test)
     
     print("Completed creation of dataset")
