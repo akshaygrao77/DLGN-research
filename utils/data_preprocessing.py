@@ -295,7 +295,7 @@ def preprocess_mnist_fmnist(X_train,y_train,X_test,y_test,dataset_config,model_a
                 print("filtered_X_test size:{} filtered_y_test size:{}".format(
                     filtered_X_test.shape, filtered_y_test.shape))
 
-        if(not("dlgn_fc" in model_arch_type)):
+        if(not("fc" in model_arch_type)):
             if(len(filtered_X_train.shape)==3):
                 filtered_X_train = add_channel_to_image(filtered_X_train)
             if(len(filtered_X_test.shape)==3):
