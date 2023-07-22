@@ -10,6 +10,8 @@ import wandb
 import torch.backends.cudnn as cudnn
 
 import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
 
 from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_merged_dataset_from_two_loader, generate_dataset_from_loader,preprocess_mnist_fmnist,get_data_loader
@@ -73,7 +75,11 @@ def output_plt_image(images,path,title=""):
 
 def get_fixedNPVs(model):
     prev = None
-    for each_module in model.value_network.list_of_modules:
+    if(hasattr(model,"value_network")):
+        src = model.value_network.list_of_modules
+    else:
+        src = model.list_of_modules
+    for each_module in src:
         cur_w = each_module.weight
         if(prev is None):
             prev = torch.transpose(cur_w,0,1)
@@ -85,6 +91,17 @@ def get_fixedNPVs(model):
                 tmp.append(torch.reshape(rtmp,(np.prod(list(rtmp.size())),1)))
                 
             prev = torch.squeeze(torch.stack(tmp))
+    
+    if(not hasattr(model,"value_network")):
+        cur_w = model.output_layer.weight
+        tmp=[]
+        for i in range(prev.size()[0]):
+            t1 = torch.unsqueeze(prev[i],0)
+            rtmp = torch.transpose(cur_w*t1,0,1)
+            tmp.append(torch.reshape(rtmp,(np.prod(list(rtmp.size())),1)))
+            
+        prev = torch.squeeze(torch.stack(tmp))
+
     return torch.squeeze(torch.reshape(prev,(np.prod(list(prev.size())),1)))
 
 def get_NPFs(outlists):
@@ -104,6 +121,42 @@ def get_NPFs(outlists):
     
     return prev
 
+def generate_NPF_stats_diff(model,dataloader1,dataloader2):
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # agg_npfs_diff = 0
+    # tot_size = 0
+    # hrelu = HardRelu()
+    # iter_dataloader2 = enumerate(dataloader2)
+    # loader = tqdm.tqdm(dataloader1, desc='Generating perturbation FFT')
+    # for _, data in enumerate(loader, 0):
+    #     inputs, _ = data
+    #     inputs = inputs.to(
+    #         device)
+    #     _,(inputs2,_) = next(iter_dataloader2)
+    #     inputs2 = inputs2.to(
+    #         device)
+    #     model(inputs)
+    #     tot_size += inputs.size()[0]
+    #     if(not hasattr(model,"value_network")):
+    #         model.linear_conv_outputs.append(model.prev_out)
+    #     for indx in range(len(model.linear_conv_outputs)):
+    #         model.linear_conv_outputs[indx] = hrelu(model.linear_conv_outputs[indx])
+    #     model.linear_conv_outputs.insert(0,torch.flatten(inputs, 1))
+    #     npfs_org = get_NPFs(model.linear_conv_outputs)
+        
+    #     model(inputs2)
+    #     if(not hasattr(model,"value_network")):
+    #         model.linear_conv_outputs.append(model.prev_out)
+    #     for indx in range(len(model.linear_conv_outputs)):
+    #         model.linear_conv_outputs[indx] = hrelu(model.linear_conv_outputs[indx])
+    #     model.linear_conv_outputs.insert(0,torch.flatten(inputs2, 1))
+    #     npfs_adv = get_NPFs(model.linear_conv_outputs)
+    #     agg_npfs_diff += torch.sum(hrelu(torch.abs(npfs_adv-npfs_org)),1)
+    # agg_npfs_diff = agg_npfs_diff/tot_size
+
+    return torch.abs(generate_NPF_stats(model,dataloader1)-generate_NPF_stats(model,dataloader2))
+
 def generate_NPF_stats(model,dataloader):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loader = tqdm.tqdm(dataloader, desc='Generating NPF')
@@ -116,6 +169,8 @@ def generate_NPF_stats(model,dataloader):
             device)
         model(inputs)
         tot_size += inputs.size()[0]
+        if(not hasattr(model,"value_network")):
+            model.linear_conv_outputs.append(model.prev_out)
         for indx in range(len(model.linear_conv_outputs)):
             model.linear_conv_outputs[indx] = hrelu(model.linear_conv_outputs[indx])
         model.linear_conv_outputs.insert(0,torch.flatten(inputs, 1))
@@ -127,24 +182,34 @@ def generate_NPF_stats(model,dataloader):
 
 def output_bar_graph(xlist,ylist,path,title=""):
     # col = ['blue'if i%2==0 else 'red' for i in range(len(xlist))]
-    # fig = plt.figure(figsize =(len(xlist)//10, 7))
-    fig = plt.figure()
+    fig = plt.figure(figsize =(len(xlist)//100, len(ylist)//100))
+    # fig = plt.figure()
     ax = fig.add_subplot(111)
-    # xticks = [0]
     # while(xticks[-1]<len(xlist)):
     #     xticks.append(xticks[-1]+10)
-    # ax.set_xticks(xticks)
-    ax.bar(xlist,ylist,align='edge')
-    ax.set_title(title)
+    # ax.set_xlim(min(xlist), max(xlist))
+    # ax.set_ylim(min(ylist), max(ylist))
+    # ax.ticklabel_format(useOffset=False)
+    # ax.bar(xlist,ylist)
+    # ax.set_title(title)
     # fig.tight_layout()
-    fig.savefig(path,bbox_inches='tight')
+    # fig.savefig(path,bbox_inches='tight')
+    # fig.clear()
+    svm = sns.barplot(x=xlist,y=ylist,ax=ax)
+    svm.set(xticklabels=[])
+    svm.set(title=title+"_"+str(min(xlist))+"-"+str(max(xlist)))
+    svm.set(xlabel=None)
+    figure = svm.get_figure()
+    figure.tight_layout()
+    figure.savefig(path)
+    plt.close()
 
 if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'fc_dlgn'
+    model_arch_type = 'fc_dnn'
     batch_size = 64
 
     is_analysis_on_train = False
@@ -165,7 +230,10 @@ if __name__ == '__main__':
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dlgn_W_10_D_2_dir.pt"
-    direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_fc_dlgn_W_10_D_2_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    # direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_fc_dlgn_W_10_D_2_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+
+    # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_10_D_1_dir.pt"
+    direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_fc_dnn_W_10_D_1_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB_HB.npy"
@@ -240,7 +308,7 @@ if __name__ == '__main__':
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
         fc_width = 10
-        fc_depth = 2
+        fc_depth = 1
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -326,24 +394,16 @@ if __name__ == '__main__':
     true_eval_dataset_per_class = true_segregation(
         eval_loader, num_classes_trained_on)
     
-    final_data_save_postfix = "/NPF_NPV_ANALYSIS/ON_TRAIN_{}/dataset_{}/allclasses/".format(
-                    is_analysis_on_train,dataset)
-    save_folder = data_save_prefix + final_data_save_postfix
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
-    
-    # print("Will be saved in folder:"+save_folder)
     npvs = get_fixedNPVs(net)
     pos_npv_indx = (npvs >0).nonzero()
     neg_npv_indx = (npvs <0).nonzero()
     pos_npvs = torch.squeeze(npvs[pos_npv_indx])
+    sorted_pos_npv_indx = torch.argsort(pos_npvs)
     neg_npvs = torch.squeeze(npvs[neg_npv_indx])
+    sorted_neg_npv_indx = torch.argsort(neg_npvs)
     print("npvs:{} Max NPV:{} Min NPV:{}  npvs positive count:{} npvs negative count:{}".format(npvs.size(),torch.max(npvs),torch.min(npvs),pos_npvs.numel(),neg_npvs.numel()))
-    
-    # agg_npfs,npvs = generate_NPF_stats_on_fixedNPVs(net,eval_loader)
-    # print("agg_npfs:{} npvs:{}".format(agg_npfs.size(),npvs.size()))
-
-    # output_bar_graph(npvs.tolist(),agg_npfs.tolist(),save_folder+'/NPV_NPF.jpeg',"Frequency of NPFs over NPVs")
+    print("pos_npvs:{} Max NPV:{} Min NPV:{}".format(pos_npvs.size(),torch.max(pos_npvs),torch.min(pos_npvs)))
+    print("neg_npvs:{} Max NPV:{} Min NPV:{} ".format(neg_npvs.size(),torch.max(neg_npvs),torch.min(neg_npvs)))
 
     for c_indx in class_indx_to_visualize:
         class_label = classes[c_indx]
@@ -368,23 +428,76 @@ if __name__ == '__main__':
         with torch.no_grad():
             agg_npfs = generate_NPF_stats(net,per_class_eval_data_loader)
             print("agg_npfs size:{} max:{} min:{} nonzero:{} agg_npfs:{}".format(agg_npfs.size(),torch.max(agg_npfs),torch.min(agg_npfs),torch.count_nonzero(agg_npfs),agg_npfs))
+            num_parts= 10
+            pind_start = 0
+            nind_start = 0
             agg_npfs_of_posnpv = torch.squeeze(agg_npfs[pos_npv_indx])
-            print("agg_npfs_of_negnpv size:{} max:{} min:{} nonzero:{} agg_npfs_of_negnpv:{}".format(agg_npfs_of_posnpv.size(),torch.max(agg_npfs_of_posnpv),torch.min(agg_npfs_of_posnpv),torch.count_nonzero(agg_npfs_of_posnpv),agg_npfs_of_posnpv))
+            print("agg_npfs_of_posnpv size:{} max:{} min:{} nonzero:{} ".format(agg_npfs_of_posnpv.size(),torch.max(agg_npfs_of_posnpv),torch.min(agg_npfs_of_posnpv),torch.count_nonzero(agg_npfs_of_posnpv)))
             output_bar_graph(pos_npvs.tolist(),agg_npfs_of_posnpv.tolist(),save_folder+'/NPF_of_pos_NPV.jpeg',"NPFs of positive NPVs")
             agg_npfs_of_negnpv = torch.squeeze(agg_npfs[neg_npv_indx])
-            print("agg_npfs_of_negnpv size:{} max:{} min:{} nonzero:{} agg_npfs_of_negnpv:{}".format(agg_npfs_of_negnpv.size(),torch.max(agg_npfs_of_negnpv),torch.min(agg_npfs_of_negnpv),torch.count_nonzero(agg_npfs_of_negnpv),agg_npfs_of_negnpv))
+            print("agg_npfs_of_negnpv size:{} max:{} min:{} nonzero:{} ".format(agg_npfs_of_negnpv.size(),torch.max(agg_npfs_of_negnpv),torch.min(agg_npfs_of_negnpv),torch.count_nonzero(agg_npfs_of_negnpv)))
             output_bar_graph(neg_npvs.tolist(),agg_npfs_of_negnpv.tolist(),save_folder+'/NPF_of_neg_NPV.jpeg',"NPFs of negative NPVs")
+            for i in range(num_parts):
+                pind_end = min(pos_npv_indx.numel()-1,pind_start+pos_npv_indx.numel()//num_parts)
+                nind_end = min(neg_npv_indx.numel()-1,nind_start+neg_npv_indx.numel()//num_parts)
+                tmp_npv = pos_npvs[sorted_pos_npv_indx[pind_start:pind_end+1]]
+                tmp_npf = agg_npfs_of_posnpv[sorted_pos_npv_indx[pind_start:pind_end+1]]
+                print("part:{} tmp_npv pos max:{} tmp_npv pos min:{} tmp_npf max:{} tmp_npf min:{}".format(i,torch.max(tmp_npv),torch.min(tmp_npv),torch.max(tmp_npf),torch.min(tmp_npf)))
+                output_bar_graph(tmp_npv.tolist(),tmp_npf.tolist(),save_folder+'/NPF_of_pos_NPV_part_'+str(i)+'.jpeg',"NPFs of positive NPVs part "+str(i)+"_"+str(pind_start)+"="+str(pind_end))
+                tmp_npv = neg_npvs[sorted_neg_npv_indx[nind_start:nind_end+1]]
+                tmp_npf = agg_npfs_of_negnpv[sorted_neg_npv_indx[nind_start:nind_end+1]]
+                print("part:{} tmp_npv neg max:{} tmp_npv pos min:{} tmp_npf max:{} tmp_npf min:{}".format(i,torch.max(tmp_npv),torch.min(tmp_npv),torch.max(tmp_npf),torch.min(tmp_npf)))
+                output_bar_graph(tmp_npv.tolist(),tmp_npf.tolist(),save_folder+'/NPF_of_neg_NPV_part_'+str(i)+'.jpeg',"NPFs of negative NPVs part "+str(i)+"_"+str(nind_start)+"="+str(nind_end))
+                nind_start = nind_end + 1
+                pind_start = pind_end + 1
         
         if(is_analyse_adv):
             with torch.no_grad():
-                agg_npfs = generate_NPF_stats(net,per_class_tobe_analysed_data_loader)
-                print("agg_npfs size:{} max:{} min:{} nonzero:{} agg_npfs:{}".format(agg_npfs.size(),torch.max(agg_npfs),torch.min(agg_npfs),torch.count_nonzero(agg_npfs),agg_npfs))
+                agg_npfs = generate_NPF_stats_diff(net,per_class_eval_data_loader,per_class_tobe_analysed_data_loader)
+                print("agg_npfs diff size:{} max:{} min:{} nonzero:{} agg_npfs:{}".format(agg_npfs.size(),torch.max(agg_npfs),torch.min(agg_npfs),torch.count_nonzero(agg_npfs),agg_npfs))
+                num_parts= 10
+                pind_start = 0
+                nind_start = 0
                 agg_npfs_of_posnpv = torch.squeeze(agg_npfs[pos_npv_indx])
-                print("agg_npfs_of_negnpv size:{} max:{} min:{} nonzero:{} agg_npfs_of_negnpv:{}".format(agg_npfs_of_posnpv.size(),torch.max(agg_npfs_of_posnpv),torch.min(agg_npfs_of_posnpv),torch.count_nonzero(agg_npfs_of_posnpv),agg_npfs_of_posnpv))
                 output_bar_graph(pos_npvs.tolist(),agg_npfs_of_posnpv.tolist(),save_folder+'/Adv_NPF_of_pos_NPV.jpeg',"Adv NPFs of positive NPVs")
                 agg_npfs_of_negnpv = torch.squeeze(agg_npfs[neg_npv_indx])
-                print("agg_npfs_of_negnpv size:{} max:{} min:{} nonzero:{} agg_npfs_of_negnpv:{}".format(agg_npfs_of_negnpv.size(),torch.max(agg_npfs_of_negnpv),torch.min(agg_npfs_of_negnpv),torch.count_nonzero(agg_npfs_of_negnpv),agg_npfs_of_negnpv))
                 output_bar_graph(neg_npvs.tolist(),agg_npfs_of_negnpv.tolist(),save_folder+'/Adv_NPF_of_neg_NPV.jpeg',"Adv NPFs of negative NPVs")
+                for i in range(num_parts):
+                    pind_end = min(pos_npv_indx.numel()-1,pind_start+pos_npv_indx.numel()//num_parts)
+                    nind_end = min(neg_npv_indx.numel()-1,nind_start+neg_npv_indx.numel()//num_parts)
+                    tmp_npv = pos_npvs[sorted_pos_npv_indx[pind_start:pind_end+1]]
+                    tmp_npf = agg_npfs_of_posnpv[sorted_pos_npv_indx[pind_start:pind_end+1]]
+                    print("part :{} tmp_npv pos max:{} tmp_npv pos min:{} tmp_npf max:{} tmp_npf min:{}".format(i,torch.max(tmp_npv),torch.min(tmp_npv),torch.max(tmp_npf),torch.min(tmp_npf)))
+                    output_bar_graph(tmp_npv.tolist(),tmp_npf.tolist(),save_folder+'/Diff_NPF_of_pos_NPV_part_'+str(i)+'.jpeg',"Diff NPFs of positive NPVs part "+str(i)+"_"+str(pind_start)+"="+str(pind_end))
+                    tmp_npv = neg_npvs[sorted_neg_npv_indx[nind_start:nind_end+1]]
+                    tmp_npf = agg_npfs_of_negnpv[sorted_neg_npv_indx[nind_start:nind_end+1]]
+                    print("part :{} tmp_npv neg max:{} tmp_npv pos min:{} tmp_npf max:{} tmp_npf min:{}".format(i,torch.max(tmp_npv),torch.min(tmp_npv),torch.max(tmp_npf),torch.min(tmp_npf)))
+                    output_bar_graph(tmp_npv.tolist(),tmp_npf.tolist(),save_folder+'/Diff_NPF_of_neg_NPV_part_'+str(i)+'.jpeg',"Diff NPFs of negative NPVs part "+str(i)+"_"+str(nind_start)+"="+str(nind_end))
+                    nind_start = nind_end + 1
+                    pind_start = pind_end + 1
+            
+                agg_npfs = generate_NPF_stats(net,per_class_tobe_analysed_data_loader)
+                print("agg_npfs size:{} max:{} min:{} nonzero:{} agg_npfs:{}".format(agg_npfs.size(),torch.max(agg_npfs),torch.min(agg_npfs),torch.count_nonzero(agg_npfs),agg_npfs))
+                num_parts= 10
+                pind_start = 0
+                nind_start = 0
+                agg_npfs_of_posnpv = torch.squeeze(agg_npfs[pos_npv_indx])
+                output_bar_graph(pos_npvs.tolist(),agg_npfs_of_posnpv.tolist(),save_folder+'/Adv_NPF_of_pos_NPV.jpeg',"Adv NPFs of positive NPVs")
+                agg_npfs_of_negnpv = torch.squeeze(agg_npfs[neg_npv_indx])
+                output_bar_graph(neg_npvs.tolist(),agg_npfs_of_negnpv.tolist(),save_folder+'/Adv_NPF_of_neg_NPV.jpeg',"Adv NPFs of negative NPVs")
+                for i in range(num_parts):
+                    pind_end = min(pos_npv_indx.numel()-1,pind_start+pos_npv_indx.numel()//num_parts)
+                    nind_end = min(neg_npv_indx.numel()-1,nind_start+neg_npv_indx.numel()//num_parts)
+                    tmp_npv = pos_npvs[sorted_pos_npv_indx[pind_start:pind_end+1]]
+                    tmp_npf = agg_npfs_of_posnpv[sorted_pos_npv_indx[pind_start:pind_end+1]]
+                    print("part :{} tmp_npv pos max:{} tmp_npv pos min:{} tmp_npf max:{} tmp_npf min:{}".format(i,torch.max(tmp_npv),torch.min(tmp_npv),torch.max(tmp_npf),torch.min(tmp_npf)))
+                    output_bar_graph(tmp_npv.tolist(),tmp_npf.tolist(),save_folder+'/Adv_NPF_of_pos_NPV_part_'+str(i)+'.jpeg',"Adv NPFs of positive NPVs part "+str(i)+"_"+str(pind_start)+"="+str(pind_end))
+                    tmp_npv = neg_npvs[sorted_neg_npv_indx[nind_start:nind_end+1]]
+                    tmp_npf = agg_npfs_of_negnpv[sorted_neg_npv_indx[nind_start:nind_end+1]]
+                    print("part :{} tmp_npv neg max:{} tmp_npv pos min:{} tmp_npf max:{} tmp_npf min:{}".format(i,torch.max(tmp_npv),torch.min(tmp_npv),torch.max(tmp_npf),torch.min(tmp_npf)))
+                    output_bar_graph(tmp_npv.tolist(),tmp_npf.tolist(),save_folder+'/Adv_NPF_of_neg_NPV_part_'+str(i)+'.jpeg',"Adv NPFs of negative NPVs part "+str(i)+"_"+str(nind_start)+"="+str(nind_end))
+                    nind_start = nind_end + 1
+                    pind_start = pind_end + 1
 
     print("Completed!")
     
