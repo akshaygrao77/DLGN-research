@@ -45,7 +45,10 @@ def evaluate_model(net, dataloader, num_classes_trained_on=None):
             # calculate outputs by running images through the network
             outputs = net(images)
             # the class with the highest energy is what we choose as prediction
-            _, predicted = torch.max(outputs.data, 1)
+            if(len(outputs.size())==1):
+                predicted = outputs.data.round()
+            else:
+                _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
@@ -241,8 +244,10 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-
-            _, predicted = torch.max(outputs.data, 1)
+            if(len(outputs.size())==1):
+                predicted = outputs.data.round()
+            else:
+                _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
@@ -344,9 +349,9 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
+    model_arch_type = 'bc_fc_dnn'
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
-    scheme_type = 'PART_TRAINING'
+    scheme_type = 'nil'
     # scheme_type = ''
     batch_size = 32
 
@@ -355,7 +360,9 @@ if __name__ == '__main__':
 
     wand_project_name = None
     # wand_project_name = "APR_experiments"
-    wand_project_name = "Part_training_for_robustness"
+    wand_project_name = "minute_FC_dlgn"
+    # wand_project_name = "frequency_augmentation_experiments"
+    # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "model_band_frequency_experiments"
     # wand_project_name = "V2_template_visualisation_augmentation"
 
@@ -365,13 +372,13 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [3, 8]
+    list_of_classes_to_train_on = [3, 8]
 
     train_transforms = None
     is_normalize_data = True
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/fashion_mnist__MB.npy"
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
     
 
     if(scheme_type == "APR_exps"):
@@ -456,8 +463,8 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 128
-        fc_depth = 4
+        fc_width = 10
+        fc_depth = 1
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -500,7 +507,10 @@ if __name__ == '__main__':
             net = net.to(device)
         cudnn.benchmark = True
 
-    criterion = nn.CrossEntropyLoss().to(device)
+    if("bc_" in model_arch_type):
+        criterion = nn.BCELoss().to(device)
+    else:
+        criterion = nn.CrossEntropyLoss().to(device)
     lr = 3e-4
     optimizer = optim.Adam(net.parameters(), lr=lr)
     epochs = 32

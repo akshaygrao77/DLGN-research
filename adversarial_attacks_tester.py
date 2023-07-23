@@ -90,7 +90,10 @@ def plain_evaluate_model(net, dataloader, classes=None):
         # calculate outputs by running images through the network
         outputs = net(images)
         # the class with the highest energy is what we choose as prediction
-        _, predicted = torch.max(outputs.data, 1)
+        if(len(outputs.size())==1):
+            predicted = outputs.data.round()
+        else:  
+            _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
@@ -131,11 +134,14 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
         # calculate outputs by running images through the network
         outputs = net(adv_images)
         # the class with the highest energy is what we choose as prediction
-        _, predicted = torch.max(outputs.data, 1)
+        if(len(outputs.size())==1):
+            predicted = outputs.data.round()
+        else:
+            _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-        if(batch_idx % 20 == 0 and save_adv_image_prefix is not None):
+        if(batch_idx % 10 == 0 and save_adv_image_prefix is not None):
             orig_image = recreate_image(
                 images[0], unnormalize=False)
             # print("orig_image.shape::",
@@ -151,13 +157,13 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
             if not os.path.exists(orig_save_folder):
                 os.makedirs(orig_save_folder)
             orig_im_path = orig_save_folder+'/original_c' + \
-                str(classes[labels[0]])+'_batch_ind_' + \
+                str(classes[int(labels[0])])+'_batch_ind_' + \
                 str(batch_idx) + '.jpg'
 
             if not os.path.exists(adv_save_folder):
                 os.makedirs(adv_save_folder)
             adv_im_path = adv_save_folder+'/adv_c' + \
-                str(classes[labels[0]])+'_batch_ind_' + \
+                str(classes[int(labels[0])])+'_batch_ind_' + \
                 str(batch_idx) + '.jpg'
 
             save_image(orig_image, orig_im_path)
@@ -583,11 +589,12 @@ def extract_common_activation_patterns_between_reconst_and_original(true_input_d
 
     return per_class_common_active_percentages, per_class_common_active_pixel_counts, per_class_common_total_pixel_counts
 
-def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40):
+def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40,custom_model=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     temp_model = torch.load(model_path, map_location=device)
-    custom_model = get_model_instance_from_dataset(
-        dataset, model_arch_type)
+    if(custom_model is None):
+        custom_model = get_model_instance_from_dataset(
+            dataset, model_arch_type)
     if("masked" in model_arch_type):
         custom_model = get_model_instance_from_dataset(
             dataset, model_arch_type, mask_percentage=mask_percentage)
@@ -621,10 +628,10 @@ def project_to_eps_inf_ball(loader,eps):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
-    # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
+    # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn
+    model_arch_type = 'bc_fc_dnn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -633,7 +640,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [4, 9]
+    list_of_classes_to_train_on = [3,8]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
@@ -643,15 +650,15 @@ if __name__ == '__main__':
     # wandb_config_additional_dict = {
     #     "type_of_APR": "APRP", "is_train_on_phase": True}
     # GATE_NET_FREEZE , VAL_NET_FREEZE
-    wandb_config_additional_dict = {
-        "transfer_mode": "GATE_NET_FREEZE"}
+    # wandb_config_additional_dict = {
+    #     "transfer_mode": "VAL_NET_FREEZE"}
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/fashion_mnist/PART_TRAINING/TEACHER__root-model-save-fashion_mnist-adversarial_training-MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING-ST_2022-fast_adv_attack_type_PGD-adv_type_PGD-EPS_0.06-batch_size_128-eps_stp_size_0.06-adv_steps_80-adv_model_dir.pt/TYP_GATE_NET_FREEZE/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
+    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/bc_fc_dnn_W_10_D_1_dir.pt"
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB_HB.npy"
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -722,8 +729,8 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 128
-        fc_depth = 4
+        fc_width = 10
+        fc_depth = 1
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -756,7 +763,8 @@ if __name__ == '__main__':
         # wand_project_name = "APR_experiments"
         # wand_project_name = "adv_attack_latest"
         # wand_project_name = 'eval_model_band_frequency_experiments'
-        wand_project_name = "Part_training_for_robustness"
+        # wand_project_name = "Part_training_for_robustness"
+        wand_project_name = "minute_FC_dlgn"
 
         torch_seed = 2022
         number_of_adversarial_optimization_steps = 161
@@ -807,7 +815,7 @@ if __name__ == '__main__':
                 assert isExist == True, 'Model path does not have saved model'
 
                 net = get_model_from_path(
-                    dataset, model_arch_type, model_save_path)
+                    dataset, model_arch_type, model_save_path,custom_model=net)
 
                 net = net.to(device)
                 device_str = 'cuda' if torch.cuda.is_available() else 'cpu'

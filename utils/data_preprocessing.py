@@ -123,7 +123,7 @@ def true_segregation(data_loader, num_classes):
         input_image, labels = inp_data
         for indx in range(len(labels)):
             each_label = labels[indx]
-            input_data_list_per_class[each_label].append(input_image[indx])
+            input_data_list_per_class[int(each_label)].append(input_image[indx])
     return input_data_list_per_class
 
 
@@ -303,7 +303,12 @@ def preprocess_mnist_fmnist(X_train,y_train,X_test,y_test,dataset_config,model_a
         if(is_split_validation):
             filtered_X_train, X_valid, filtered_y_train, y_valid = train_test_split(
                 filtered_X_train, filtered_y_train, test_size=dataset_config.valid_split_size, random_state=42)
-
+        if("bc_" in model_arch_type):
+            filtered_y_train = np.squeeze(filtered_y_train).astype(np.float32)
+            filtered_y_test = np.squeeze(filtered_y_test).astype(np.float32)
+            if(y_valid is not None):
+                y_valid = np.squeeze(y_valid).astype(np.float32)
+        
         return filtered_X_train, filtered_y_train, X_valid, y_valid, filtered_X_test, filtered_y_test
 
 def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, dataset_folder='./Datasets/', is_split_validation=True):

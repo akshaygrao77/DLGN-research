@@ -1,7 +1,7 @@
 import torch
 
 if __name__ == '__main__':
-    source_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+    source_path = "root/model/save/cifar10/adversarial_training/MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
     target_path = "root/temp/model.pt"
     custom_temp_model = torch.load(source_path)
-    torch.save(custom_temp_model.state_dict(), target_path)
+    torch.save({'state_dict':custom_temp_model.state_dict()}, target_path)

@@ -45,6 +45,9 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         raise ValueError('Unknown lr_type')
 
     criterion = nn.CrossEntropyLoss()
+    if("bc_" in model_arch_type):
+        criterion = nn.BCELoss()
+    
     epoch = 0
     if(dataset is not None and dataset == "cifar10"):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -86,7 +89,11 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
                     opt.zero_grad()
                     loss.backward()
                     grad = delta.grad.detach()
-                    I = output.max(1)[1] == y
+                    if(len(output.size())==1):
+                        predicted = output.data.round()
+                    else:
+                        _, predicted = torch.max(output.data, 1)
+                    I = (predicted == y)
                     delta.data[I] = torch.clamp(
                         delta + alpha * torch.sign(grad), -eps, eps)[I]
                     delta.data[I] = torch.max(
@@ -102,7 +109,11 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             opt.step()
 
             running_loss += loss.item() * y.size(0)
-            correct += (output.max(1)[1] == y).sum().item()
+            if(len(output.size())==1):
+                predicted = output.data.round()
+            else:
+                _, predicted = torch.max(output.data, 1)
+            correct += (predicted == y).sum().item()
             total += y.size(0)
 
             cur_time = time.time()
@@ -164,20 +175,23 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
 
 if __name__ == '__main__':
     # fashion_mnist , mnist,cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
+    # bc_fc_dnn
+    model_arch_type = 'bc_fc_dnn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "common_model_init_exps"
     # wand_project_name = "model_band_frequency_experiments"
-    wand_project_name = "Part_training_for_robustness"
+    # wand_project_name = "frequency_augmentation_experiments"
+    wand_project_name = "minute_FC_dlgn"
+    # wand_project_name = "Part_training_for_robustness"
     
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING
-    exp_type = "PART_ADV_TRAINING"
+    exp_type = "ADV_TRAINING"
 
     adv_attack_type = "PGD"
     adv_target = None
@@ -212,14 +226,14 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [3, 8]
+    list_of_classes_to_train_on = [3, 8]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
     # pca_exp_percent = 0.85
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/fashion_mnist__MB.npy"
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -288,8 +302,8 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 128
-            fc_depth = 4
+            fc_width = 10
+            fc_depth = 1
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \
                 "_W_"+str(fc_width)+"_D_"+str(fc_depth)

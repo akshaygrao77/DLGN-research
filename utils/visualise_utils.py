@@ -109,7 +109,7 @@ def save_images_from_dataloader(dataloader, classes, postfix_folder_for_save='/'
             if not os.path.exists(img_save_folder):
                 os.makedirs(img_save_folder)
             save_im_path = img_save_folder+str(postfix_folder_for_save.replace("/", ""))+'_c' + \
-                str(classes[labels[0]])+'_batch_ind_' + \
+                str(classes[int(labels[0])])+'_batch_ind_' + \
                 str(batch_idx) + '.jpg'
 
             save_image(ac_images, save_im_path)
