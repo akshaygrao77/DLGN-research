@@ -611,11 +611,10 @@ class TemplateImageGenerator():
 
         return loss
 
-    def calculate_mixed_loss_maximise_logit_and_template_image(self, outputs, targets):
+    def calculate_mixed_loss_maximise_logit_and_template_image(self, outputs, targets,alpha = 0.1):
         mse_loss = self.calculate_loss_to_maximise_logits_wrt_another_image_logits(
             outputs, targets)
         template_loss, active_pixel_points, total_pixel_points = self.new_calculate_loss_for_template_image()
-        alpha = 0.1
         overall_loss = alpha * mse_loss + (1-alpha)*template_loss
         return overall_loss, active_pixel_points, total_pixel_points
 
@@ -628,6 +627,19 @@ class TemplateImageGenerator():
             template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.calculate_only_active_loss_for_template_image()
 
         overall_loss = alpha * cce_loss + (1-alpha)*template_loss
+        return overall_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points
+
+    def calculate_mixed_loss_adv_attack(self, outputs, labels, temp_loss_type, alpha):
+        cce_loss = self.calculate_loss_for_output_class_max_image(
+            outputs, labels)
+        if("TANH_TEMP_LOSS" in temp_loss_type):
+            template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.calculate_tanh_loss_for_template_image()
+        elif("TEMP_LOSS" in temp_loss_type):
+            template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.new_calculate_loss_for_template_image()
+        elif("TEMP_ACT_ONLY_LOSS" in temp_loss_type):
+            template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.calculate_only_active_loss_for_template_image()
+
+        overall_loss = template_loss - alpha * cce_loss
         return overall_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points
 
     def calculate_mixed_loss_output_class_and_template_image_with_entropy(self, outputs, labels, alpha=0.1):
@@ -954,12 +966,15 @@ class TemplateImageGenerator():
 
         return loss, active_pixel_points, total_pixel_points, non_zero_pixel_points
 
-    def get_loss_value(self, template_loss_type, class_indx, outputs=None, class_image=None, alpha=None, verbose=1):
+    def get_loss_value(self, template_loss_type, class_indx, outputs=None, class_image=None, alpha=0.1, verbose=1):
         active_pixel_points = None
         total_pixel_points = None
         non_zero_pixel_points = None
-
-        if(template_loss_type == "TEMP_LOSS"):
+        if("LATTCK" in template_loss_type):
+            actual = torch.tensor(
+                [class_indx] * len(outputs), device=self.device)
+            loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.calculate_mixed_loss_adv_attack(outputs, actual, template_loss_type, alpha)
+        elif(template_loss_type == "TEMP_LOSS"):
             loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.new_calculate_loss_for_template_image(
                 verbose=verbose)
         elif(template_loss_type == "TANH_TEMP_LOSS"):
@@ -1004,7 +1019,7 @@ class TemplateImageGenerator():
                                                         is_class_segregation_on_ground_truth, template_initial_image_type,
                                                         template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                         exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
-                                                        plot_iteration_interval=None, root_save_prefix="root", final_postfix_for_save="", wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None):
+                                                        plot_iteration_interval=None, root_save_prefix="root", final_postfix_for_save="", wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None,alpha = 0):
         coll_gate_sample_seed_gen = None
         random_sample_gate_percent_str = ""
         list_of_reconst_images = None
@@ -1051,7 +1066,6 @@ class TemplateImageGenerator():
         total = 0
         reconst_correct = 0
         original_correct = 0
-        alpha = 0.01
         if(alpha != 0):
             self.image_save_prefix_folder += "_alp_" + str(alpha)+"/"
         normalize_image = False
@@ -1073,7 +1087,8 @@ class TemplateImageGenerator():
             if('conv4_deep_gated_net' in model_arch_type):
                 number_of_image_optimization_steps = 301
             else:
-                number_of_image_optimization_steps = 161
+                # number_of_image_optimization_steps = 161
+                pass
 
             if(vis_version == 'V2'):
                 start_sigma = 0.75
@@ -1188,7 +1203,7 @@ class TemplateImageGenerator():
                     outputs = self.model(self.initial_image)
 
                     loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
-                        template_loss_type, class_indx, outputs, class_image, alpha)
+                        template_loss_type, class_indx, outputs, class_image,alpha=alpha)
 
                     if(step_iter == 0 and active_pixel_points is not None):
                         percent_active_pixels = float((
@@ -1297,7 +1312,7 @@ class TemplateImageGenerator():
                         outputs = self.model(self.initial_image)
 
                         loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
-                            template_loss_type, class_indx, outputs, class_image, alpha)
+                            template_loss_type, class_indx, outputs, class_image,alpha=alpha)
 
                         if(step_iter == 0 and active_pixel_points is not None):
                             percent_active_pixels = float((
@@ -1578,7 +1593,7 @@ class TemplateImageGenerator():
                 file, x=list_of_reconst_images, y=current_y_s, y_pred=list_of_reconst_preds)
         return list_of_reconst_images
 
-    def generate_template_image_over_given_image(self, model_arch_type, image_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version='V2'):
+    def generate_template_image_over_given_image(self, model_arch_type, image_to_collect_upon, number_of_image_optimization_steps, template_loss_type, vis_version='V2',alpha=0):
         self.initial_image = preprocess_image(
             self.original_image.cpu().clone().detach().numpy(), normalize=False)
         self.initial_image = self.initial_image.to(self.device)
@@ -1598,7 +1613,8 @@ class TemplateImageGenerator():
             if('conv4_deep_gated_net' in model_arch_type):
                 number_of_image_optimization_steps = 301
             else:
-                number_of_image_optimization_steps = 161
+                # number_of_image_optimization_steps = 161
+                pass
 
             if(vis_version == 'V2'):
                 start_sigma = 0.75
@@ -1629,7 +1645,7 @@ class TemplateImageGenerator():
 
                     verbose = 1
                     loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
-                        template_loss_type, class_indx=0, outputs=outputs, verbose=verbose)
+                        template_loss_type, class_indx=0, outputs=outputs, verbose=verbose,alpha=alpha)
 
                     # print("{} Loss: {}".format(template_loss_type, loss))
                     if(step_iter == 0 and active_pixel_points is not None):
@@ -1679,7 +1695,7 @@ class TemplateImageGenerator():
                     outputs = self.model(self.initial_image)
 
                     loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
-                        template_loss_type, class_indx=0, outputs=outputs)
+                        template_loss_type, class_indx=0, outputs=outputs,alpha=alpha)
 
                     if(step_iter == 0 and active_pixel_points is not None):
                         percent_active_pixels = float((
@@ -1758,7 +1774,8 @@ class TemplateImageGenerator():
             if('conv4_deep_gated_net' in model_arch_type):
                 number_of_image_optimization_steps = 301
             else:
-                number_of_image_optimization_steps = 161
+                # number_of_image_optimization_steps = 161
+                pass
             if(vis_version == 'V2'):
                 start_sigma = 0.75
                 end_sigma = 0.1
@@ -2145,7 +2162,7 @@ class TemplateImageGenerator():
                                           is_class_segregation_on_ground_truth, template_initial_image_type,
                                           template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold,
                                           entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix="root", final_postfix_for_save="",
-                                          wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None):
+                                          wandb_config_additional_dict=None, vis_version='V2', random_sample_gate_percent=None,alpha = 0):
         coll_gate_sample_seed_gen = None
         random_sample_gate_percent_str = ""
         is_log_wandb = not(wand_project_name is None)
@@ -2184,7 +2201,6 @@ class TemplateImageGenerator():
             layer_nums_str = layer_nums_str.strip()
             layer_nums_str = layer_nums_str.replace(" ", "_")
 
-        alpha = 0
         self.image_save_prefix_folder = str(root_save_prefix)+"/"+str(dataset)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/Ver_"+str(vis_version)+"/_COLL_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
             seg_over_what_str)+"/TMP_COLL_BS_"+str(template_image_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/TMP_LOSS_TP_"+str(template_loss_type)+"/TMP_INIT_"+str(template_initial_image_type)+"/_torch_seed_"+str(torch_seed)+"_c_thres_"+str(collect_threshold)+"/"+random_sample_gate_percent_str+str(layer_nums_str)+"/" + str(final_postfix_for_save) + "/"
 
@@ -2206,7 +2222,8 @@ class TemplateImageGenerator():
             if('conv4_deep_gated_net' in model_arch_type):
                 number_of_image_optimization_steps = 301
             else:
-                number_of_image_optimization_steps = 161
+                # number_of_image_optimization_steps = 161
+                pass
             if(vis_version == 'V2'):
                 start_sigma = 0.75
                 end_sigma = 0.1
@@ -2292,7 +2309,7 @@ class TemplateImageGenerator():
 
                         verbose = 1
                         loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
-                            template_loss_type, class_indx, outputs, class_image, alpha, verbose)
+                            template_loss_type, class_indx, outputs, class_image, verbose=verbose,alpha=alpha)
 
                         # print("{} Loss: {}".format(template_loss_type, loss))
                         if(step_iter == 0 and active_pixel_points is not None):
@@ -2428,7 +2445,7 @@ class TemplateImageGenerator():
                         outputs = self.model(self.initial_image)
 
                         loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
-                            template_loss_type, class_indx, outputs, class_image, alpha)
+                            template_loss_type, class_indx, outputs, class_image, alpha=alpha)
 
                         print("{} Loss: {}".format(template_loss_type, loss))
 
@@ -2632,7 +2649,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
                                 entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix='root', final_postfix_for_save="aug_indx_1",
                                 custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, wandb_config_additional_dict=None,
-                                vis_version='V2', random_sample_gate_percent=None, layer_nums_to_visualize=None):
+                                vis_version='V2', random_sample_gate_percent=None, layer_nums_to_visualize=None,alpha=0):
     output_template_list_per_class = None
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
@@ -2683,21 +2700,21 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                                       is_class_segregation_on_ground_truth, template_initial_image_type,
                                                       template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold, entropy_calculation_batch_size,
                                                       number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save, wandb_config_additional_dict=wandb_config_additional_dict,
-                                                      vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
+                                                      vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent,alpha = alpha)
 
         elif(exp_type == "GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG"):
             tmp_gen.generate_layer_wise_template_image_per_class(exp_type, per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                                                  is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                  template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                                  layer_nums_to_visualize, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save,
-                                                                 wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
+                                                                 wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent,alpha = alpha)
         elif(exp_type == "TEMPLATE_ACC_WITH_CUSTOM_PLOTS"):
             tmp_gen.generate_accuracies_of_template_image_per_class(
                 per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                 is_class_segregation_on_ground_truth, template_initial_image_type,
                 template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                 exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, plot_iteration_interval=10, wandb_config_additional_dict=wandb_config_additional_dict,
-                vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
+                vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent,alpha = alpha)
 
         elif(exp_type == "TEMPLATE_ACC"):
             tmp_gen.generate_accuracies_of_template_image_per_class(
@@ -2705,14 +2722,14 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                 is_class_segregation_on_ground_truth, template_initial_image_type,
                 template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, exp_type,
                 collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, wandb_config_additional_dict=wandb_config_additional_dict,
-                vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
+                vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent,alpha = alpha)
         elif(exp_type == "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"):
             list_of_reconst_images = tmp_gen.generate_accuracies_of_template_image_per_class(per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                                                                              is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                                              template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                                                              exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
                                                                                              plot_iteration_interval=10, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save,
-                                                                                             wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent)
+                                                                                             wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent,alpha = alpha)
             output_template_list_per_class[c_indx] = list_of_reconst_images
 
     return output_template_list_per_class
@@ -2721,7 +2738,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
 if __name__ == '__main__':
     print("Start")
     # mnist , cifar10 , fashion_mnist , imagenet_1000
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -2733,31 +2750,33 @@ if __name__ == '__main__':
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # dlgn__resnet18__ , dgn__resnet18__,dnn__resnet18__ , dlgn__vgg16_bn__ , dlgn__st1_pad1_vgg16_bn_wo_bias__ ,dlgn__st1_pad2_vgg16_bn_wo_bias__, dnn__st1_pad2_vgg16_bn_wo_bias__
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'plain_pure_conv4_dnn'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
     # uniform_init_image , zero_init_image , gaussian_init_image
     template_initial_image_type = 'zero_init_image'
-    template_image_calculation_batch_size = 64
+    template_image_calculation_batch_size = 1
     # MSE_LOSS , MSE_TEMP_LOSS_MIXED , ENTR_TEMP_LOSS , CCE_TEMP_LOSS_MIXED , TEMP_LOSS , CCE_ENTR_TEMP_LOSS_MIXED , TEMP_ACT_ONLY_LOSS
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
     # MSE_LAYER_LOSS
-    template_loss_type = "TEMP_LOSS"
-    number_of_batch_to_collect = None
+    # TEMP_LOSS_LATTCK , TANH_TEMP_LOSS_LATTCK
+    template_loss_type = "TANH_TEMP_LOSS_LATTCK"
+    number_of_batch_to_collect = 5
     vis_version = "V2"
+    wand_project_name = None
     # wand_project_name = "layerwise_avg_template_visualisation_augmentation"
-    # wand_project_name = "fresh_template_visualisation_augmentation"
+    # wand_project_name = "latest_recheck_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "test_template_visualisation_augmentation"
-    wand_project_name = None
     wandb_group_name = "TP_"+str(template_loss_type) + \
         "_DS_"+str(dataset)+"_MT_"+str(model_arch_type)
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
-    number_of_image_optimization_steps = 161
+    alpha = 0.01
+    number_of_image_optimization_steps = 101
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES , GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG
     exp_type = "GENERATE_TEMPLATE_IMAGES"
     temp_collect_threshold = 0.90
@@ -2804,7 +2823,8 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+    # custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
+    custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -2841,6 +2861,6 @@ if __name__ == '__main__':
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, temp_collect_threshold, entropy_calculation_batch_size,
                                 number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version=vis_version,
                                 root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent,
-                                class_indx_to_visualize=class_indx_to_visualize, layer_nums_to_visualize=layer_nums_to_visualize)
+                                class_indx_to_visualize=class_indx_to_visualize, layer_nums_to_visualize=layer_nums_to_visualize,alpha=alpha)
 
     print("Execution completed")
