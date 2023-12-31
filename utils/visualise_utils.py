@@ -327,6 +327,7 @@ def output_plt_image(images,path,title=""):
     cbar = fig.colorbar(cax)
     fig.tight_layout()
     fig.savefig(path,bbox_inches='tight')
+    plt.close()
 
 
 def generate_plain_image(image_data, save_path, is_standarize=True, is_standarize_01=True):
