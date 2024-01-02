@@ -629,8 +629,8 @@ class TemplateImageGenerator():
         return overall_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points
 
     def calculate_mixed_loss_adv_attack(self, outputs, labels, temp_loss_type, alpha):
-        cce_loss = torch.log(self.calculate_loss_for_output_class_max_image(
-            outputs, labels))
+        cce_loss = torch.log(torch.pow(10,torch.Tensor([-7])).to(
+                            self.device)+self.calculate_loss_for_output_class_max_image(outputs, labels))
         if("TANH_TEMP_LOSS" in temp_loss_type):
             template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.calculate_tanh_loss_for_template_image()
         elif("TEMP_LOSS" in temp_loss_type):
@@ -639,7 +639,6 @@ class TemplateImageGenerator():
             template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.calculate_only_active_loss_for_template_image()
 
         overall_loss = template_loss - alpha * cce_loss
-        # print("cce_loss:{} template_loss:{} overall_loss:{}".format(cce_loss,template_loss,overall_loss))
         return overall_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points
 
     def calculate_mixed_loss_output_class_and_template_image_with_entropy(self, outputs, labels, alpha=0.1):
@@ -781,10 +780,10 @@ class TemplateImageGenerator():
             each_conv_loss = torch.sum(log_term)
             # print("each_conv_loss", each_conv_loss)
 
+            assert not(torch.isnan(each_conv_output).any().item() or torch.isinf(each_conv_output).any(
+            ).item()), 'Conv out has nan or inf values while calculating temp loss'+str(each_conv_output)
             assert not(torch.isnan(each_conv_loss).any().item() or torch.isinf(
                 each_conv_loss).any().item()), 'Loss value is inf or nan while calculating temp loss'+str(each_conv_loss)
-            assert not(torch.isnan(each_conv_output).any().item() or torch.isinf(each_conv_output).any(
-            ).item()), 'Conv out has nan or inf values while calculating temp loss'
             loss += each_conv_loss
 
         return loss/active_pixel_points, active_pixel_points, total_pixel_points, non_zero_pixel_points
@@ -1013,7 +1012,8 @@ class TemplateImageGenerator():
             targets = self.model(class_image)
             loss, active_pixel_points, total_pixel_points = self.calculate_mixed_loss_maximise_logit_and_template_image(
                 outputs, targets)
-
+        assert not(torch.isnan(loss).any().item() or torch.isinf(
+                loss).any().item()), 'Loss value is inf or nan while calculating temp loss'+str(loss.item())
         return loss, active_pixel_points, total_pixel_points, non_zero_pixel_points
 
     def generate_accuracies_of_template_image_per_class(self, per_class_dataset, class_label, class_indx, classes, model_arch_type, dataset, is_template_image_on_train,
@@ -1202,6 +1202,8 @@ class TemplateImageGenerator():
                         number_of_image_optimization_steps
 
                     outputs = self.model(self.initial_image)
+                    for x in self.get_convouts():
+                        assert not(torch.isnan(x).any().item() or torch.isinf(x).any().item()), 'self.get_convouts value is inf or nan while calculating convouts: self.initial_image->'+str(self.initial_image)
 
                     loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
                         template_loss_type, class_indx, outputs, class_image,alpha=alpha)
@@ -1230,6 +1232,8 @@ class TemplateImageGenerator():
                     loss.backward()
 
                     unnorm_gradients = self.initial_image.grad
+                    assert not(torch.isnan(unnorm_gradients).any().item() or torch.isinf(
+                            unnorm_gradients).any().item()), 'unnorm_gradients value is inf or nan while calculating self.initial_image'+str(self.initial_image)+"loss "+str(loss)
                     # std_unnorm_grad = torch.std(unnorm_gradients)
                     norm_grad = torch.norm(unnorm_gradients)
                     # print("torch.norm(unnorm_gradients):",
@@ -1319,6 +1323,9 @@ class TemplateImageGenerator():
                         number_of_image_optimization_steps
 
                     outputs = self.model(self.initial_image)
+                    
+                    for x in self.get_convouts():
+                        assert not(torch.isnan(x).any().item() or torch.isinf(x).any().item()), 'self.get_convouts value is inf or nan while calculating convouts: self.initial_image->'+str(self.initial_image)
 
                     loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
                         template_loss_type, class_indx, outputs, class_image,alpha=alpha)
@@ -1375,6 +1382,8 @@ class TemplateImageGenerator():
 
                         self.initial_image = self.initial_image.to(
                             self.device)
+                        assert not(torch.isnan(self.initial_image).any().item() or torch.isinf(
+                            self.initial_image).any().item()), 'self.initial_image value is inf or nan while calculating unnorm_gradients'+str(unnorm_gradients)
                         if(not(plot_iteration_interval is None) and step_iter % plot_iteration_interval == 0):
                             update_indx = step_iter // plot_iteration_interval
                             _, outputs_logits, outputs_final, correct = self.get_prediction(
@@ -1414,9 +1423,7 @@ class TemplateImageGenerator():
                 with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for current batch") as pbar:
                     for step_iter in pbar:
                         pbar.set_description(f"Iteration {step_iter+1}")
-
                         outputs = self.model(self.initial_image)
-
                         loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
                             template_loss_type, class_indx, outputs, class_image,alpha=alpha)
 
@@ -1526,7 +1533,7 @@ class TemplateImageGenerator():
                   classes[original_image_pred])
             print("Original label was:", class_label)
 
-            per_class_per_batch_data_loader.set_postfix(rec_acc=100. * reconst_correct/total,
+            per_class_per_batch_data_loader.set_postfix(loss=loss.item(),rec_acc=100. * reconst_correct/total,
                                                         orig_acc=100.*original_correct/total, rec_ratio="{}/{}".format(reconst_correct, total), orig_ratio="{}/{}".format(original_correct, total))
 
             with torch.no_grad():
@@ -3046,7 +3053,7 @@ if __name__ == '__main__':
     custom_model_path = None
 
     # custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
-    custom_model_path = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_128/eps_stp_size_0.01/adv_steps_40/adv_model_dir.pt"
+    custom_model_path = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
