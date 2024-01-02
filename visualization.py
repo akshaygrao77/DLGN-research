@@ -373,8 +373,7 @@ class TemplateImageGenerator():
                 each_conv_output = conv_outs[indx]
 
                 actives = torch.where(each_conv_output > 0, 1, 0)
-                red_act = add_lower_dimension_vectors_within_itself(
-                    actives)
+                red_act = torch.sum(actives, dim=0)
                 self.entropy_active_list[indx] += red_act
 
             self.total_entr_img_count += conv_outs[0].size()[0]
@@ -630,8 +629,8 @@ class TemplateImageGenerator():
         return overall_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points
 
     def calculate_mixed_loss_adv_attack(self, outputs, labels, temp_loss_type, alpha):
-        cce_loss = self.calculate_loss_for_output_class_max_image(
-            outputs, labels)
+        cce_loss = torch.log(self.calculate_loss_for_output_class_max_image(
+            outputs, labels))
         if("TANH_TEMP_LOSS" in temp_loss_type):
             template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.calculate_tanh_loss_for_template_image()
         elif("TEMP_LOSS" in temp_loss_type):
@@ -640,7 +639,7 @@ class TemplateImageGenerator():
             template_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points = self.calculate_only_active_loss_for_template_image()
 
         overall_loss = template_loss - alpha * cce_loss
-        print("cce_loss:{} template_loss:{} overall_loss:{}".format(cce_loss,template_loss,overall_loss))
+        # print("cce_loss:{} template_loss:{} overall_loss:{}".format(cce_loss,template_loss,overall_loss))
         return overall_loss, active_pixel_points, total_pixel_points,non_zero_pixel_points
 
     def calculate_mixed_loss_output_class_and_template_image_with_entropy(self, outputs, labels, alpha=0.1):
@@ -707,6 +706,7 @@ class TemplateImageGenerator():
 
         total_pixel_points = 0
         active_pixel_points = 0
+        non_zero_pixel_points = 0
         for indx in range(len(conv_outs)):
             each_conv_output = conv_outs[indx]
             each_overall_entropy = self.overall_entropy_list[indx]
@@ -2972,7 +2972,7 @@ if __name__ == '__main__':
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small
     # conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # dlgn__resnet18__ , dgn__resnet18__,dnn__resnet18__ , dlgn__vgg16_bn__ , dlgn__st1_pad1_vgg16_bn_wo_bias__ ,dlgn__st1_pad2_vgg16_bn_wo_bias__, dnn__st1_pad2_vgg16_bn_wo_bias__
-    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
+    model_arch_type = 'plain_pure_conv4_dnn'
     # If False, then on test
     is_template_image_on_train = True
     # If False, then segregation is over model prediction
@@ -2985,11 +2985,11 @@ if __name__ == '__main__':
     # MSE_LAYER_LOSS
     # TEMP_LOSS_LATTCK , TANH_TEMP_LOSS_LATTCK
     template_loss_type = "TANH_TEMP_LOSS_LATTCK"
-    number_of_batch_to_collect = None
-    vis_version = "V4"
+    number_of_batch_to_collect = 1
+    vis_version = "V2"
     wand_project_name = None
     # wand_project_name = "layerwise_avg_template_visualisation_augmentation"
-    # wand_project_name = "latest_recheck_visualisation_augmentation"
+    wand_project_name = "latest_recheck_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "test_template_visualisation_augmentation"
     wandb_group_name = "TP_"+str(template_loss_type) + \
@@ -2997,10 +2997,10 @@ if __name__ == '__main__':
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
-    alpha = 1
+    alpha = 0.01
     number_of_image_optimization_steps = 101
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES , GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG
-    exp_type = "GENERATE_TEMPLATE_IMAGES"
+    exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
     temp_collect_threshold = 0.90
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
@@ -3045,8 +3045,8 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
-    # custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_dir.pt"
+    # custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
+    custom_model_path = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_128/eps_stp_size_0.01/adv_steps_40/adv_model_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
