@@ -1163,6 +1163,10 @@ class TemplateImageGenerator():
             self.collect_entropy_of_pixels_into_ymaps(
                 entropy_per_class_data_loader, class_label, number_of_batch_to_collect=number_of_batches_to_calculate_entropy_on)
 
+        eps = None
+        if("PLATTCK" in template_loss_type):
+            eps = float(template_loss_type.split("__")[1])
+
         batch_count = 0
         num_correct = 0
         num_incorrect = 0
@@ -1274,6 +1278,9 @@ class TemplateImageGenerator():
 
                         self.initial_image = self.initial_image.to(
                             self.device)
+                        if(eps is not None):
+                            self.initial_image = torch.clamp(self.initial_image, class_image - eps, class_image + eps)
+                            self.initial_image = torch.clamp(self.initial_image, 0, 1)
                         if(not(plot_iteration_interval is None) and step_iter % plot_iteration_interval == 0):
                             update_indx = step_iter // plot_iteration_interval
                             _, outputs_logits, outputs_final, correct = self.get_prediction(
@@ -1382,6 +1389,9 @@ class TemplateImageGenerator():
 
                         self.initial_image = self.initial_image.to(
                             self.device)
+                        if(eps is not None):
+                            self.initial_image = torch.clamp(self.initial_image, class_image - eps, class_image + eps)
+                            self.initial_image = torch.clamp(self.initial_image, 0, 1)
                         assert not(torch.isnan(self.initial_image).any().item() or torch.isinf(
                             self.initial_image).any().item()), 'self.initial_image value is inf or nan while calculating unnorm_gradients'+str(unnorm_gradients)
                         if(not(plot_iteration_interval is None) and step_iter % plot_iteration_interval == 0):
@@ -1460,8 +1470,9 @@ class TemplateImageGenerator():
                         with torch.no_grad():
                             self.initial_image = self.initial_image - gradients*step_size
                             # self.initial_image = 0.9 * self.initial_image
-                            self.initial_image = torch.clamp(
-                                self.initial_image, -1, 1)
+                            if(eps is not None):
+                                self.initial_image = torch.clamp(self.initial_image, class_image - eps, class_image + eps)
+                                self.initial_image = torch.clamp(self.initial_image, 0, 1)
 
                             if(not(plot_iteration_interval is None) and step_iter % plot_iteration_interval == 0):
                                 update_indx = step_iter // plot_iteration_interval
@@ -1800,6 +1811,7 @@ class TemplateImageGenerator():
                                                  template_image_calculation_batch_size, template_loss_type, torch_seed, number_of_image_optimization_steps,
                                                  plot_iteration_interval, collect_threshold=collect_threshold)
             wandb_config["vis_version"] = vis_version
+            wandb_config["p_eps"]=epsilon
             if(vis_version == 'V2' or vis_version == 'V3'):
                 wandb_config["start_sigma"] = start_sigma
                 wandb_config["end_sigma"] = end_sigma
@@ -1984,12 +1996,12 @@ class TemplateImageGenerator():
         current_y_s = np.full(
             list_of_reconst_images.shape[0], original_label[0].cpu().clone().detach().numpy())
 
-        np_file_save_filename = self.image_file_save_pref + \
-            '/class_'+str(class_label) + '.npy'
-        is_current_aug_available = os.path.exists(np_file_save_filename)
-        with open(np_file_save_filename, 'wb') as file:
-            np.savez(
-                file, x=list_of_reconst_images, y=current_y_s, y_pred=list_of_reconst_preds)
+        # np_file_save_filename = self.image_file_save_pref + \
+        #     '/class_'+str(class_label) + '.npy'
+        # is_current_aug_available = os.path.exists(np_file_save_filename)
+        # with open(np_file_save_filename, 'wb') as file:
+        #     np.savez(
+        #         file, x=list_of_reconst_images, y=current_y_s, y_pred=list_of_reconst_preds)
         return list_of_reconst_images
 
 
@@ -2009,7 +2021,10 @@ class TemplateImageGenerator():
         self.update_overall_y_maps(collect_threshold=0.95)
 
         step_size = 0.01
-        if(vis_version == "V2" or vis_version == 'V3'):
+        eps = None
+        if("PLATTCK" in template_loss_type):
+            eps = float(template_loss_type.split("__")[1])
+        if(vis_version == "V2" or vis_version == 'V3' or vis_version == 'V4'):
             if('conv4_deep_gated_net' in model_arch_type):
                 number_of_image_optimization_steps = 301
             else:
@@ -2028,65 +2043,101 @@ class TemplateImageGenerator():
             else:
                 start_step_size = 0.1
                 end_step_size = 0.05
+            if(vis_version == "V2" or vis_version == 'V3'):
+                with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for given image "+vis_version) as pbar:
+                    for step_iter in pbar:
+                        pbar.set_description(f"Iteration {step_iter+1}")
 
-            with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for given image V2") as pbar:
-                for step_iter in pbar:
-                    pbar.set_description(f"Iteration {step_iter+1}")
+                        step_size = start_step_size + \
+                            ((end_step_size - start_step_size) * step_iter) / \
+                            number_of_image_optimization_steps
+                        # optimizer = torch.optim.SGD([img_var], lr=step_size)
+                        sigma = start_sigma + \
+                            ((end_sigma - start_sigma) * step_iter) / \
+                            number_of_image_optimization_steps
 
-                    step_size = start_step_size + \
-                        ((end_step_size - start_step_size) * step_iter) / \
-                        number_of_image_optimization_steps
-                    # optimizer = torch.optim.SGD([img_var], lr=step_size)
-                    sigma = start_sigma + \
-                        ((end_sigma - start_sigma) * step_iter) / \
-                        number_of_image_optimization_steps
+                        outputs = self.model(self.initial_image)
 
-                    outputs = self.model(self.initial_image)
+                        verbose = 1
+                        loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
+                            template_loss_type, class_indx=0, outputs=outputs, verbose=verbose,alpha=alpha)
 
-                    verbose = 1
-                    loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
-                        template_loss_type, class_indx=0, outputs=outputs, verbose=verbose,alpha=alpha)
+                        # print("{} Loss: {}".format(template_loss_type, loss))
+                        if(step_iter == 0 and active_pixel_points is not None):
+                            percent_active_pixels = float((
+                                active_pixel_points/total_pixel_points)*100)
+                            print("active_pixel_points", active_pixel_points)
+                            print("total_pixel_points", total_pixel_points)
+                            print("Percentage of active pixels:",
+                                percent_active_pixels)
 
-                    # print("{} Loss: {}".format(template_loss_type, loss))
-                    if(step_iter == 0 and active_pixel_points is not None):
-                        percent_active_pixels = float((
-                            active_pixel_points/total_pixel_points)*100)
-                        print("active_pixel_points", active_pixel_points)
-                        print("total_pixel_points", total_pixel_points)
-                        print("Percentage of active pixels:",
-                              percent_active_pixels)
+                        # Backward
+                        loss.backward()
 
-                    # Backward
-                    loss.backward()
+                        unnorm_gradients = self.initial_image.grad
+                        # std_unnorm_grad = torch.std(unnorm_gradients)
+                        norm_grad = torch.norm(unnorm_gradients)
 
-                    unnorm_gradients = self.initial_image.grad
-                    # std_unnorm_grad = torch.std(unnorm_gradients)
-                    norm_grad = torch.norm(unnorm_gradients)
+                        # gradients = unnorm_gradients / first_norm
+                        gradients = unnorm_gradients / \
+                            norm_grad + 1e-8
 
-                    # gradients = unnorm_gradients / first_norm
-                    gradients = unnorm_gradients / \
-                        norm_grad + 1e-8
+                        with torch.no_grad():
+                            # self.initial_image = self.initial_image - gradients*step_size
+                            blurred_grad = gradients.cpu().detach().numpy()[0]
+                            blurred_grad = blur_img(
+                                blurred_grad, sigma)
+                            self.initial_image = self.initial_image.cpu().detach().numpy()[
+                                0]
+                            self.initial_image -= step_size / \
+                                np.abs(blurred_grad).mean() * blurred_grad
 
-                    with torch.no_grad():
-                        # self.initial_image = self.initial_image - gradients*step_size
-                        blurred_grad = gradients.cpu().detach().numpy()[0]
-                        blurred_grad = blur_img(
-                            blurred_grad, sigma)
-                        self.initial_image = self.initial_image.cpu().detach().numpy()[
-                            0]
-                        self.initial_image -= step_size / \
-                            np.abs(blurred_grad).mean() * blurred_grad
+                            self.initial_image = blur_img(
+                                self.initial_image, sigma)
+                            self.initial_image = torch.from_numpy(
+                                self.initial_image[None])
 
-                        self.initial_image = blur_img(
-                            self.initial_image, sigma)
-                        self.initial_image = torch.from_numpy(
-                            self.initial_image[None])
+                        self.initial_image = self.initial_image.to(self.device)
+                        if(eps is not None):
+                            self.initial_image = torch.clamp(self.initial_image, image_to_collect_upon - eps, image_to_collect_upon + eps)
+                            self.initial_image = torch.clamp(self.initial_image, 0, 1)
+                        self.initial_image.requires_grad_()
 
-                    self.initial_image = self.initial_image.to(self.device)
-                    self.initial_image.requires_grad_()
+                        pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
+                            self.initial_image).item(), norm_grad=torch.norm(gradients).item(), norm_raw_grad=norm_grad.item())
+            else:
+                with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for given image "+vis_version) as pbar:
+                    for step_iter in pbar:
+                        pbar.set_description(f"Iteration {step_iter+1}")
 
-                    pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
-                        self.initial_image).item(), norm_grad=torch.norm(gradients).item(), norm_raw_grad=norm_grad.item())
+                        verbose = 1
+                        loss, active_pixel_points, total_pixel_points, non_zero_pixel_points = self.get_loss_value(
+                            template_loss_type, class_indx=0, outputs=outputs, verbose=verbose,alpha=alpha)
+
+                        # print("{} Loss: {}".format(template_loss_type, loss))
+                        if(step_iter == 0 and active_pixel_points is not None):
+                            percent_active_pixels = float((
+                                active_pixel_points/total_pixel_points)*100)
+                            print("active_pixel_points", active_pixel_points)
+                            print("total_pixel_points", total_pixel_points)
+                            print("Percentage of active pixels:",
+                                percent_active_pixels)
+
+                        # Backward
+                        loss.backward()
+
+                        unnorm_gradients = self.initial_image.grad
+                        with torch.no_grad():
+                            self.initial_image -= 0.1*torch.sign(unnorm_gradients)
+                            if(eps is not None):
+                                self.initial_image = torch.clamp(self.initial_image, image_to_collect_upon - eps, image_to_collect_upon + eps)
+                            self.initial_image = torch.clamp(
+                                self.initial_image, 0, 1)
+
+                        self.initial_image.requires_grad_()
+
+                        pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
+                            self.initial_image).item())
         else:
             with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image for given image") as pbar:
                 for step_iter in pbar:
@@ -2120,8 +2171,9 @@ class TemplateImageGenerator():
                     with torch.no_grad():
                         self.initial_image = self.initial_image - gradients*step_size
                         # self.initial_image = 0.9 * self.initial_image
-                        self.initial_image = torch.clamp(
-                            self.initial_image, -1, 1)
+                        if(eps is not None):
+                            self.initial_image = torch.clamp(self.initial_image, image_to_collect_upon - eps, image_to_collect_upon + eps)
+                        self.initial_image = torch.clamp(self.initial_image, 0, 1)
 
                     self.initial_image.requires_grad_()
 
@@ -2691,6 +2743,10 @@ class TemplateImageGenerator():
             self.initial_image.requires_grad_()
 
             step_size = 0.01
+            eps = None
+            if("PLATTCK" in template_loss_type):
+                eps = float(template_loss_type.split("__")[1])
+            
             if(vis_version == 'V2' or vis_version == 'V3'):
                 with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image V2") as pbar:
                     for step_iter in pbar:
@@ -2762,6 +2818,9 @@ class TemplateImageGenerator():
                                 self.initial_image[None])
 
                         self.initial_image = self.initial_image.to(self.device)
+                        if(eps is not None):
+                            self.initial_image = torch.clamp(self.initial_image, class_image - eps, class_image + eps)
+                            self.initial_image = torch.clamp(self.initial_image, 0, 1)
                         self.initial_image.requires_grad_()
 
                         if(plot_iteration_interval is not None and step_iter % plot_iteration_interval == 0):
@@ -2830,18 +2889,10 @@ class TemplateImageGenerator():
                         pbar.set_postfix(loss=loss.item(), norm_image=torch.norm(
                             self.initial_image).item(), norm_grad=torch.norm(gradients).item(), norm_raw_grad=norm_grad.item(), it_time=format_time(tot_time))
             elif(vis_version == 'V4'):
-                with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image V2") as pbar:
+                with trange(number_of_image_optimization_steps, unit="iter", desc="Generating template image V4") as pbar:
                     for step_iter in pbar:
                         begin_time = time.time()
                         pbar.set_description(f"Iteration {step_iter+1}")
-
-                        step_size = start_step_size + \
-                            ((end_step_size - start_step_size) * step_iter) / \
-                            number_of_image_optimization_steps
-                        # optimizer = torch.optim.SGD([img_var], lr=step_size)
-                        sigma = start_sigma + \
-                            ((end_sigma - start_sigma) * step_iter) / \
-                            number_of_image_optimization_steps
 
                         outputs = self.model(self.initial_image)
 
@@ -2872,8 +2923,8 @@ class TemplateImageGenerator():
                             norm_grad + 1e-8
                         with torch.no_grad():
                             self.initial_image -= 0.1*torch.sign(unnorm_gradients)
-                            # self.epsilon=0.3
-                            # self.initial_image = torch.clamp(self.initial_image, class_image - self.epsilon, class_image + self.epsilon) 
+                            if(eps is not None):
+                                self.initial_image = torch.clamp(self.initial_image, class_image - eps, class_image + eps)
                             self.initial_image = torch.clamp(
                                 self.initial_image, 0, 1)
                         
@@ -2991,8 +3042,9 @@ class TemplateImageGenerator():
                         with torch.no_grad():
                             self.initial_image = self.initial_image - gradients*step_size
                             # self.initial_image = 0.9 * self.initial_image
-                            self.initial_image = torch.clamp(
-                                self.initial_image, -1, 1)
+                            if(eps is not None):
+                                self.initial_image = torch.clamp(self.initial_image, class_image - eps, class_image + eps)
+                                self.initial_image = torch.clamp(self.initial_image, 0, 1)
 
                         # Save image every plot_interval iteration
                         if step_iter % plot_iteration_interval == 0:
@@ -3165,7 +3217,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, collect_threshold,
                                 entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix='root', final_postfix_for_save="aug_indx_1",
                                 custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, wandb_config_additional_dict=None,
-                                vis_version='V2', random_sample_gate_percent=None, layer_nums_to_visualize=None,alpha=0,epsilon=None):
+                                vis_version='V2', random_sample_gate_percent=None, layer_nums_to_visualize=None,alpha=0,p_epsilon=None):
     output_template_list_per_class = None
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
@@ -3210,9 +3262,9 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
         tmp_gen = TemplateImageGenerator(
             model, get_initial_image(dataset, template_initial_image_type))
         tmp_gen.layer_nums_to_visualize = layer_nums_to_visualize
-        if(epsilon is not None):
+        if(p_epsilon is not None):
             print("Running projection generator")
-            list_of_reconst_images = tmp_gen.generate_projection_data_and_accuracies_per_class(epsilon,per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
+            list_of_reconst_images = tmp_gen.generate_projection_data_and_accuracies_per_class(p_epsilon,per_class_dataset, class_label, c_indx, classes, model_arch_type, dataset, is_template_image_on_train,
                                                                                              is_class_segregation_on_ground_truth, template_initial_image_type,
                                                                                              template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps,
                                                                                              exp_type, collect_threshold, entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on,
@@ -3288,12 +3340,13 @@ if __name__ == '__main__':
     # CCE_TEMP_ACT_ONLY_LOSS_MIXED , TANH_TEMP_LOSS
     # MSE_LAYER_LOSS
     # TEMP_LOSS_LATTCK , TANH_TEMP_LOSS_LATTCK
-    template_loss_type = "TANH_TEMP_LOSS_LATTCK"
+    # TANH_TEMP_LOSS_PLATTCK_EPS__0.3__
+    template_loss_type = "TANH_TEMP_LOSS_PLATTCK_EPS__0.3__"
     number_of_batch_to_collect = 1
-    vis_version = "V2"
+    vis_version = "V4"
     wand_project_name = None
     # wand_project_name = "layerwise_avg_template_visualisation_augmentation"
-    wand_project_name = "latest_recheck_visualisation_augmentation"
+    # wand_project_name = "latest_recheck_visualisation_augmentation"
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "test_template_visualisation_augmentation"
     wandb_group_name = "TP_"+str(template_loss_type) + \
@@ -3301,12 +3354,12 @@ if __name__ == '__main__':
     is_split_validation = False
     valid_split_size = 0.1
     torch_seed = 2022
-    alpha = 0.01
-    epsilon = None
-    epsilon = 0.3
+    alpha = 0.1
+    p_epsilon = None
+    # p_epsilon = 0.3
     number_of_image_optimization_steps = 101
     # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES , GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG
-    exp_type = "GENERATE_ALL_FINAL_TEMPLATE_IMAGES"
+    exp_type = "GENERATE_TEMPLATE_IMAGES"
     temp_collect_threshold = 0.90
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
@@ -3352,7 +3405,7 @@ if __name__ == '__main__':
     custom_model_path = None
 
     # custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
-    custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_dir.pt"
+    custom_model_path = "root/model/save/mnist/adversarial_training/MT_plain_pure_conv4_dnn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_128/eps_stp_size_0.01/adv_steps_40/adv_model_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -3389,6 +3442,6 @@ if __name__ == '__main__':
                                 valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, temp_collect_threshold, entropy_calculation_batch_size,
                                 number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version=vis_version,
                                 root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent,
-                                class_indx_to_visualize=class_indx_to_visualize, layer_nums_to_visualize=layer_nums_to_visualize,alpha=alpha,epsilon=epsilon)
+                                class_indx_to_visualize=class_indx_to_visualize, layer_nums_to_visualize=layer_nums_to_visualize,alpha=alpha,p_epsilon=p_epsilon)
 
     print("Execution completed")
