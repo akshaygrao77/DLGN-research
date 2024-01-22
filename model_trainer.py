@@ -210,7 +210,7 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
     return net
 
 
-def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None):
+def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None,npk_reg=0):
     device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
     if device_str == 'cuda':
         if(torch.cuda.device_count() > 1):
@@ -241,15 +241,44 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
 
             # forward + backward + optimize
             outputs = net(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
             if(len(outputs.size())==1):
                 predicted = outputs.data.round()
             else:
                 _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+
+            loss = criterion(outputs, labels)
+            if(npk_reg != 0):
+                beta=4
+                if(isinstance(net, torch.nn.DataParallel)):
+                    conv_outs = net.module.linear_conv_outputs
+                    if(hasattr(net.module,"beta")):
+                        beta = net.module.beta
+                else:
+                    conv_outs = net.linear_conv_outputs
+                    if(hasattr(net,"beta")):
+                        beta = net.beta
+                    
+                labels = torch.where(labels == 0, -1, 1)
+                labels = torch.unsqueeze(labels, 1)
+                labels = labels.type(torch.float32)
+                inputs = torch.flatten(inputs, 1)
+                npk_kernel = torch.matmul(inputs, torch.transpose(inputs, 0, 1))
+                for each_conv_out in conv_outs:
+                    gate_out = nn.Sigmoid()(beta * each_conv_out)
+                    npk_kernel = npk_kernel * \
+                        (torch.matmul(gate_out,  torch.transpose(gate_out, 0, 1)))
+                width = conv_outs[0].size()[1]
+                depth = len(conv_outs)
+                npk_kernel = npk_kernel / (pow(width, depth)*npk_kernel.numel())
+                overlap = nn.ReLU()(torch.matmul(torch.matmul(
+                    torch.transpose(labels, 0, 1), npk_kernel), labels))
+                # print("Loss:{} npk_reg*overlap:{}".format(loss,npk_reg*overlap))
+                loss = loss + npk_reg*overlap
+            
+            loss.backward()
+            optimizer.step()
 
             running_loss += loss.item()
 
@@ -345,40 +374,44 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'bc_fc_dnn'
+    model_arch_type = 'fc_dnn'
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
-    batch_size = 32
+    batch_size = 128
 
     # torch_seed = ""
     torch_seed = 2022
 
     wand_project_name = None
     # wand_project_name = "APR_experiments"
-    wand_project_name = "minute_FC_dlgn"
+    wand_project_name = "NPK_reg"
     # wand_project_name = "frequency_augmentation_experiments"
     # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "model_band_frequency_experiments"
     # wand_project_name = "V2_template_visualisation_augmentation"
+    # wand_project_name = "L2RegCNNs"
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
     # pca_exp_percent = 0.50
 
+    npk_reg = 0
+    # npk_reg = 0.1
+
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3, 8]
+    # list_of_classes_to_train_on = [3, 8]
 
     train_transforms = None
     is_normalize_data = True
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__LB.npy"
     
 
     if(scheme_type == "APR_exps"):
@@ -464,7 +497,7 @@ if __name__ == '__main__':
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
         fc_width = 10
-        fc_depth = 1
+        fc_depth = 2
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -488,9 +521,6 @@ if __name__ == '__main__':
             "_PCA_K"+str(number_of_components_for_pca) + \
             "_P_"+str(pca_exp_percent)
 
-    final_model_save_path = get_model_save_path(
-        model_arch_type_str, dataset, torch_seed, list_of_classes_to_train_on_str)
-
     # list_of_weights, list_of_bias = get_gating_layer_weights(net)
 
     # list_of_weights = convert_list_tensor_to_numpy(list_of_weights)
@@ -512,9 +542,16 @@ if __name__ == '__main__':
     else:
         criterion = nn.CrossEntropyLoss().to(device)
     lr = 3e-4
-    optimizer = optim.Adam(net.parameters(), lr=lr)
+    weight_decay = 0
+    optimizer = optim.Adam(net.parameters(), lr=lr,weight_decay=weight_decay)
+    if(weight_decay!=0):
+        model_arch_type_str = model_arch_type_str + "_L2_"+str(weight_decay)
+    if(npk_reg!=0):
+        model_arch_type_str = model_arch_type_str + "_NPKREG_"+str(npk_reg)
     epochs = 32
 
+    final_model_save_path = get_model_save_path(model_arch_type_str, dataset, torch_seed, list_of_classes_to_train_on_str)
+    print("final_model_save_path",final_model_save_path)
     if(scheme_type == "iterative_augmenting"):
         # If False, then on test
         is_template_image_on_train = True
@@ -912,6 +949,8 @@ if __name__ == '__main__':
             wandb_config["scheme_type"] = scheme_type
             wandb_config["final_model_save_path"] = final_model_save_path
             wandb_config["epochs"] = epochs
+            if(npk_reg != 0):
+                wandb_config["npk_reg"]=npk_reg
             wandb_config["optimizer"] = optimizer
             wandb_config["criterion"] = criterion
             wandb_config["lr"] = lr
@@ -933,7 +972,7 @@ if __name__ == '__main__':
             os.makedirs(model_save_folder)
 
         best_test_acc, net = train_model(net,
-                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name)
+                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg)
         if(is_log_wandb):
             wandb.log({"best_test_acc": best_test_acc})
             wandb.finish()

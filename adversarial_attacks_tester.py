@@ -628,10 +628,10 @@ def project_to_eps_inf_ball(loader,eps):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn
-    model_arch_type = 'bc_fc_dnn'
+    model_arch_type = 'fc_dnn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -655,10 +655,10 @@ if __name__ == '__main__':
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/bc_fc_dnn_W_10_D_1_dir.pt"
+    direct_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_10_D_2_NPKREG_0.05_dir.pt"
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB.npy"
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -730,7 +730,7 @@ if __name__ == '__main__':
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
         fc_width = 10
-        fc_depth = 1
+        fc_depth = 2
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -762,12 +762,14 @@ if __name__ == '__main__':
         # wand_project_name = 'V2_adv_attack_on_reconst_augmentation_with_orig'
         # wand_project_name = "APR_experiments"
         # wand_project_name = "adv_attack_latest"
+        # wand_project_name = "benchmarking_adv_exps"
+        wand_project_name = "NPK_reg"
         # wand_project_name = 'eval_model_band_frequency_experiments'
         # wand_project_name = "Part_training_for_robustness"
-        wand_project_name = "minute_FC_dlgn"
+        # wand_project_name = "minute_FC_dlgn"
+        # wand_project_name = "L2RegCNNs"
 
         torch_seed = 2022
-        number_of_adversarial_optimization_steps = 161
         adv_attack_type = "PGD"
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST , ADV_ATTACK_PER_CLASS , FREQ_BAND_ADV_ATTACK_PER_CLASS
@@ -784,7 +786,14 @@ if __name__ == '__main__':
         is_log_wandb = not(wand_project_name is None)
 
         # eps_list = [0.03, 0.06, 0.1]
-        eps_list = [0.06,0.1]
+        if("mnist" in dataset):
+            number_of_adversarial_optimization_steps = 40
+            eps_list = [0.3,0.06,0.1]
+            eps_step_size = 0.01
+        elif("cifar10" in dataset):
+            number_of_adversarial_optimization_steps = 10
+            eps_list = [8/255,6/255]
+            eps_step_size = 2/255
         if(exp_type == "ACT_COMPARE_RECONST_ORIGINAL"):
             eps_list = [0]
 

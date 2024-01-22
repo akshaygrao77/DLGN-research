@@ -20,7 +20,7 @@ from collections import OrderedDict
 from conv4_models import get_model_instance, get_model_instance_from_dataset
 
 
-def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375,dataset=None):
+def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3, alpha=0.375,dataset=None,npk_reg=0):
     print("Model will be saved at", model_save_path)
     save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
     if not os.path.exists(save_adv_image_prefix):
@@ -101,20 +101,50 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
                 delta = delta.detach()
             else:
                 delta = torch.zeros_like(X)
-
-            output = model(torch.clamp(X + delta, 0, 1))
-            loss = criterion(output, y)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-
-            running_loss += loss.item() * y.size(0)
+            
+            inputs = torch.clamp(X + delta, 0, 1)
+            output = model(inputs)
             if(len(output.size())==1):
                 predicted = output.data.round()
             else:
                 _, predicted = torch.max(output.data, 1)
             correct += (predicted == y).sum().item()
             total += y.size(0)
+
+            loss = criterion(output, y)
+            if(npk_reg != 0):
+                beta=4
+                if(isinstance(net, torch.nn.DataParallel)):
+                    conv_outs = net.module.linear_conv_outputs
+                    if(hasattr(net.module,"beta")):
+                        beta = net.module.beta
+                else:
+                    conv_outs = net.linear_conv_outputs
+                    if(hasattr(net,"beta")):
+                        beta = net.beta
+                    
+                y = torch.where(y == 0, -1, 1)
+                y = torch.unsqueeze(y, 1)
+                y = y.type(torch.float32)
+                inputs = torch.flatten(inputs, 1)
+                npk_kernel = torch.matmul(inputs, torch.transpose(inputs, 0, 1))
+                for each_conv_out in conv_outs:
+                    gate_out = nn.Sigmoid()(beta * each_conv_out)
+                    npk_kernel = npk_kernel * \
+                        (torch.matmul(gate_out,  torch.transpose(gate_out, 0, 1)))
+                width = conv_outs[0].size()[1]
+                depth = len(conv_outs)
+                npk_kernel = npk_kernel / (pow(width, depth)*npk_kernel.numel())
+                overlap = nn.ReLU()(torch.matmul(torch.matmul(
+                    torch.transpose(y, 0, 1), npk_kernel), y))
+                # print("Loss:{} npk_reg*overlap:{}".format(loss,npk_reg*overlap))
+                loss = loss + npk_reg*overlap
+            
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+
+            running_loss += loss.item() * y.size(0)
 
             cur_time = time.time()
             step_time = cur_time - begin_time
@@ -180,18 +210,22 @@ if __name__ == '__main__':
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn
-    model_arch_type = 'bc_fc_dnn'
+    model_arch_type = 'fc_dnn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
     # wand_project_name = "common_model_init_exps"
+    # wand_project_name = "benchmarking_adv_exps"
     # wand_project_name = "model_band_frequency_experiments"
     # wand_project_name = "frequency_augmentation_experiments"
-    wand_project_name = "minute_FC_dlgn"
+    wand_project_name = "NPK_reg"
     # wand_project_name = "Part_training_for_robustness"
     
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING
     exp_type = "ADV_TRAINING"
+
+    npk_reg = 0
+    npk_reg = 0.01
 
     adv_attack_type = "PGD"
     adv_target = None
@@ -226,14 +260,14 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3, 8]
+    list_of_classes_to_train_on = [4, 9]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
     # pca_exp_percent = 0.85
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
+    custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -302,8 +336,8 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 10
-            fc_depth = 1
+            fc_width = 64
+            fc_depth = 2
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \
                 "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -327,6 +361,8 @@ if __name__ == '__main__':
                 "_PCA_K"+str(number_of_components_for_pca) + \
                 "_P_"+str(pca_exp_percent)
 
+        if(npk_reg!=0):
+            model_arch_type_str = model_arch_type_str + "_NPKREG_"+str(npk_reg)
         start_net_path = None
 
         # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_n16_small_PCA_K12_P_0.5_dir.pt"
@@ -342,9 +378,9 @@ if __name__ == '__main__':
         fast_adv_attack_type_list = ['PGD']
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         if("mnist" in dataset):
-            number_of_adversarial_optimization_steps_list = [80]
-            eps_list = [0.06]
-            eps_step_size = 0.06
+            number_of_adversarial_optimization_steps_list = [10]
+            eps_list = [0.3]
+            eps_step_size = 0.01
             epochs = 36
         elif("cifar10" in dataset):
             number_of_adversarial_optimization_steps_list = [10]
@@ -399,6 +435,8 @@ if __name__ == '__main__':
                             wandb_config["eps_step_size"] = eps_step_size
                             wandb_config["model_save_path"] = model_save_path
                             wandb_config["start_net_path"] = start_net_path
+                            if(npk_reg != 0):
+                                wandb_config["npk_reg"]=npk_reg
                             if(pca_exp_percent is not None):
                                 wandb_config["pca_exp_percent"] = pca_exp_percent
                                 wandb_config["num_comp_pca"] = number_of_components_for_pca
@@ -411,7 +449,7 @@ if __name__ == '__main__':
                             )
 
                         best_test_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name, alpha=eps_step_size,dataset=dataset)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name, alpha=eps_step_size,dataset=dataset,npk_reg=npk_reg)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc})
                             wandb.finish()
