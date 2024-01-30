@@ -173,7 +173,14 @@ def merge_batchnorm_into_convmatrix(bn, raw_conv_matrix, raw_conv_bias):
 
 def merge_conv_matrix(W1, b1, W2, b2):
     W = torch.matmul(W2, W1)
-    b = torch.transpose(torch.matmul(W2, torch.transpose(b1, 1, 0)), 1, 0) + b2
+    tmp = b1
+    if(len(b1.size())==2):
+      tmp = torch.transpose(b1, 1, 0)
+    tmp2 = torch.matmul(W2, tmp)
+    if(len(tmp2.size())==2):
+      b = torch.transpose(tmp2, 1, 0) + b2
+    else:
+      b = tmp2  + b2
 
     return W, b
 
@@ -256,8 +263,11 @@ def merge_operations_in_modules(modObj, current_tensor_size, merged_conv_matrix=
                 merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
                     merged_conv_matrix, merged_conv_bias, cur_conv_matrix, cur_conv_bias)
             elif(isinstance(current_layer, torch.nn.Linear)):
-                merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
-                    merged_conv_matrix, merged_conv_bias, current_layer.weight, current_layer.bias)
+                if(merged_conv_matrix is None):
+                    merged_conv_matrix, merged_conv_bias = current_layer.weight,current_layer.bias
+                else:
+                    merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
+                        merged_conv_matrix, merged_conv_bias, current_layer.weight, current_layer.bias)
                 current_tensor_size = (current_layer.out_features,)
 
         print("merged_conv_matrix:{} merged_conv_bias:{} current_tensor_size:{}".format(
