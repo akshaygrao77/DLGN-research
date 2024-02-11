@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from structure.fc_models import DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network,BC_DNN_FC_Network,SF_DLGN_FC_Network
+from structure.fc_models import DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network,BC_DNN_FC_Network,SF_DLGN_FC_Network,GALU_DNN_FC_Network
 from utils.visualise_utils import determine_row_col_from_features
 from sklearn.decomposition import PCA
 from collections import OrderedDict
@@ -3603,6 +3603,70 @@ class Plain_CONV4_Net(nn.Module):
             elif(layer_num == 5):
                 return self.fc1
 
+class Galu_Plain_CONV4_Net(nn.Module):
+    def __init__(self, input_channel, seed=2022, num_classes=10):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.input_channel = input_channel
+        self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
+        self.conv2_g = nn.Conv2d(128, 128, 3, padding=1)
+        self.conv3_g = nn.Conv2d(128, 128, 3, padding=1)
+        self.conv4_g = nn.Conv2d(128, 128, 3, padding=1)
+
+        self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
+        self.fc1 = nn.Linear(128, num_classes)
+
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
+    def forward(self, inp):
+        device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
+        conv_outs = []
+        x_g1 = self.conv1_g(inp)
+        conv_outs.append(x_g1)
+        x_g1 = x_g1 * nn.Sigmoid()(x_g1)
+        x_g2 = self.conv2_g(x_g1)
+        conv_outs.append(x_g2)
+        x_g2 = x_g2 * nn.Sigmoid()(x_g2)
+        x_g3 = self.conv3_g(x_g2)
+        conv_outs.append(x_g3)
+        x_g3 = x_g3 * nn.Sigmoid()(x_g3)
+        x_g4 = self.conv4_g(x_g3)
+        conv_outs.append(x_g4)
+
+        self.linear_conv_outputs = conv_outs
+
+        x_g4 = x_g4 * nn.Sigmoid()(x_g4)
+        x_g5 = self.pool(x_g4)
+        x_g5 = torch.flatten(x_g5, 1)
+        x_g6 = self.fc1(x_g5)
+
+        return x_g6
+
+    def get_layer_object(self, network_type, layer_num):
+        if(network_type == "GATE_NET"):
+            if(layer_num == 0):
+                return self.conv1_g
+            elif(layer_num == 1):
+                return self.conv2_g
+            elif(layer_num == 2):
+                return self.conv3_g
+            elif(layer_num == 3):
+                return self.conv4_g
+            elif(layer_num == 4):
+                return self.pool
+            elif(layer_num == 5):
+                return self.fc1
+
 
 class Plain_CONV4_Net_N16_Small(nn.Module):
     def __init__(self, input_channel, seed=2022, num_classes=10):
@@ -5303,6 +5367,8 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
     net = None
     if(model_arch_type == 'plain_pure_conv4_dnn'):
         net = Plain_CONV4_Net(inp_channel, seed=seed, num_classes=num_classes)
+    elif(model_arch_type == 'gal_plain_pure_conv4_dnn'):
+        net = Galu_Plain_CONV4_Net(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_dlgn'):
         net = Conv4_DLGN_Net(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'dlgn__conv4_dlgn_pad0_st1_bn__'):
@@ -5338,6 +5404,9 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
     elif(model_arch_type == "masked_conv4_dlgn_n16_small"):
         net = Mask_Conv4_DLGN_Net_N16_Small(
             inp_channel, random_inp_percent=mask_percentage, seed=seed, num_classes=num_classes)
+    elif(model_arch_type == "gal_fc_dnn"):
+        net = GALU_DNN_FC_Network(
+            nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
     elif(model_arch_type == "fc_dnn"):
         net = DNN_FC_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)

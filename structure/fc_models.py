@@ -454,6 +454,68 @@ class DGN_FC_Gating_Network(nn.Module):
         return ret
 
 
+class GALU_DNN_FC_Network(nn.Module):
+    def __init__(self, nodes_in_each_layer_list, input_size_list=[28, 28], seed=2022, num_classes=10):
+        super(GALU_DNN_FC_Network, self).__init__()
+        torch.manual_seed(seed)
+        self.nodes_in_each_layer_list = nodes_in_each_layer_list
+        self.seed = seed
+        self.num_classes = num_classes
+        self.input_size_list = input_size_list
+        self.initialize_network()
+
+    def initialize_network(self):
+        list_of_modules = []
+        input_size = self.input_size_list[0]
+        for ind in range(1, len(self.input_size_list)):
+            input_size *= self.input_size_list[ind]
+
+        previous_layer_size = input_size
+        for indx in range(len(self.nodes_in_each_layer_list)):
+            each_current_layer_size = self.nodes_in_each_layer_list[indx]
+            list_of_modules.append(nn.Linear(
+                previous_layer_size, each_current_layer_size))
+            previous_layer_size = each_current_layer_size
+
+        self.list_of_modules = nn.ModuleList(list_of_modules)
+        self.output_layer = nn.Linear(
+            previous_layer_size, self.num_classes)
+
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = PCA_Layer(data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        self.initialize_network()
+        return self.pca_layer.k
+
+    def forward(self, inp, verbose=2):
+        device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+        prev_out = torch.flatten(inp, 1)
+        num_layers = len(self.list_of_modules)
+        layer_outs = []
+        for indx in range(num_layers):
+            each_module = self.list_of_modules[indx]
+            prev_out = each_module(prev_out)
+            layer_outs.append(prev_out)
+            prev_out = prev_out*nn.Sigmoid()(prev_out)
+
+        self.linear_conv_outputs = layer_outs
+        self.prev_out = self.output_layer(prev_out)
+        return self.prev_out
+
+    def __str__(self):
+        ret = "Value network "+" \n module_list:"
+        for each_module in self.list_of_modules:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+
+        return ret
+
+
 class DNN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, input_size_list=[28, 28], seed=2022, num_classes=10):
         super(DNN_FC_Network, self).__init__()
