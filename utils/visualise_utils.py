@@ -93,6 +93,48 @@ def save_image(im, path):
         im = Image.fromarray(im)
     im.save(path)
 
+def save_bifurcated_images_from_dataloader(model,dataloader, classes, postfix_folder_for_save='/', save_image_prefix=None):
+    device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+    loader = tqdm.tqdm(
+        dataloader, desc='Saving images from dataloader:'+str(postfix_folder_for_save))
+    num_correct = 0
+    num_incorrect = 0
+    for batch_idx, data in enumerate(loader, 0):
+        class_image, original_label = data
+        class_image = class_image.to(device, non_blocking=True)
+        original_label = original_label.to(device, non_blocking=True)
+
+        image_outputs = model(class_image)
+        for i in range(len(image_outputs)):
+            each_image_output = torch.unsqueeze(image_outputs[i],0)
+            each_original_label=original_label[i]
+            each_image_output_softmax = each_image_output.softmax(dim=1)
+            each_image_output_pred = each_image_output_softmax.max(1).indices
+            temp_var = each_image_output_pred.eq(each_original_label).sum().item()
+            ac_images = recreate_image(
+                    class_image[i], unnormalize=False)
+            if(save_image_prefix is not None):
+                if(temp_var > 0):
+                    if(num_correct % 50 == 0):
+                        is_out_image = True
+                    num_correct += 1
+                    save_folder = save_image_prefix + \
+                        "/"+str(postfix_folder_for_save)+"/corr_clssfied/true_class_"+str(classes[each_original_label])+"/"
+                    # print(each_image_output.size(),each_image_output,each_image_output_pred,classes[each_original_label],each_original_label,save_folder)
+                else:
+                    if(num_incorrect % 50 == 0):
+                        is_out_image = True
+                    num_incorrect += 1
+                    save_folder = save_image_prefix + \
+                        "/"+str(postfix_folder_for_save)+"/in_corr_clssfied/true_class_"+str(classes[each_original_label])+"/"
+                if not os.path.exists(save_folder):
+                    os.makedirs(save_folder)
+                save_im_path = save_folder+"/_c" + \
+                    str(classes[int(each_image_output_pred[0])])+'_batch_ind_' + \
+                    str(batch_idx)+"_"+str(i) + '.jpg'
+                save_image(ac_images, save_im_path)
+                
 
 def save_images_from_dataloader(dataloader, classes, postfix_folder_for_save='/', save_image_prefix=None):
     loader = tqdm.tqdm(

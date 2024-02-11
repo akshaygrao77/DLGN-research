@@ -23,6 +23,7 @@ from raw_weight_analysis import convert_list_tensor_to_numpy
 from utils.APR import APRecombination, mix_data
 from apr_evaluator import apr_evaluate_model
 from collections import OrderedDict
+from structure.generic_structure import CustomSimpleDataset
 
 
 def evaluate_model(net, dataloader, num_classes_trained_on=None):
@@ -210,7 +211,7 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
     return net
 
 
-def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None,npk_reg=0):
+def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None,npk_reg=0,gatesat_reg=0):
     device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
     if device_str == 'cuda':
         if(torch.cuda.device_count() > 1):
@@ -276,6 +277,25 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
                     torch.transpose(labels, 0, 1), npk_kernel), labels))
                 # print("Loss:{} npk_reg*overlap:{}".format(loss,npk_reg*overlap))
                 loss = loss + npk_reg*overlap
+            
+            if(gatesat_reg != 0):
+                beta=4
+                if(isinstance(net, torch.nn.DataParallel)):
+                    conv_outs = net.module.linear_conv_outputs
+                    if(hasattr(net.module,"beta")):
+                        beta = net.module.beta
+                else:
+                    conv_outs = net.linear_conv_outputs
+                    if(hasattr(net,"beta")):
+                        beta = net.beta
+                    
+                regterm=0
+                for each_conv_out in conv_outs:
+                    gate_out = nn.Sigmoid()(beta * each_conv_out)
+                    regterm += torch.sum(gate_out*(1-gate_out))
+                # regterm=regterm//len(conv_outs)
+                print("Loss:{} gatesat_reg*regterm:{}".format(loss,gatesat_reg*regterm))
+                loss = loss + gatesat_reg*regterm
             
             loss.backward()
             optimizer.step()
@@ -374,11 +394,12 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'fc_dnn'
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
+    # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn
+    model_arch_type = 'gal_fc_dnn'
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
@@ -389,29 +410,34 @@ if __name__ == '__main__':
 
     wand_project_name = None
     # wand_project_name = "APR_experiments"
-    wand_project_name = "NPK_reg"
+    # wand_project_name = "NPK_reg"
+    wand_project_name = "Galu_act_robustness"
     # wand_project_name = "frequency_augmentation_experiments"
     # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "model_band_frequency_experiments"
     # wand_project_name = "V2_template_visualisation_augmentation"
-    # wand_project_name = "L2RegCNNs"
+    # wand_project_name = "Pruning-exps"
+    # wand_project_name = "Gatesat-exp"
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
     # pca_exp_percent = 0.50
 
     npk_reg = 0
-    # npk_reg = 0.1
+    # npk_reg = 0.01
+
+    gatesat_reg=0
+    # gatesat_reg=0.001
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [3, 8]
+    # list_of_classes_to_train_on = [4,9]
 
     train_transforms = None
     is_normalize_data = True
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__LB.npy"
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
     
 
     if(scheme_type == "APR_exps"):
@@ -496,7 +522,7 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 10
+        fc_width = 16
         fc_depth = 2
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
@@ -548,6 +574,8 @@ if __name__ == '__main__':
         model_arch_type_str = model_arch_type_str + "_L2_"+str(weight_decay)
     if(npk_reg!=0):
         model_arch_type_str = model_arch_type_str + "_NPKREG_"+str(npk_reg)
+    if(gatesat_reg!=0):
+        model_arch_type_str = model_arch_type_str + "_GSATREG_"+str(gatesat_reg)
     epochs = 32
 
     final_model_save_path = get_model_save_path(model_arch_type_str, dataset, torch_seed, list_of_classes_to_train_on_str)
@@ -859,7 +887,7 @@ if __name__ == '__main__':
         # GATE_NET_FREEZE , VAL_NET_FREEZE
         transfer_mode = "GATE_NET_FREEZE"
 
-        teacher_model_path = "root/model/save/mnist/adversarial_training/MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+        teacher_model_path = "root/model/save/fashion_mnist/adversarial_training/MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
         net = get_model_from_path(
             dataset, model_arch_type, teacher_model_path)
         
@@ -951,6 +979,8 @@ if __name__ == '__main__':
             wandb_config["epochs"] = epochs
             if(npk_reg != 0):
                 wandb_config["npk_reg"]=npk_reg
+            if(gatesat_reg!=0):
+                wandb_config["gatesat_reg"]=gatesat_reg
             wandb_config["optimizer"] = optimizer
             wandb_config["criterion"] = criterion
             wandb_config["lr"] = lr
@@ -972,7 +1002,7 @@ if __name__ == '__main__':
             os.makedirs(model_save_folder)
 
         best_test_acc, net = train_model(net,
-                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg)
+                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg,gatesat_reg)
         if(is_log_wandb):
             wandb.log({"best_test_acc": best_test_acc})
             wandb.finish()
