@@ -21,13 +21,9 @@ from collections import OrderedDict
 from visualization import recreate_image, save_image,  PerClassDataset
 from utils.data_preprocessing import true_segregation
 from structure.generic_structure import CustomSimpleDataset
-from adversarial_attacks_tester import generate_adv_examples
+from adversarial_attacks_tester import generate_adv_examples,get_adv_save_str
 from configs.dlgn_conv_config import HardRelu
 
-from cleverhans.torch.attacks.fast_gradient_method import fast_gradient_method
-from cleverhans.torch.attacks.projected_gradient_descent import (
-    projected_gradient_descent,
-)
 
 from keras.datasets import mnist, fashion_mnist
 
@@ -182,7 +178,7 @@ def generate_NPF_stats(model,dataloader):
 
 def output_bar_graph(xlist,ylist,path,title=""):
     # col = ['blue'if i%2==0 else 'red' for i in range(len(xlist))]
-    fig = plt.figure(figsize =(len(xlist)//100, len(ylist)//100))
+    fig = plt.figure(figsize =(len(xlist)//10, len(ylist)//10))
     # fig = plt.figure()
     ax = fig.add_subplot(111)
     # while(xticks[-1]<len(xlist)):
@@ -197,7 +193,7 @@ def output_bar_graph(xlist,ylist,path,title=""):
     # fig.clear()
     svm = sns.barplot(x=xlist,y=ylist,ax=ax)
     svm.set(xticklabels=[])
-    svm.set(title=title+"_"+str(min(xlist))+"-"+str(max(xlist)))
+    svm.set(title=title+"_"+str(round(min(xlist),4))+"-"+str(round(max(xlist),4)))
     svm.set(xlabel=None)
     figure = svm.get_figure()
     figure.tight_layout()
@@ -209,7 +205,7 @@ if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'fc_dnn'
+    model_arch_type = 'bc_fc_dnn'
     batch_size = 64
 
     is_analysis_on_train = False
@@ -233,7 +229,10 @@ if __name__ == '__main__':
     # direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_fc_dlgn_W_10_D_2_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
     # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_10_D_1_dir.pt"
-    direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_fc_dnn_W_10_D_1_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    # direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_fc_dnn_W_10_D_1_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+
+    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/bc_fc_dnn_W_10_D_1_dir.pt"
+    # direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_bc_fc_dnn_W_10_D_1_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB_HB.npy"
@@ -365,9 +364,7 @@ if __name__ == '__main__':
         eps_step_size = 0.06
         eps = 0.06
         is_adv_attack_on_train = is_analysis_on_train
-
-        final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/".format(
-                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train)
+        final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train)
         adv_save_path = data_save_prefix + \
             final_adv_postfix_for_save+"/adv_dataset.npy"
         is_current_adv_aug_available = os.path.exists(

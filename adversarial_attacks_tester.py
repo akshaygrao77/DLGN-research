@@ -18,32 +18,31 @@ from visualization import recreate_image, save_image,  PerClassDataset, Template
 from utils.data_preprocessing import true_segregation
 from structure.generic_structure import CustomSimpleDataset
 
-from utils.visualise_utils import calculate_common_among_two_activation_patterns, save_images_from_dataloader
+from utils.visualise_utils import calculate_common_among_two_activation_patterns, save_images_from_dataloader,save_bifurcated_images_from_dataloader
 
-from cleverhans.torch.attacks.fast_gradient_method import fast_gradient_method
-from cleverhans.torch.attacks.projected_gradient_descent import (
-    projected_gradient_descent,
-)
+from attacks import cleverhans_projected_gradient_descent,cleverhans_fast_gradient_method,get_locuslab_adv_per_batch
 from keras.datasets import mnist, fashion_mnist
 from freq_dataset_generator import modify_bandpass_freq_get_dataset
 
 from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net, get_model_instance, get_model_instance_from_dataset
 
 
-def apply_adversarial_attack_on_input(input_data, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted):
+def apply_adversarial_attack_on_input(input_data, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, labels, is_targetted,update_on,rand_init,norm,use_ytrue,criterion=None,clip_min=0.0,clip_max=1.0):
     adv_inp = None
     if(adv_attack_type == "PGD"):
-        adv_inp = projected_gradient_descent(
-            net, input_data, eps, eps_step_size, number_of_adversarial_optimization_steps, np.inf, y=adv_target, targeted=is_targetted)
+        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"labels":labels if use_ytrue or is_targetted else None,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':is_targetted,'norm':norm}
+        # adv_inp = get_locuslab_adv_per_batch(net, input_data,kargs)
+        adv_inp = cleverhans_projected_gradient_descent(
+            net, input_data,kargs)
     elif(adv_attack_type == "FGSM"):
-        adv_inp = fast_gradient_method(
-            model_fn=net, x=input_data, eps=eps, norm=np.inf)
+        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps,"steps":1,"labels":labels if use_ytrue or is_targetted else None,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':is_targetted,'norm':norm}
+        adv_inp = cleverhans_fast_gradient_method(net,input_data, kargs)
 
     return adv_inp
 
 
 def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv_attack_on_train,
-                     eps, number_of_adversarial_optimization_steps, eps_step_size, model_attacked_path, is_targetted, adv_target=None):
+                     eps, number_of_adversarial_optimization_steps, eps_step_size, model_attacked_path, is_targetted, adv_target=None,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True):
 
     wandb_config = dict()
     wandb_config["adv_attack_type"] = adv_attack_type
@@ -56,6 +55,10 @@ def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv
     wandb_config["is_targetted"] = is_targetted
     wandb_config["model_attacked_path"] = model_attacked_path
     wandb_config["exp_type"] = exp_type
+    wandb_config["update_on"] = update_on
+    wandb_config["rand_init"] = rand_init
+    wandb_config["norm"] = norm
+    wandb_config["use_ytrue"] = use_ytrue
     if(not(adv_target is None)):
         wandb_config["adv_target"] = adv_target
 
@@ -111,7 +114,7 @@ def plain_evaluate_model(net, dataloader, classes=None):
     return acc, frequency_pred
 
 
-def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
+def adv_evaluate_model(net, dataloader,classes, eps, adv_attack_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01,adv_target=None, save_adv_image_prefix=None, update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,lossfn=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
@@ -120,7 +123,7 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
 
     net.train(False)
 
-    loader = tqdm.tqdm(dataloader, desc='Evaluating')
+    loader = tqdm.tqdm(dataloader, desc='Adversarial Evaluating')
     # since we're not training, we don't need to calculate the gradients for our outputs
     # with torch.no_grad():
     for batch_idx, data in enumerate(loader, 0):
@@ -130,7 +133,7 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
             device), labels.to(device)
 
         adv_images = apply_adversarial_attack_on_input(
-            images, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted)
+            images, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, labels, is_targetted,update_on,rand_init,norm,use_ytrue,lossfn)
         # calculate outputs by running images through the network
         outputs = net(adv_images)
         # the class with the highest energy is what we choose as prediction
@@ -141,7 +144,7 @@ def evaluate_model(net, dataloader, classes, eps, adv_attack_type, number_of_adv
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-        if(batch_idx % 10 == 0 and save_adv_image_prefix is not None):
+        if(batch_idx % 1 == 0 and save_adv_image_prefix is not None):
             orig_image = recreate_image(
                 images[0], unnormalize=False)
             # print("orig_image.shape::",
@@ -231,7 +234,7 @@ def plain_evaluate_model_via_reconstructed(model_arch_type, net, dataloader, cla
     return acc
 
 
-def evaluate_model_via_reconstructed(model_arch_type, net, dataloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None):
+def evaluate_model_via_reconstructed(model_arch_type, net, dataloader, classes, eps, adv_attack_type, dataset, exp_type, template_initial_image_type, number_of_image_optimization_steps, template_loss_type, number_of_adversarial_optimization_steps=40, eps_step_size=0.01, adv_target=None, save_adv_image_prefix=None,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,lossfn=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
@@ -250,7 +253,7 @@ def evaluate_model_via_reconstructed(model_arch_type, net, dataloader, classes, 
             device), labels.to(device)
 
         adv_images = apply_adversarial_attack_on_input(
-            images, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted)
+            images, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, labels, is_targetted,update_on,rand_init,norm,use_ytrue,lossfn)
 
         reconst_adv_images = quick_visualization_on_config(
             model_arch_type, net, dataset, exp_type="GENERATE_TEMPLATE_GIVEN_BATCH_OF_IMAGES", template_initial_image_type=template_initial_image_type,
@@ -306,11 +309,18 @@ def evaluate_model_via_reconstructed(model_arch_type, net, dataloader, classes, 
 
     return acc
 
+def get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on='all',rand_init=True,norm=np.inf,use_ytrue=False):
+    no_default_str = ""
+    if(not(update_on=='all' and rand_init==True and norm==np.inf and use_ytrue==False)):
+        no_default_str = "/update_on_{}/R_init_{}/norm_{}/use_ytrue_{}/".format(update_on,rand_init,str(norm),use_ytrue)
+    final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train,no_default_str)
 
-def load_or_generate_adv_examples(to_be_analysed_dataloader, models_base_path, is_act_collection_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=False, save_path=None, each_save_postfix=""):
+    return final_adv_postfix_for_save
+        
+
+def load_or_generate_adv_examples(to_be_analysed_dataloader, models_base_path, is_act_collection_on_train, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, number_of_batch_to_collect=None, is_save_adv=False, save_path=None, each_save_postfix="",update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,lossfn=None):
     if(save_path is None):
-        final_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-            adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, each_save_postfix)
+        final_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_act_collection_on_train,update_on,rand_init,norm,use_ytrue)+str(each_save_postfix)
         adv_save_path = models_base_path + final_postfix_for_save+"/adv_dataset.npy"
     else:
         adv_save_path = save_path
@@ -328,7 +338,7 @@ def load_or_generate_adv_examples(to_be_analysed_dataloader, models_base_path, i
                   adv_save_path)
     else:
         adv_dataset = generate_adv_examples(
-            to_be_analysed_dataloader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=adv_save_path)
+            to_be_analysed_dataloader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,lossfn=lossfn)
     return adv_dataset
 
 
@@ -356,7 +366,7 @@ def generate_adversarial_perturbation_from_adv_orig(orig_dataloader, adv_dataloa
     return perturb_dataset
 
 
-def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=False, save_path=None):
+def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=False, save_path=None, update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,lossfn=None):
     print("Adversarial will be saved at:", save_path)
     cpudevice = torch.device("cpu")
     is_targetted = adv_target is not None
@@ -373,7 +383,7 @@ def generate_adv_examples(data_loader, model, eps, adv_attack_type, number_of_ad
             device), labels.to(device)
 
         current_adv_image = apply_adversarial_attack_on_input(
-            images, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_targetted)
+            images, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, labels, is_targetted,update_on,rand_init,norm,use_ytrue,lossfn)
 
         if(list_of_adv_images is None):
             list_of_adv_images = current_adv_image
@@ -422,7 +432,7 @@ def get_reconstructed_template_images(search_path, class_label):
 def extract_common_activation_patterns_between_adv_and_normal(true_input_data_list_per_class, model,
                                                               template_image_calculation_batch_size, number_of_batch_to_collect, collect_threshold, torch_seed, classes,
                                                               eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target,
-                                                              wand_project_name, wandb_group_name, wandb_run_name, wandb_config):
+                                                              wand_project_name, wandb_group_name, wandb_run_name, wandb_config,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True):
     is_log_wandb = not(wand_project_name is None)
 
     class_indx_to_visualize = [i for i in range(len(classes))]
@@ -464,7 +474,7 @@ def extract_common_activation_patterns_between_adv_and_normal(true_input_data_li
         tmp_gen.reset_collection_state()
 
         per_class_adv_dataset = generate_adv_examples(
-            per_class_data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect)
+            per_class_data_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
 
         coll_seed_gen2 = torch.Generator()
         coll_seed_gen2.manual_seed(torch_seed)
@@ -592,9 +602,13 @@ def extract_common_activation_patterns_between_reconst_and_original(true_input_d
 def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40,custom_model=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     temp_model = torch.load(model_path, map_location=device)
+    device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
     if(custom_model is None):
         custom_model = get_model_instance_from_dataset(
             dataset, model_arch_type)
+        if device_str == 'cuda':
+            if(torch.cuda.device_count() > 1):
+                custom_model = torch.nn.DataParallel(custom_model)
     if("masked" in model_arch_type):
         custom_model = get_model_instance_from_dataset(
             dataset, model_arch_type, mask_percentage=mask_percentage)
@@ -608,7 +622,7 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
         else:
             custom_model.load_state_dict(temp_model['state_dict'])
     else:
-        custom_model.load_state_dict(temp_model.state_dict())
+        custom_model.load_state_dict(temp_model.state_dict(),strict=False)
 
     return custom_model
 
@@ -628,10 +642,10 @@ def project_to_eps_inf_ball(loader,eps):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
-    # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn
-    model_arch_type = 'fc_dnn'
+    # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn ,  fc_sf_dlgn , madry_mnist_conv4_dnn
+    model_arch_type = 'madry_mnist_conv4_dnn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -640,7 +654,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3,8]
+    # list_of_classes_to_train_on = [4,9]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
@@ -651,11 +665,11 @@ if __name__ == '__main__':
     #     "type_of_APR": "APRP", "is_train_on_phase": True}
     # GATE_NET_FREEZE , VAL_NET_FREEZE
     # wandb_config_additional_dict = {
-    #     "transfer_mode": "VAL_NET_FREEZE"}
+    #     "transfer_mode": "GATE_NET_FREEZE"}
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_10_D_2_NPKREG_0.05_dir.pt"
+    direct_model_path = "root/model/save/mnist/adversarial_training/MT_madry_mnist_conv4_dnn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB.npy"
@@ -729,7 +743,7 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 10
+        fc_width = 64
         fc_depth = 2
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
@@ -763,20 +777,31 @@ if __name__ == '__main__':
         # wand_project_name = "APR_experiments"
         # wand_project_name = "adv_attack_latest"
         # wand_project_name = "benchmarking_adv_exps"
-        wand_project_name = "NPK_reg"
+        # wand_project_name = "NPK_reg"
         # wand_project_name = 'eval_model_band_frequency_experiments'
         # wand_project_name = "Part_training_for_robustness"
+        # wand_project_name = "Pruning-exps"
+        # wand_project_name = "Gatesat-exp"
         # wand_project_name = "minute_FC_dlgn"
         # wand_project_name = "L2RegCNNs"
+        wand_project_name = "testing"
+        # wand_project_name = "madry's_benchmarking"
 
         torch_seed = 2022
         adv_attack_type = "PGD"
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST , ADV_ATTACK_PER_CLASS , FREQ_BAND_ADV_ATTACK_PER_CLASS
         # AFTER_ATT_FREQ_BAND_ADV_ATTACK_PER_CLASS
-        exp_type = "ADV_ATTACK_PER_CLASS"
+        exp_type = "ADV_ATTACK"
         is_adv_attack_on_train = False
         eps_step_size = 0.06
+
+        # Best attack setting is always  update_on='all' rand_init=True norm=np.inf use_ytrue=True (False attacks slightly less actually contradictory to label leaking since it is multi-step) number_of_restarts=1(more restarts also end up in similar accuracies)
+        update_on='all'
+        rand_init=True
+        norm=np.inf
+        use_ytrue=True
+        number_of_restarts = 1
 
         model_and_data_save_prefix = "root/model/save/mnist/adversarial_training/MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
@@ -840,11 +865,13 @@ if __name__ == '__main__':
 
                 print("Net:", net)
                 if(direct_model_path is None):
-                    final_postfix_for_save = "/ADV_SAVES/exp_type_{}/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/aug_indx_{}".format(
-                        exp_type, adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, current_aug_iter_num)
+                    final_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)+"/aug_indx_{}/".format(current_aug_iter_num)
+                    final_postfix_for_save = final_postfix_for_save.replace("RAW_ADV_SAVES","ADV_SAVES/exp_type_{}/".format(exp_type))
                 else:
-                    final_postfix_for_save = "/ADV_SAVES/exp_type_{}/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/".format(
-                        exp_type, adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps)
+                    final_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,"",update_on,rand_init,norm,use_ytrue)
+                    final_postfix_for_save = final_postfix_for_save.replace("RAW_ADV_SAVES","ADV_SAVES/exp_type_{}/".format(exp_type))
+                    final_postfix_for_save = final_postfix_for_save.replace("on_train_","")
+                    
                 save_folder = model_and_data_save_prefix + final_postfix_for_save
                 if(exp_type == "ADV_ATTACK"):
                     wandb_group_name = "DS_"+str(dataset_str) + \
@@ -854,8 +881,9 @@ if __name__ == '__main__':
                         wandb_run_name = str(
                             model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
                         wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
-                                                        eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                                                        eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target,update_on,rand_init,norm,use_ytrue)
                         wandb_config["aug_iter_num"] = current_aug_iter_num
+                        wandb_config["number_of_restarts"] = number_of_restarts
                         if(pca_exp_percent is not None):
                             wandb_config["pca_exp_percent"] = pca_exp_percent
                             wandb_config["num_comp_pca"] = number_of_components_for_pca
@@ -870,11 +898,9 @@ if __name__ == '__main__':
                     if(direct_model_path is None):
                         each_save_postfix = "/aug_indx_{}".format(
                             current_aug_iter_num)
-                        final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                            adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train, each_save_postfix)
+                        final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)+str(each_save_postfix)
                     else:
-                        final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/".format(
-                            adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train)
+                        final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)
                     adv_save_path = model_and_data_save_prefix + \
                         final_adv_postfix_for_save+"/adv_dataset.npy"
                     is_current_adv_aug_available = os.path.exists(
@@ -891,7 +917,7 @@ if __name__ == '__main__':
                     else:
                         print("adv_save_path:", adv_save_path)
                         adv_dataset = generate_adv_examples(
-                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path)
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
 
                     to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                         adv_dataset, shuffle=False, batch_size=128)
@@ -899,10 +925,26 @@ if __name__ == '__main__':
                     save_images_from_dataloader(to_be_analysed_adversarial_dataloader, classes,
                                                 postfix_folder_for_save='/adver/', save_image_prefix=save_folder)
 
-                    eval_orig_acc, _ = plain_evaluate_model(
-                        net, eval_loader)
                     eval_adv_acc, _ = plain_evaluate_model(
                         net, to_be_analysed_adversarial_dataloader)
+                    
+                    if(number_of_restarts>1):
+                        avg_adv_acc = eval_adv_acc
+                        for cur_restart in range(number_of_restarts-1):
+                            adv_dataset = generate_adv_examples(
+                                eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
+
+                            to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
+                                adv_dataset, shuffle=False, batch_size=256)
+
+                            eval_adv_acc, _ = plain_evaluate_model(
+                                net, to_be_analysed_adversarial_dataloader)
+                            avg_adv_acc += eval_adv_acc
+                            print("Restart :{} adv acc:{}".format(cur_restart,eval_adv_acc))
+                        eval_adv_acc = avg_adv_acc/number_of_restarts
+
+                    eval_orig_acc, _ = plain_evaluate_model(
+                        net, eval_loader)
 
                     if(is_log_wandb):
                         wandb.log({"eval_orig_acc": eval_orig_acc,
@@ -913,11 +955,9 @@ if __name__ == '__main__':
                     if(direct_model_path is None):
                         each_save_postfix = "/aug_indx_{}".format(
                             current_aug_iter_num)
-                        final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                            adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train, each_save_postfix)
+                        final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)+str(each_save_postfix)
                     else:
-                        final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/".format(
-                            adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train)
+                        final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)
                     adv_save_path = model_and_data_save_prefix + \
                         final_adv_postfix_for_save+"/adv_dataset.npy"
                     is_current_adv_aug_available = os.path.exists(
@@ -934,7 +974,7 @@ if __name__ == '__main__':
                     else:
                         print("adv_save_path:", adv_save_path)
                         adv_dataset = generate_adv_examples(
-                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path)
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
 
                     to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                         adv_dataset, shuffle=False, batch_size=128)
@@ -959,7 +999,7 @@ if __name__ == '__main__':
                             wandb_run_name = str(
                                 model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
                             wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
-                                                            eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                                                            eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target,update_on,rand_init,norm,use_ytrue)
                             wandb_config["aug_iter_num"] = current_aug_iter_num
                             wandb_config["class_label"] = class_label
                             wandb_config["c_indx"] = c_indx
@@ -987,6 +1027,11 @@ if __name__ == '__main__':
 
                         per_class_tobe_analysed_data_loader = torch.utils.data.DataLoader(per_class_tobe_analysed_dataset, batch_size=128,
                                                                                           shuffle=True, generator=coll_seed_gen, worker_init_fn=seed_worker)
+                        
+                        # save_bifurcated_images_from_dataloader(net,eval_loader, classes,
+                                                    # postfix_folder_for_save='/det_orig/', save_image_prefix=save_folder)
+                        # save_bifurcated_images_from_dataloader(net,to_be_analysed_adversarial_dataloader, classes,
+                                                    # postfix_folder_for_save='/det_adver/', save_image_prefix=save_folder)
                         save_images_from_dataloader(to_be_analysed_adversarial_dataloader, classes,
                                                     postfix_folder_for_save='/adver/', save_image_prefix=save_folder)
 
@@ -1016,7 +1061,7 @@ if __name__ == '__main__':
                         wandb_run_name = str(
                             model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
                         wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
-                                                        eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                                                        eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target,update_on,rand_init,norm,use_ytrue)
                         wandb_config["aug_iter_num"] = current_aug_iter_num
                         wandb_config["number_of_image_optimization_steps"] = number_of_image_optimization_steps
                         wandb_config["template_initial_image_type"] = template_initial_image_type
@@ -1033,8 +1078,7 @@ if __name__ == '__main__':
 
                     each_save_postfix = "/aug_indx_{}".format(
                         current_aug_iter_num)
-                    final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                        adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train, each_save_postfix)
+                    final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)+str(each_save_postfix)
                     adv_save_path = model_and_data_save_prefix + \
                         final_adv_postfix_for_save+"/adv_dataset.npy"
                     is_current_adv_aug_available = os.path.exists(
@@ -1051,7 +1095,7 @@ if __name__ == '__main__':
                     else:
                         print("adv_save_path:", adv_save_path)
                         adv_dataset = generate_adv_examples(
-                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path)
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
 
                     to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                         adv_dataset, shuffle=False, batch_size=128)
@@ -1077,7 +1121,7 @@ if __name__ == '__main__':
                     wandb_run_name = str(
                         model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
                     wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
-                                                    eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                                                    eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target,update_on,rand_init,norm,use_ytrue)
                     wandb_config["template_image_calculation_batch_size"] = template_image_calculation_batch_size
                     wandb_config["number_of_batch_to_collect"] = number_of_batch_to_collect
                     wandb_config["collect_threshold"] = collect_threshold
@@ -1151,11 +1195,9 @@ if __name__ == '__main__':
                         if(direct_model_path is None):
                             each_save_postfix = "/aug_indx_{}".format(
                                 current_aug_iter_num)
-                            final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train, each_save_postfix)
+                            final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)+str(each_save_postfix)
                         else:
-                            final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/".format(
-                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train)
+                            final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)
                         # adv_save_path = model_and_data_save_prefix + \
                         #     final_adv_postfix_for_save+"/adv_dataset.npy"
                         # is_current_adv_aug_available = os.path.exists(
@@ -1172,7 +1214,7 @@ if __name__ == '__main__':
                         # else:
                         #     print("adv_save_path:", adv_save_path)
                         adv_dataset = generate_adv_examples(
-                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=None)
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=None,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
 
                         to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                             adv_dataset, shuffle=False, batch_size=128)
@@ -1197,7 +1239,7 @@ if __name__ == '__main__':
                                 wandb_run_name = str(
                                     model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
                                 wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
-                                                                eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                                                                eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target,update_on,rand_init,norm,use_ytrue)
                                 wandb_config["aug_iter_num"] = current_aug_iter_num
                                 wandb_config["class_label"] = class_label
                                 wandb_config["c_indx"] = c_indx
@@ -1263,11 +1305,9 @@ if __name__ == '__main__':
                         if(direct_model_path is None):
                             each_save_postfix = "/aug_indx_{}".format(
                                 current_aug_iter_num)
-                            final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train, each_save_postfix)
+                            final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)+str(each_save_postfix)
                         else:
-                            final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/".format(
-                                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train)
+                            final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train,update_on,rand_init,norm,use_ytrue)
                         adv_save_path = model_and_data_save_prefix + \
                             final_adv_postfix_for_save+"/adv_dataset.npy"
                         is_current_adv_aug_available = os.path.exists(
@@ -1283,7 +1323,7 @@ if __name__ == '__main__':
                                       adv_save_path)
                         else:
                             adv_dataset = generate_adv_examples(
-                                eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path)
+                                eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
                             print("adv_save_path:", adv_save_path)
                         if("fashion_mnist" in dataset):
                             (X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()
@@ -1325,7 +1365,7 @@ if __name__ == '__main__':
                                 wandb_run_name = str(
                                     model_arch_type_str)+"_aug_it_"+str(current_aug_iter_num)+"adv_at_"+str(adv_attack_type)
                                 wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_adv_attack_on_train,
-                                                                eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target)
+                                                                eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted, adv_target,update_on,rand_init,norm,use_ytrue)
                                 wandb_config["aug_iter_num"] = current_aug_iter_num
                                 wandb_config["class_label"] = class_label
                                 wandb_config["c_indx"] = c_indx

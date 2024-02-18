@@ -3536,6 +3536,70 @@ class Mask_Conv4_DLGN_Net_N16_Small(nn.Module):
             elif(layer_num == 5):
                 return self.fc1
 
+class MadryMNIST_CONV4_Net(nn.Module):
+    def __init__(self, input_channel, seed=2022, num_classes=10):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.input_channel = input_channel
+        self.conv1_g = nn.Conv2d(input_channel, 32, 5, padding=2)
+        self.conv2_g = nn.Conv2d(32, 64, 5, padding=2)
+
+        self.relu = nn.ReLU()
+
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.fc1 = nn.Linear(7*7*64, 1024)
+        self.output_layer = nn.Linear(1024, num_classes)
+
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
+    def forward(self, inp):
+        device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
+        conv_outs = []
+        x_g = self.conv1_g(inp)
+        conv_outs.append(x_g)
+        x_g = self.relu(x_g)
+        x_g = self.pool1(x_g)
+
+        x_g = self.conv2_g(x_g)
+        conv_outs.append(x_g)
+        x_g = self.relu(x_g)
+        x_g = self.pool2(x_g)
+        
+        x_g = torch.flatten(x_g, 1)
+        x_g = self.fc1(x_g)
+        conv_outs.append(x_g)
+        x_g = self.relu(x_g)
+        self.linear_conv_outputs = conv_outs
+        
+        x_g = self.output_layer(x_g)
+
+        return x_g
+
+    def get_layer_object(self, network_type, layer_num):
+        if(network_type == "GATE_NET"):
+            if(layer_num == 0):
+                return self.conv1_g
+            elif(layer_num == 1):
+                return self.pool1
+            elif(layer_num == 2):
+                return self.conv2_g
+            elif(layer_num == 3):
+                return self.pool2
+            elif(layer_num == 4):
+                return self.fc1
+            elif(layer_num == 5):
+                return self.output_layer
 
 class Plain_CONV4_Net(nn.Module):
     def __init__(self, input_channel, seed=2022, num_classes=10):
@@ -5367,6 +5431,8 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
     net = None
     if(model_arch_type == 'plain_pure_conv4_dnn'):
         net = Plain_CONV4_Net(inp_channel, seed=seed, num_classes=num_classes)
+    elif(model_arch_type == 'madry_mnist_conv4_dnn'):
+        net = MadryMNIST_CONV4_Net(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'gal_plain_pure_conv4_dnn'):
         net = Galu_Plain_CONV4_Net(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'conv4_dlgn'):

@@ -13,7 +13,7 @@ from utils.data_preprocessing import preprocess_dataset_get_data_loader, segrega
 from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
 from configs.generic_configs import get_preprocessing_and_other_configs
-from adversarial_attacks_tester import generate_adv_examples
+from adversarial_attacks_tester import generate_adv_examples,get_adv_save_str
 from utils.generic_utils import save_dataset_into_path_from_loader
 from structure.generic_structure import CustomSimpleDataset
 
@@ -1316,9 +1316,7 @@ if __name__ == '__main__':
                 number_of_adversarial_optimization_steps = 161
                 eps_step_size = 0.01
                 adv_target = None
-
-                final_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                    adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, each_save_postfix)
+                final_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_act_collection_on_train)+str(each_save_postfix)
                 save_path = models_base_path + final_postfix_for_save+"/adv_dataset.npy"
                 print("Adversarial examples will be saved at: ", save_path)
 

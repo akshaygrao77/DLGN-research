@@ -15,7 +15,7 @@ from utils.data_preprocessing import preprocess_dataset_get_data_loader, segrega
 from structure.generic_structure import PerClassDataset
 from model.model_loader import get_model_from_loader
 from configs.generic_configs import get_preprocessing_and_other_configs
-from adversarial_attacks_tester import generate_adv_examples
+from adversarial_attacks_tester import generate_adv_examples,get_adv_save_str
 from configs.dlgn_conv_config import HardRelu
 
 
@@ -832,9 +832,7 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
         elif(sub_scheme_type == 'OVER_RECONSTRUCTED'):
             pass
         elif(sub_scheme_type == 'OVER_ADVERSARIAL'):
-
-            final_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/{}".format(
-                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_act_collection_on_train, each_save_postfix)
+            final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_act_collection_on_train)+str(each_save_postfix)
             adv_save_path = models_base_path + final_postfix_for_save+"/adv_dataset.npy"
 
             wandb_config_additional_dict = {"eps": eps, "adv_atack_type": adv_attack_type, "num_of_adversarial_optim_stps":

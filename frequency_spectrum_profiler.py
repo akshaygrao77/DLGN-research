@@ -18,12 +18,7 @@ from collections import OrderedDict
 from visualization import recreate_image, save_image,  PerClassDataset
 from utils.data_preprocessing import true_segregation
 from structure.generic_structure import CustomSimpleDataset
-from adversarial_attacks_tester import generate_adv_examples
-
-from cleverhans.torch.attacks.fast_gradient_method import fast_gradient_method
-from cleverhans.torch.attacks.projected_gradient_descent import (
-    projected_gradient_descent,
-)
+from adversarial_attacks_tester import generate_adv_examples,get_adv_save_str
 
 from keras.datasets import mnist, fashion_mnist
 
@@ -363,9 +358,7 @@ if __name__ == '__main__':
         eps_step_size = 0.06
         eps = 0.06
         is_adv_attack_on_train = is_analysis_on_train
-
-        final_adv_postfix_for_save = "/RAW_ADV_SAVES/adv_type_{}/EPS_{}/eps_stp_size_{}/adv_steps_{}/on_train_{}/".format(
-                adv_attack_type, eps, eps_step_size, number_of_adversarial_optimization_steps, is_adv_attack_on_train)
+        final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train)
         adv_save_path = data_save_prefix + \
             final_adv_postfix_for_save+"/adv_dataset.npy"
         is_current_adv_aug_available = os.path.exists(
