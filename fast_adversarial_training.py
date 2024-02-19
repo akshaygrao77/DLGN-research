@@ -15,7 +15,7 @@ from adversarial_attacks_tester import adv_evaluate_model, evaluate_model_via_re
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
 from collections import OrderedDict
-from attacks import cleverhans_projected_gradient_descent,cleverhans_fast_gradient_method,get_locuslab_adv_per_batch
+from attacks import cleverhans_projected_gradient_descent,cleverhans_fast_gradient_method,get_locuslab_adv_per_batch,get_residue_adv_per_batch
 
 
 from conv4_models import get_model_instance, get_model_instance_from_dataset
@@ -42,7 +42,7 @@ def get_wandb_config(exp_type,fast_adv_attack_type, adv_attack_type, model_arch_
 
     return wandb_config
 
-def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0):
+def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0,residue_vname='std'):
     targeted = adv_target is not None
     print("Model will be saved at", model_save_path)
     save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
@@ -80,6 +80,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps,"steps":1,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm}
     elif fast_adv_attack_type == 'PGD':
         kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm}
+    elif fast_adv_attack_type == 'residual_PGD':
+        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
     while(epoch < epochs and (start_net_path is None or (stop_at_adv_test_acc is None or best_test_acc < stop_at_adv_test_acc))):
         correct = 0
         total = 0
@@ -100,6 +102,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
                 inputs = cleverhans_fast_gradient_method(model,X,kargs)
             elif fast_adv_attack_type == 'PGD':
                 inputs = cleverhans_projected_gradient_descent(model,X,kargs)
+            elif fast_adv_attack_type == 'residual_PGD':
+                inputs = get_residue_adv_per_batch(model,X,kargs)
             
             output = model(inputs)
             if(len(output.size())==1):
@@ -201,12 +205,12 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
 
 if __name__ == '__main__':
     # fashion_mnist , mnist,cifar10
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn
-    model_arch_type = 'madry_mnist_conv4_dnn'
+    model_arch_type = 'fc_dlgn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -217,8 +221,8 @@ if __name__ == '__main__':
     # wand_project_name = "NPK_reg"
     # wand_project_name = "Pruning-exps"
     # wand_project_name = "Part_training_for_robustness"
-    # wand_project_name = "testing"
-    wand_project_name = "madry's_benchmarking"
+    wand_project_name = "Residual_training"
+    # wand_project_name = "madry's_benchmarking"
     
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING
     exp_type = "ADV_TRAINING"
@@ -235,6 +239,8 @@ if __name__ == '__main__':
     rand_init=True
     norm=np.inf
     use_ytrue=True
+
+    residue_vname = 'eq'
 
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
@@ -342,8 +348,8 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 64
-            fc_depth = 2
+            fc_width = 128
+            fc_depth = 4
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \
                 "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -382,7 +388,7 @@ if __name__ == '__main__':
 
         # eps_list = [0.03, 0.06, 0.1]
         fast_adv_attack_type_list = ['PGD']
-        # fast_adv_attack_type_list = ['FGSM', 'PGD']
+        # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD]
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
             eps_list = [0.3]
@@ -411,8 +417,11 @@ if __name__ == '__main__':
                         root_save_prefix = init_prefix+"/ADVER_RECONS_SAVE/"
                     model_save_prefix = str(
                         init_prefix)+"_ET_ADV_TRAINING/"
-                    prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/update_on_{}/R_init_{}/norm_{}/use_ytrue_{}/".format(
-                        fast_adv_attack_type, adv_attack_type, eps, batch_size, eps_step_size, number_of_adversarial_optimization_steps,update_on,rand_init,norm,use_ytrue)
+                    tttmp=""
+                    if(fast_adv_attack_type == "residual_PGD"):
+                        tttmp = "/residue_vname_"+str(residue_vname)
+                    prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/update_on_{}/R_init_{}/norm_{}/use_ytrue_{}/{}/".format(
+                        fast_adv_attack_type, adv_attack_type, eps, batch_size, eps_step_size, number_of_adversarial_optimization_steps,update_on,rand_init,norm,use_ytrue,tttmp)
                     wandb_group_name = "DS_"+str(dataset_str) + "_EXP_"+str(exp_type) +\
                         "_fast_adv_training_TYP_"+str(model_arch_type_str)
                     model_save_prefix += prefix2
@@ -431,6 +440,8 @@ if __name__ == '__main__':
                                 eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted,update_on,rand_init,norm,use_ytrue)
                             wandb_config["start_net_path"] = start_net_path
                             wandb_config["torch_seed"] = torch_seed
+                            if(fast_adv_attack_type == "residual_PGD"):
+                                wandb_config["residue_vname"] = residue_vname
                             if(npk_reg != 0):
                                 wandb_config["npk_reg"]=npk_reg
                             if(pca_exp_percent is not None):
@@ -445,7 +456,7 @@ if __name__ == '__main__':
                             )
 
                         best_test_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc})
                             wandb.finish()
