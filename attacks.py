@@ -120,6 +120,87 @@ def optimize_linear(grad, eps, norm=np.inf):
     scaled_perturbation = eps * optimal_perturbation
     return scaled_perturbation
 
+def get_no_backprop_grad(net,inputs,criterion,labels):
+  with torch.no_grad():
+    output,y_grad_by_x = net(inputs,is_out_norm=True)
+  output.requires_grad = True
+  loss = criterion(output, labels)
+  loss.backward()
+  grad = torch.reshape(y_grad_by_x*torch.unsqueeze(output.grad,-1),inputs.shape)
+  return output,grad
+
+def get_residue_adv_per_batch(net,org_inputs,kwargs):
+    kwargs.setdefault('rand_init',True)
+    kwargs.setdefault('backpropmode','normal')
+    criterion,eps,eps_step_size,steps,labels,update_on,backpropmode,residue_vname,rand_init = kwargs['criterion'],kwargs['eps'],kwargs['eps_step_size'],kwargs['steps'],kwargs['labels'],kwargs['update_on'],kwargs['backpropmode'],kwargs['residue_vname'],kwargs["rand_init"]
+
+    relu=nn.ReLU()
+    eps_step_size = eps_step_size/eps
+
+    if(labels is None):
+        with torch.no_grad():
+          labels = net(org_inputs)
+          if(len(labels.size())==1 or labels.shape[1]==1):
+              labels = torch.squeeze(labels)
+          else:
+            _, labels = torch.max(labels, 1)
+    if(rand_init):
+        inputs = org_inputs + torch.zeros_like(org_inputs).uniform_(-eps, eps)
+    else:
+        inputs = org_inputs
+    eps_pos = torch.zeros_like(org_inputs)+eps
+    eps_neg = torch.zeros_like(org_inputs)+eps
+    inputs = torch.clamp(inputs,0.0,1.0)
+    # If it is one step consider it as FGSM method
+    if(steps==1):
+      eps_step_size=1
+    cur_step_size = eps_step_size
+    for cs in range(steps):
+        inputs = inputs.clone().detach().to(torch.float).requires_grad_(True)
+        eps_neg = relu(inputs-(org_inputs-eps))
+        eps_pos = relu(org_inputs+eps-inputs)
+        if(backpropmode == 'normal'):
+          output = net(inputs)
+          if(len(output.size())==1 or output.shape[1]==1):
+            labels = labels.type(torch.float32)
+            output = torch.squeeze(output,-1)
+          loss = criterion(output, labels)
+          loss.backward()
+          grad = inputs.grad
+        else:
+          output,grad = get_no_backprop_grad(net,inputs,criterion,labels)
+
+        if(len(output.size())==1 or output.shape[1]==1):
+            labels = labels.type(torch.float32)
+            output=torch.squeeze(output,-1)
+            predicted = torch.where(output>0,1.0,0.0)
+        else:
+            _, predicted = torch.max(output.data, 1)
+
+        if(update_on=='corr'):
+          I = (predicted == labels)
+        elif(update_on=='incorr'):
+          I = (predicted != labels)
+        elif(update_on=='all'):
+          I = torch.where(predicted>=0,True,False)
+
+        with torch.no_grad():
+            sgngrad = torch.sign(grad)
+            relsgngrad = relu(sgngrad)
+            if(residue_vname == 'eq'):
+                cur_step_size = 1.0/(steps-cs)
+            elif(residue_vname == 'max_eps'):
+                tmp=max(torch.max(eps_pos).item(),torch.max(eps_neg).item())
+                cur_step_size = (eps_step_size*2*eps)/(tmp)
+                # print(tmp,cur_step_size)
+            elif(residue_vname == 'min_eps'):
+                cur_step_size = eps_step_size/1e-10+(min(torch.min(eps_pos).item(),torch.min(eps_neg).item()))
+            inputs[I] = (inputs + cur_step_size * (relsgngrad*eps_pos+(1-relsgngrad)*eps_neg) * sgngrad)[I]
+            assert ((inputs - (org_inputs-eps) > -1e-5).all() and (org_inputs+eps -inputs > -1e-5).all()), 'cur_step_size:{}cs:{} {},{}::{},{} eps_pos max:{} min:{} eps_neg max:{} min:{}'.format(cur_step_size,cs,torch.max(inputs - (org_inputs-eps)),torch.min(inputs - (org_inputs-eps)),torch.max(org_inputs+eps -inputs),torch.min(org_inputs+eps -inputs),torch.max(eps_pos),torch.min(eps_pos),torch.max(eps_neg),torch.min(eps_neg))
+            # inputs = torch.clamp(inputs, org_inputs-eps, org_inputs+eps)
+            inputs = torch.clamp(inputs,0.0,1.0)
+
+    return inputs
 
 def get_locuslab_adv_per_batch(net,inputs,kwargs):
     kwargs.setdefault('rand_init',True)

@@ -645,7 +645,7 @@ if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn ,  fc_sf_dlgn , madry_mnist_conv4_dnn
-    model_arch_type = 'madry_mnist_conv4_dnn'
+    model_arch_type = 'fc_dnn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -669,7 +669,7 @@ if __name__ == '__main__':
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist/adversarial_training/MT_madry_mnist_conv4_dnn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    direct_model_path = "root/model/save/mnist/adversarial_training/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_residual_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/residue_vname_max_eps/adv_model_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB.npy"
@@ -743,8 +743,8 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 64
-        fc_depth = 2
+        fc_width = 128
+        fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -784,7 +784,7 @@ if __name__ == '__main__':
         # wand_project_name = "Gatesat-exp"
         # wand_project_name = "minute_FC_dlgn"
         # wand_project_name = "L2RegCNNs"
-        wand_project_name = "testing"
+        wand_project_name = "adversarial_attacks_latest_madrys"
         # wand_project_name = "madry's_benchmarking"
 
         torch_seed = 2022

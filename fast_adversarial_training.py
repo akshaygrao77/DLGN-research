@@ -12,6 +12,7 @@ import torch.backends.cudnn as cudnn
 from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_data_loader, generate_dataset_from_loader
 from adversarial_attacks_tester import adv_evaluate_model, evaluate_model_via_reconstructed, plain_evaluate_model_via_reconstructed
+from model_trainer import evaluate_model
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
 from collections import OrderedDict
@@ -154,10 +155,11 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
                                train_acc=100.*correct/total, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
 
         live_train_acc = 100. * correct/total
+        org_test_acc,_ = evaluate_model(net, test_loader)
         test_acc = adv_evaluate_model(net, test_loader, classes, eps, adv_attack_type)
         if(is_log_wandb):
-            wandb.log({"live_train_acc": live_train_acc,
-                      "current_epoch": epoch, "test_acc": test_acc})
+            wandb.log({"live_train_acc": live_train_acc,"tr_loss":running_loss/(batch_idx+1),
+                      "current_epoch": epoch, "test_acc": test_acc,"org_test_acc":org_test_acc})
         if(epoch % 5 == 0):
             per_epoch_save_model_path = model_save_path.replace(
                 ".pt", '_epoch_{}.pt'.format(epoch))
@@ -205,12 +207,12 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
 
 if __name__ == '__main__':
     # fashion_mnist , mnist,cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn
-    model_arch_type = 'fc_dlgn'
+    model_arch_type = 'fc_dnn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -240,7 +242,7 @@ if __name__ == '__main__':
     norm=np.inf
     use_ytrue=True
 
-    residue_vname = 'eq'
+    residue_vname = 'max_eps'
 
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
@@ -387,7 +389,7 @@ if __name__ == '__main__':
         net = net.to(device)
 
         # eps_list = [0.03, 0.06, 0.1]
-        fast_adv_attack_type_list = ['PGD']
+        fast_adv_attack_type_list = ['residual_PGD']
         # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD]
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
