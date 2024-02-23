@@ -59,6 +59,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         cudnn.benchmark = True
     is_log_wandb = not(wand_project_name is None)
     best_test_acc = 0
+    best_rob_orig_acc = 0
     opt = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     criterion = nn.CrossEntropyLoss()
@@ -170,6 +171,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
         if(test_acc > best_test_acc):
             best_test_acc = test_acc
+            best_rob_orig_acc = org_test_acc
             torch.save(model, model_save_path)
             print("Saved model at", model_save_path)
         epoch += 1
@@ -181,7 +183,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         wandb.log({"train_acc": train_acc, "test_acc": test_acc})
 
     print('Finished adversarial Training: Best saved model test acc is:', best_test_acc)
-    return best_test_acc, torch.load(model_save_path)
+    return best_test_acc,best_rob_orig_acc, torch.load(model_save_path)
 
 def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -242,7 +244,8 @@ if __name__ == '__main__':
     norm=np.inf
     use_ytrue=True
 
-    residue_vname = 'max_eps'
+    # eta_growth , max_eps , std , eq
+    residue_vname = 'eta_growth'
 
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
@@ -457,10 +460,10 @@ if __name__ == '__main__':
                                 config=wandb_config,
                             )
 
-                        best_test_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
+                        best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
                                                                                  eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname)
                         if(is_log_wandb):
-                            wandb.log({"adv_tr_best_test_acc": best_test_acc})
+                            wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()
                     
                     elif(exp_type == "PART_ADV_TRAINING"):
@@ -509,10 +512,10 @@ if __name__ == '__main__':
                                 config=wandb_config,
                             )
 
-                        best_test_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
+                        best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
                                                                                  eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
                         if(is_log_wandb):
-                            wandb.log({"adv_tr_best_test_acc": best_test_acc})
+                            wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()
                     elif(exp_type == "RECONST_EVAL_ADV_TRAINED_MODEL"):
                         final_postfix_for_save = prefix2
