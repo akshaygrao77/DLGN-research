@@ -59,6 +59,8 @@ def apr_evaluate_model(net, dataloader, num_classes_trained_on=None):
             dev = inputs.get_device()
             amp_labels = None
             phase_labels = None
+            if(len(inputs.size())==3):
+                inputs = torch.unsqueeze(inputs,1)
             mix1, amp_label_indx, mix2 = mix_data(inputs, prob=1.0)
             inputs_mix = torch.cat([mix1, mix2], 0)
             if(amp_label_indx is not None):
@@ -104,15 +106,15 @@ def apr_evaluate_model(net, dataloader, num_classes_trained_on=None):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10
-    dataset = 'cifar10'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'conv4_dlgn_n16_small'
+    model_arch_type = 'fc_dnn'
 
     scheme_type = 'APR_exps_eval'
 
-    model_to_be_evaluated = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
+    model_to_be_evaluated = "root/model/save/mnist/adversarial_training/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
 
     # scheme_type = ''
     batch_size = 32
@@ -133,7 +135,7 @@ if __name__ == '__main__':
     list_of_classes_to_train_on = None
     # list_of_classes_to_train_on = [3, 8]
 
-    eval_on_test = False
+    eval_on_test = True
 
     aprp_mix_prob = 0.6
     train_on_phase_labels = True

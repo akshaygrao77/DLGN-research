@@ -81,7 +81,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
     if fast_adv_attack_type == 'FGSM':
         kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps,"steps":1,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm}
     elif fast_adv_attack_type == 'PGD':
-        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm}
+        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
     elif fast_adv_attack_type == 'residual_PGD':
         kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
     while(epoch < epochs and (start_net_path is None or (stop_at_adv_test_acc is None or best_test_acc < stop_at_adv_test_acc))):
@@ -213,8 +213,8 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn
-    model_arch_type = 'fc_dnn'
+    # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
+    model_arch_type = 'conv4_dlgn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -239,13 +239,14 @@ if __name__ == '__main__':
     is_targetted = adv_target is not None
     # Best adv-tr params are  update_on='all' rand_init=True norm=np.inf use_ytrue=True
     
-    update_on='all'
+    update_on='corr'
     rand_init=True
     norm=np.inf
     use_ytrue=True
 
-    # eta_growth , max_eps , std , eq
-    residue_vname = 'eta_growth'
+    # eta_growth , max_eps , std , eq , reach_edge_at_end , add_rand_at__X__X , None
+    residue_vname = None
+    # residue_vname = 'reach_edge_at_end'
 
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
@@ -392,12 +393,12 @@ if __name__ == '__main__':
         net = net.to(device)
 
         # eps_list = [0.03, 0.06, 0.1]
-        fast_adv_attack_type_list = ['residual_PGD']
+        fast_adv_attack_type_list = ['PGD']
         # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD]
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
             eps_list = [0.3]
-            eps_step_size = 0.01
+            eps_step_size = 0.0333
             epochs = 36
         elif("cifar10" in dataset):
             number_of_adversarial_optimization_steps_list = [10]
@@ -423,7 +424,7 @@ if __name__ == '__main__':
                     model_save_prefix = str(
                         init_prefix)+"_ET_ADV_TRAINING/"
                     tttmp=""
-                    if(fast_adv_attack_type == "residual_PGD"):
+                    if(residue_vname is not None):
                         tttmp = "/residue_vname_"+str(residue_vname)
                     prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/update_on_{}/R_init_{}/norm_{}/use_ytrue_{}/{}/".format(
                         fast_adv_attack_type, adv_attack_type, eps, batch_size, eps_step_size, number_of_adversarial_optimization_steps,update_on,rand_init,norm,use_ytrue,tttmp)
@@ -445,7 +446,7 @@ if __name__ == '__main__':
                                 eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted,update_on,rand_init,norm,use_ytrue)
                             wandb_config["start_net_path"] = start_net_path
                             wandb_config["torch_seed"] = torch_seed
-                            if(fast_adv_attack_type == "residual_PGD"):
+                            if(residue_vname is not None):
                                 wandb_config["residue_vname"] = residue_vname
                             if(npk_reg != 0):
                                 wandb_config["npk_reg"]=npk_reg

@@ -662,14 +662,15 @@ if __name__ == '__main__':
 
     wandb_config_additional_dict = None
     # wandb_config_additional_dict = {
-    #     "type_of_APR": "APRP", "is_train_on_phase": True}
+    #     "type_of_APR": "APRP","is_train_on_phase": True}
+    # "is_train_on_phase": True
     # GATE_NET_FREEZE , VAL_NET_FREEZE
     # wandb_config_additional_dict = {
     #     "transfer_mode": "GATE_NET_FREEZE"}
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist/adversarial_training/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_residual_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/residue_vname_max_eps/adv_model_dir.pt"
+    direct_model_path = "root/model/save/mnist/APR_TRAINING/TYP_APRP/APRP_MPROB_0.6/TR_PHASE_True/ST_2022/fc_dnn_W_128_D_4_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB.npy"
@@ -776,7 +777,7 @@ if __name__ == '__main__':
         # wand_project_name = 'V2_adv_attack_on_reconst_augmentation_with_orig'
         # wand_project_name = "APR_experiments"
         # wand_project_name = "adv_attack_latest"
-        # wand_project_name = "benchmarking_adv_exps"
+        wand_project_name = "benchmarking_adv_exps"
         # wand_project_name = "NPK_reg"
         # wand_project_name = 'eval_model_band_frequency_experiments'
         # wand_project_name = "Part_training_for_robustness"
@@ -784,7 +785,7 @@ if __name__ == '__main__':
         # wand_project_name = "Gatesat-exp"
         # wand_project_name = "minute_FC_dlgn"
         # wand_project_name = "L2RegCNNs"
-        wand_project_name = "adversarial_attacks_latest_madrys"
+        # wand_project_name = "adversarial_attacks_latest_madrys"
         # wand_project_name = "madry's_benchmarking"
 
         torch_seed = 2022
@@ -812,6 +813,7 @@ if __name__ == '__main__':
 
         # eps_list = [0.03, 0.06, 0.1]
         if("mnist" in dataset):
+            # 40 is a good sweet spot more than that doesn't help much typically
             number_of_adversarial_optimization_steps = 40
             eps_list = [0.3,0.06,0.1]
             eps_step_size = 0.01

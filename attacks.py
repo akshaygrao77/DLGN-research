@@ -147,7 +147,10 @@ def get_residue_adv_per_batch(net,org_inputs,kwargs):
           else:
             _, labels = torch.max(labels, 1)
     if(rand_init):
-        inputs = org_inputs + torch.zeros_like(org_inputs).uniform_(-eps, eps)
+        if(residue_vname == 'eta_growth'):
+            inputs = org_inputs + torch.zeros_like(org_inputs).uniform_(-eps_step_size, eps_step_size)
+        else:
+            inputs = org_inputs + torch.zeros_like(org_inputs).uniform_(-eps, eps)
     else:
         inputs = org_inputs
     if(residue_vname == 'eta_growth'):
@@ -408,6 +411,10 @@ def cleverhans_projected_gradient_descent(
     kwargs
 ):
     eps = kwargs['eps']
+    residue_vname = kwargs.get("residue_vname",None)
+    vname_arr = None
+    if(residue_vname is not None):
+        vname_arr = residue_vname.split("__")
     eps_iter=kwargs['eps_step_size']
     nb_iter=kwargs['steps']
     kwargs.setdefault('norm',np.inf)
@@ -534,12 +541,22 @@ def cleverhans_projected_gradient_descent(
     i = 0
     while i < nb_iter:
         kwargs['eps'] = eps_iter
+        if(vname_arr and vname_arr[0] == "reach_edge_at_end"):
+            if(i == nb_iter-1):
+                kwargs['eps'] = eps
         adv_x = cleverhans_fast_gradient_method(model_fn,adv_x,kwargs)
 
         # Clipping perturbation eta to norm norm ball
         eta = adv_x - x
         eta = clip_eta(eta, norm, eps)
         adv_x = x + eta
+
+        if(vname_arr and vname_arr[0]=='add_rand_at'):
+            if(str(i) in vname_arr):
+                rpert = torch.zeros_like(x).uniform_(-rand_minmax, rand_minmax)
+                eta = adv_x + rpert - x
+                eta = clip_eta(eta, norm, eps)
+                adv_x = x + eta
 
         # Redo the clipping.
         # FGM already did it, but subtracting and re-adding eta can add some
