@@ -67,7 +67,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         criterion = nn.BCELoss()
     
     epoch = 0
-    if(dataset is not None and dataset == "cifar10"):
+    if(dataset is not None and dataset == "cifar10" or (residue_vname is not None and residue_vname == "cyclic_lr")):
+        print("Using cyclic scheduler")
         opt = torch.optim.Adam(model.parameters(), lr=lr_max)
         if lr_type == 'cyclic':
             def lr_schedule(t): return np.interp(
@@ -95,7 +96,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             loader.set_description(f"Epoch {epoch+1}")
             (X, y) = data
             X, y = X.cuda(), y.cuda()
-            if(dataset is not None and dataset == "cifar10"):
+            if(dataset is not None and dataset == "cifar10" or (residue_vname is not None and residue_vname == "cyclic_lr")):
                 lr = lr_schedule(epoch + (batch_idx+1)/len(train_loader))
                 opt.param_groups[0].update(lr=lr)
             
@@ -146,6 +147,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             
             opt.zero_grad()
             loss.backward()
+            # for ip,pp in enumerate(model.parameters()):
+            #     print("Param grad {} max:{} mean:{}".format(ip,torch.max(pp.grad),torch.mean(pp.grad)))
             opt.step()
 
             running_loss += loss.item() * y.size(0)
@@ -172,6 +175,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         if(test_acc > best_test_acc):
             best_test_acc = test_acc
             best_rob_orig_acc = org_test_acc
+            if(is_log_wandb):
+                wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
             torch.save(model, model_save_path)
             print("Saved model at", model_save_path)
         epoch += 1
@@ -213,8 +218,8 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'conv4_dlgn'
+    # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__
+    model_arch_type = 'fc_dnn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -227,6 +232,7 @@ if __name__ == '__main__':
     # wand_project_name = "Part_training_for_robustness"
     wand_project_name = "Residual_training"
     # wand_project_name = "madry's_benchmarking"
+    # wand_project_name = "reach_end_plot"
     
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING
     exp_type = "ADV_TRAINING"
@@ -237,14 +243,15 @@ if __name__ == '__main__':
     adv_attack_type = "PGD"
     adv_target = None
     is_targetted = adv_target is not None
-    # Best adv-tr params are  update_on='all' rand_init=True norm=np.inf use_ytrue=True
     
-    update_on='corr'
+    # Best adv-tr params are  update_on='all' rand_init=True norm=np.inf use_ytrue=True
+    update_on='all'
     rand_init=True
     norm=np.inf
     use_ytrue=True
 
-    # eta_growth , max_eps , std , eq , reach_edge_at_end , add_rand_at__X__X , None
+    # eta_growth , max_eps , std , eq , reach_edge_at_end , add_rand_at__X__X , None , cyclic_lr(this is not actually on inner maximization but on outer minimization)
+    # L2_norm_grad_scale , L1_norm_grad_scale
     residue_vname = None
     # residue_vname = 'reach_edge_at_end'
 
@@ -398,7 +405,7 @@ if __name__ == '__main__':
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
             eps_list = [0.3]
-            eps_step_size = 0.0333
+            eps_step_size = 0.01
             epochs = 36
         elif("cifar10" in dataset):
             number_of_adversarial_optimization_steps_list = [10]
