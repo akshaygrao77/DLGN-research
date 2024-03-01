@@ -833,7 +833,7 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
             pass
         elif(sub_scheme_type == 'OVER_ADVERSARIAL'):
             final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_act_collection_on_train)+str(each_save_postfix)
-            adv_save_path = models_base_path + final_postfix_for_save+"/adv_dataset.npy"
+            adv_save_path = models_base_path + final_adv_postfix_for_save+"/adv_dataset.npy"
 
             wandb_config_additional_dict = {"eps": eps, "adv_atack_type": adv_attack_type, "num_of_adversarial_optim_stps":
                                             number_of_adversarial_optimization_steps, "eps_stp_size": eps_step_size, "adv_target": adv_target}
@@ -1306,7 +1306,7 @@ if __name__ == '__main__':
     # cifar10_vgg_dlgn_16_with_inbuilt_norm_wo_bn
     # plain_pure_conv4_dnn , conv4_dlgn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'fc_dnn'
+    model_arch_type = 'conv4_dlgn'
     is_save_video_data = False
     # If False, then on test
     is_act_collection_on_train = True
@@ -1329,7 +1329,7 @@ if __name__ == '__main__':
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE , ADV_VS_ORIG_REPORT , CLASS_WISE_REPORT
-    scheme_type = "CLASS_WISE_REPORT"
+    scheme_type = "GENERATE_MERGE_AND_SAVE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS
@@ -1337,7 +1337,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3, 8]
+    # list_of_classes_to_train_on = [3, 8]
 
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
         dataset, valid_split_size)
@@ -1374,9 +1374,9 @@ if __name__ == '__main__':
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
 
     class_combination_tuple_list = None
-    class_combination_tuple_list = [
-        ([i for i in range(len(classes))], 2)
-    ]
+    # class_combination_tuple_list = [
+    #     ([i for i in range(len(classes))], 2)
+    # ]
 
     if(is_act_collection_on_train):
         custom_data_loader = trainloader, None
@@ -1394,9 +1394,9 @@ if __name__ == '__main__':
         is_save_graph_visualizations = True
 
         is_save_adv = True
-        eps = 0.02
+        eps = 0.3
         adv_attack_type = 'PGD'
-        number_of_adversarial_optimization_steps = 161
+        number_of_adversarial_optimization_steps = 40
         eps_step_size = 0.01
         adv_target = None
 
@@ -1480,7 +1480,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/fashion_mnist/V2_iterative_augmenting/DS_fashion_mnist/MT_conv4_deep_gated_net_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+            direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -1497,9 +1497,9 @@ if __name__ == '__main__':
 
                     sub_scheme_type = 'OVER_ADVERSARIAL'
                     is_save_adv = True
-                    eps = 0.06
+                    eps = 0.3
                     adv_attack_type = 'PGD'
-                    number_of_adversarial_optimization_steps = 161
+                    number_of_adversarial_optimization_steps = 40
                     eps_step_size = 0.01
                     adv_target = None
 
@@ -1514,7 +1514,7 @@ if __name__ == '__main__':
                         list_of_act_analyser2 = list_of_list_of_act_analyser_orig[ind]
 
                         if(merge_type == "DIFF"):
-                            is_save_video_data = True
+                            is_save_video_data = False
                             is_save_graph_visualizations = True
                             list_of_merged_act1_act2 = diff_merge_two_activation_analysis(merge_type,
                                                                                           list_of_act_analyser1, list_of_act_analyser2, wand_project_name=wand_project_name_for_merge, is_save_graph_visualizations=is_save_graph_visualizations)
@@ -1533,9 +1533,9 @@ if __name__ == '__main__':
                     is_save_graph_visualizations = True
 
                     is_save_adv = True
-                    eps = 0.06
+                    eps = 0.3
                     adv_attack_type = 'PGD'
-                    number_of_adversarial_optimization_steps = 161
+                    number_of_adversarial_optimization_steps = 40
                     eps_step_size = 0.01
                     adv_target = None
 
@@ -1616,9 +1616,9 @@ if __name__ == '__main__':
                         list_of_merged_act1_act2, class_combination_tuple_list)
     elif(scheme_type == "CLASS_WISE_REPORT"):
         is_save_adv = True
-        eps = 0.06
+        eps = 0.3
         adv_attack_type = 'PGD'
-        number_of_adversarial_optimization_steps = 161
+        number_of_adversarial_optimization_steps = 40
         eps_step_size = 0.01
         adv_target = None
         class_ind_visualize = None
@@ -1742,9 +1742,9 @@ if __name__ == '__main__':
     elif(scheme_type == "ADV_VS_ORIG_REPORT"):
         merge_type = "DIFF"
         is_save_adv = True
-        eps = 0.06
+        eps = 0.3
         adv_attack_type = 'PGD'
-        number_of_adversarial_optimization_steps = 161
+        number_of_adversarial_optimization_steps = 40
         eps_step_size = 0.01
         adv_target = None
         class_ind_visualize = None

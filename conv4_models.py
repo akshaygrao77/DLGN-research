@@ -3798,6 +3798,111 @@ class Plain_CONV4_Net_N16_Small(nn.Module):
             elif(layer_num == 5):
                 return self.fc1
 
+class Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias_Small(nn.Module):
+    def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.num_classes = num_classes
+        self.input_channel = input_channel
+        self.beta = beta
+        
+        self.conv1_g = nn.Conv2d(self.input_channel, 16, 3, padding=2,bias=False)
+        self.conv2_g = nn.Conv2d(16, 16, 3, padding=2,bias=False)
+        self.conv3_g = nn.Conv2d(16, 16, 3, padding=2,bias=False)
+        self.conv4_g = nn.Conv2d(16, 16, 3, padding=2,bias=False)
+
+        self.relu = nn.ReLU()
+        self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
+        self.fc1 = nn.Linear(16, num_classes)
+
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
+    def forward(self, inp):
+        device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
+        conv_outs = []
+        x_g1 = self.conv1_g(inp)
+        conv_outs.append(x_g1)
+        x_g1 = self.relu(x_g1)
+        x_g2 = self.conv2_g(x_g1)
+        conv_outs.append(x_g2)
+        x_g2 = self.relu(x_g2)
+        x_g3 = self.conv3_g(x_g2)
+        conv_outs.append(x_g3)
+        x_g3 = self.relu(x_g3)
+        x_g4 = self.conv4_g(x_g3)
+        conv_outs.append(x_g4)
+
+        self.linear_conv_outputs = conv_outs
+
+        x_g4 = self.relu(x_g4)
+        x_g5 = self.pool(x_g4)
+        x_g5 = torch.flatten(x_g5, 1)
+        x_g6 = self.fc1(x_g5)
+
+        return x_g6
+
+class Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
+    def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.num_classes = num_classes
+        self.input_channel = input_channel
+        self.beta = beta
+        
+        self.conv1_g = nn.Conv2d(self.input_channel, 128, 3, padding=2,bias=False)
+        self.conv2_g = nn.Conv2d(128, 128, 3, padding=2,bias=False)
+        self.conv3_g = nn.Conv2d(128, 128, 3, padding=2,bias=False)
+        self.conv4_g = nn.Conv2d(128, 128, 3, padding=2,bias=False)
+
+        self.relu = nn.ReLU()
+        self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
+        self.fc1 = nn.Linear(128, num_classes)
+
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = CONV_PCA_Layer(
+            self.input_channel, data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        return self.pca_layer.k
+
+    def forward(self, inp):
+        device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=device, non_blocking=True)
+
+        conv_outs = []
+        x_g1 = self.conv1_g(inp)
+        conv_outs.append(x_g1)
+        x_g1 = self.relu(x_g1)
+        x_g2 = self.conv2_g(x_g1)
+        conv_outs.append(x_g2)
+        x_g2 = self.relu(x_g2)
+        x_g3 = self.conv3_g(x_g2)
+        conv_outs.append(x_g3)
+        x_g3 = self.relu(x_g3)
+        x_g4 = self.conv4_g(x_g3)
+        conv_outs.append(x_g4)
+
+        self.linear_conv_outputs = conv_outs
+
+        x_g4 = self.relu(x_g4)
+        x_g5 = self.pool(x_g4)
+        x_g5 = torch.flatten(x_g5, 1)
+        x_g6 = self.fc1(x_g5)
+
+        return x_g6
 
 class Conv4_DLGN_Net(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
@@ -5629,6 +5734,10 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
     net = None
     if(model_arch_type == 'plain_pure_conv4_dnn'):
         net = Plain_CONV4_Net(inp_channel, seed=seed, num_classes=num_classes)
+    elif(model_arch_type == 'plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__'):        
+        net = Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias_Small(inp_channel, seed=seed, num_classes=num_classes)
+    elif(model_arch_type == 'plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__'):        
+        net = Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'madry_mnist_conv4_dnn'):
         net = MadryMNIST_CONV4_Net(inp_channel, seed=seed, num_classes=num_classes)
     elif(model_arch_type == 'gal_plain_pure_conv4_dnn'):

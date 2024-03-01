@@ -233,10 +233,16 @@ def generate_filter_activity(dataloader,model):
     all_convouts_grad = torch.stack(all_convouts_grad)
     all_convouts_grad = torch.mean(all_convouts_grad,dim=(0))
 
-    all_corr_filter_acts = torch.stack(all_corr_filter_acts)
-    all_corr_filter_acts = torch.mean(all_corr_filter_acts,dim=(0))
-    all_corr_convouts_grad = torch.stack(all_corr_convouts_grad)
-    all_corr_convouts_grad = torch.mean(all_corr_convouts_grad,dim=(0))
+    if(len(all_corr_filter_acts)>0):
+        all_corr_filter_acts = torch.stack(all_corr_filter_acts)
+        all_corr_filter_acts = torch.mean(all_corr_filter_acts,dim=(0))
+    else:
+        all_corr_filter_acts = torch.Tensor([0])
+    if(len(all_corr_convouts_grad)>0):
+        all_corr_convouts_grad = torch.stack(all_corr_convouts_grad)
+        all_corr_convouts_grad = torch.mean(all_corr_convouts_grad,dim=(0))
+    else:
+        all_corr_convouts_grad = torch.Tensor([0])
 
     all_incorr_filter_acts = torch.stack(all_incorr_filter_acts)
     all_incorr_filter_acts = torch.mean(all_incorr_filter_acts,dim=(0))
@@ -429,11 +435,11 @@ if __name__ == '__main__':
     # class_indx_to_visualize= []
 
     if(is_analyse_adv):
-        number_of_adversarial_optimization_steps = 161
+        number_of_adversarial_optimization_steps = 40
         adv_attack_type = "PGD"
         adv_target = None
-        eps_step_size = 0.06
-        eps = 0.06
+        eps_step_size = 0.01
+        eps = 0.3
         is_adv_attack_on_train = is_analysis_on_train
         final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train)
         adv_save_path = data_save_prefix + \
