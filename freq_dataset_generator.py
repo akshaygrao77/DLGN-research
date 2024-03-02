@@ -75,6 +75,7 @@ def modify_bandpass_freq_get_dataset(loader,modes):
         X_batch = filter_base * X_batch
         X_batch = torch.fft.ifftshift(X_batch)
         X_batch = torch.real(torch.fft.ifft2(X_batch))
+        X_batch = torch.clamp(X_batch,0,255)
         mod_x.extend(X_batch.detach().cpu().numpy())
         ys.extend(y_batch.detach().cpu().numpy())
     
@@ -83,7 +84,7 @@ def modify_bandpass_freq_get_dataset(loader,modes):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
-    datasetname = "fashion_mnist"
+    datasetname = "mnist"
     # mode = "HFC"
     # filter_percent = 0.30
     
@@ -127,7 +128,7 @@ if __name__ == '__main__':
         # with open(save_folder+str(datasetname)+"_"+str(mode)+"_FP_"+str(filter_percent)+".npy", 'wb') as file:
         #         np.savez(file, X_train=mod_X_train,y_train=mod_y_train,X_test=X_test,y_test=y_test)
         with open(save_folder+str(datasetname)+"__"+str(modestr)+".npy", 'wb') as file:
-                np.savez(file, X_train=mod_X_train,y_train=mod_y_train,X_test=X_test,y_test=y_test)
+            np.savez(file, X_train=mod_X_train,y_train=mod_y_train,X_test=X_test,y_test=y_test)
         aug_x_train.append(mod_X_train)
         aug_y_train.append(mod_y_train)
 
@@ -144,6 +145,6 @@ if __name__ == '__main__':
     print("aug_y_train",aug_y_train.shape)
 
     with open(save_folder+str(datasetname)+"__ALL_FREQ_AUG.npy", 'wb') as file:
-                np.savez(file, X_train=aug_x_train,y_train=aug_y_train,X_test=X_test,y_test=y_test)
+        np.savez(file, X_train=aug_x_train,y_train=aug_y_train,X_test=X_test,y_test=y_test)
     
     print("Completed creation of dataset")

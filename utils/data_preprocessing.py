@@ -216,7 +216,8 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
     elif(dataset_config.name == 'mnist' or dataset_config.name == 'fashion_mnist'):
         filtered_X_train, filtered_y_train, X_valid, y_valid, filtered_X_test, filtered_y_test = preprocess_dataset_get_dataset(
             dataset_config, model_arch_type, verbose=verbose, dataset_folder=dataset_folder, is_split_validation=is_split_validation)
-
+        print("filtered_X_train ",np.max(filtered_X_train),np.min(filtered_X_train))
+        print("filtered_X_test ",np.max(filtered_X_test),np.min(filtered_X_test))
         train_data_loader = get_data_loader(
             filtered_X_train, filtered_y_train, dataset_config.batch_size, transforms=dataset_config.train_transforms)
         if(is_split_validation):
@@ -284,9 +285,10 @@ def preprocess_mnist_fmnist(X_train,y_train,X_test,y_test,dataset_config,model_a
             print("filtered_y_train[1]", filtered_y_train[1])
 
         if(dataset_config.is_normalize_data == True):
-            max = np.max(filtered_X_train)
-            filtered_X_train = filtered_X_train / max
-            filtered_X_test = filtered_X_test / max
+            # max = np.max(filtered_X_train)
+            print("np.max(filtered_X_train)",np.max(filtered_X_train))
+            filtered_X_train = filtered_X_train / 255
+            filtered_X_test = filtered_X_test / 255
             if(verbose > 2):
                 print("After normalizing dataset")
                 print("Max value:{}".format(max))
