@@ -43,7 +43,7 @@ def get_wandb_config(exp_type,fast_adv_attack_type, adv_attack_type, model_arch_
 
     return wandb_config
 
-def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0,residue_vname='std'):
+def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0,residue_vname='std',opt=None):
     targeted = adv_target is not None
     print("Model will be saved at", model_save_path)
     save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
@@ -60,7 +60,6 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
     is_log_wandb = not(wand_project_name is None)
     best_test_acc = 0
     best_rob_orig_acc = 0
-    opt = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     criterion = nn.CrossEntropyLoss()
     if("bc_" in model_arch_type):
@@ -90,6 +89,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         total = 0
 
         running_loss = 0.0
+        running_before_adv_loss = 0.0
         loader = tqdm.tqdm(train_loader, desc='Training')
         for batch_idx, data in enumerate(loader, 0):
             begin_time = time.time()
@@ -100,7 +100,10 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
                 lr = lr_schedule(epoch + (batch_idx+1)/len(train_loader))
                 opt.param_groups[0].update(lr=lr)
             
-            kargs["labels"] = y if use_ytrue else None    
+            before_adv_loss = criterion(model(X), y)
+            running_before_adv_loss += before_adv_loss.item() * y.size(0)
+
+            kargs["labels"] = y if use_ytrue else None  
             if fast_adv_attack_type == 'FGSM':
                 inputs = cleverhans_fast_gradient_method(model,X,kargs)
             elif fast_adv_attack_type == 'PGD':
@@ -155,14 +158,14 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
 
             cur_time = time.time()
             step_time = cur_time - begin_time
-            loader.set_postfix(train_loss=running_loss/(batch_idx+1),
+            loader.set_postfix(train_loss=running_loss/(batch_idx+1),before_adv_loss=running_before_adv_loss/(batch_idx+1),
                                train_acc=100.*correct/total, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
 
         live_train_acc = 100. * correct/total
         org_test_acc,_ = evaluate_model(net, test_loader)
         test_acc = adv_evaluate_model(net, test_loader, classes, eps, adv_attack_type)
         if(is_log_wandb):
-            wandb.log({"live_train_acc": live_train_acc,"tr_loss":running_loss/(batch_idx+1),
+            wandb.log({"live_train_acc": live_train_acc,"tr_loss":running_loss/(batch_idx+1),'before_adv_tr_loss':running_before_adv_loss/(batch_idx+1),
                       "current_epoch": epoch, "test_acc": test_acc,"org_test_acc":org_test_acc})
         if(epoch % 5 == 0):
             per_epoch_save_model_path = model_save_path.replace(
@@ -218,8 +221,9 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'fc_dnn'
+    # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
+    # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__
+    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -292,7 +296,7 @@ if __name__ == '__main__':
     # pca_exp_percent = 0.85
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
+    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__LB_MB_HB.npy"
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -400,7 +404,7 @@ if __name__ == '__main__':
         net = net.to(device)
 
         # eps_list = [0.03, 0.06, 0.1]
-        fast_adv_attack_type_list = ['PGD']
+        fast_adv_attack_type_list = ["PGD"]
         # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD]
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
@@ -445,12 +449,14 @@ if __name__ == '__main__':
                         os.makedirs(model_save_prefix)
 
                     if(exp_type == "ADV_TRAINING"):
+                        opt = torch.optim.Adam(net.parameters(), lr=1e-4)
                         if(is_log_wandb):
                             wandb_run_name = str(
                                 model_arch_type_str)+prefix2.replace(
                                 "/", "_")
                             wandb_config = get_wandb_config(exp_type,fast_adv_attack_type, adv_attack_type, model_arch_type_str, dataset_str,batch_size,epochs,
                                 eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted,update_on,rand_init,norm,use_ytrue)
+                            wandb_config["optimizer"]=opt
                             wandb_config["start_net_path"] = start_net_path
                             wandb_config["torch_seed"] = torch_seed
                             if(residue_vname is not None):
@@ -469,7 +475,7 @@ if __name__ == '__main__':
                             )
 
                         best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()
@@ -499,13 +505,14 @@ if __name__ == '__main__':
                         model_save_path = model_save_path.replace(
                             "ADV_TRAINING", "PART_ADV_TRAINING/TEACHER__"+teacher_model_path.replace("/","-")+"/TYP_"+str(transfer_mode))
                         print("model_save_path: ", model_save_path)
-
+                        opt = torch.optim.Adam(net.parameters(), lr=1e-4)
                         if(is_log_wandb):
                             wandb_run_name = str(
                                 model_arch_type_str)+prefix2.replace(
                                 "/", "_")
                             wandb_config = get_wandb_config(exp_type,fast_adv_attack_type, adv_attack_type, model_arch_type_str, dataset_str,batch_size,epochs,
                                 eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted,update_on,rand_init,norm,use_ytrue)
+                            wandb_config["optimizer"]=opt
                             wandb_config["torch_seed"] = torch_seed
                             wandb_config["teacher_model_path"] = teacher_model_path
                             wandb_config["transfer_mode"] = transfer_mode
@@ -521,7 +528,7 @@ if __name__ == '__main__':
                             )
 
                         best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,opt=opt)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()
