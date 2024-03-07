@@ -129,6 +129,43 @@ class SF_DLGN_FC_Network(nn.Module):
         elif(network_type == "WEIGHT_NET"):
             return self.value_network.list_of_modules[layer_num]
 
+    def exact_forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        x = torch.flatten(x,1)
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        conv_matrix_operations_in_each_layer = OrderedDict()
+        conv_bias_operations_in_each_layer = OrderedDict()
+        channel_outs_size_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_matrix = None
+        merged_conv_bias = None
+        orig_out = x
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_matrix, merged_conv_bias, current_tensor_size = layer_obj.weight, layer_obj.bias, (layer_obj.out_features,)
+                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix
+                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias
+                channel_outs_size_in_each_layer[layer_name] = current_tensor_size
+
+                orig_out = layer_obj(x)
+
+                convmatrix_output = apply_input_on_conv_matrix(
+                    x, merged_conv_matrix, merged_conv_bias)
+                convmatrix_output = torch.unsqueeze(torch.reshape(
+                    convmatrix_output, current_tensor_size), 0)
+                assert orig_out.size() == convmatrix_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    orig_out - convmatrix_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer
+
 class SF_DLGN_FC_Gating_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, input_size, seed=2022):
         super(SF_DLGN_FC_Gating_Network, self).__init__()
