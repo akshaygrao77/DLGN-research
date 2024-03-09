@@ -16,7 +16,7 @@ from model_trainer import evaluate_model
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
 from collections import OrderedDict
-from attacks import cleverhans_projected_gradient_descent,cleverhans_fast_gradient_method,get_locuslab_adv_per_batch,get_residue_adv_per_batch
+from attacks import cleverhans_projected_gradient_descent,cleverhans_fast_gradient_method,get_locuslab_adv_per_batch,get_residue_adv_per_batch,get_gateflip_adv_per_batch
 
 
 from conv4_models import get_model_instance, get_model_instance_from_dataset
@@ -84,6 +84,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
     elif fast_adv_attack_type == 'residual_PGD':
         kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
+    elif fast_adv_attack_type == 'FEATURE_FLIP':
+        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
     while(epoch < epochs and (start_net_path is None or (stop_at_adv_test_acc is None or best_test_acc < stop_at_adv_test_acc))):
         correct = 0
         total = 0
@@ -110,6 +112,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
                 inputs = cleverhans_projected_gradient_descent(model,X,kargs)
             elif fast_adv_attack_type == 'residual_PGD':
                 inputs = get_residue_adv_per_batch(model,X,kargs)
+            elif fast_adv_attack_type == 'FEATURE_FLIP':
+                inputs = get_gateflip_adv_per_batch(model,X,kargs)
             
             output = model(inputs)
             if(len(output.size())==1):
@@ -222,8 +226,8 @@ if __name__ == '__main__':
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
-    # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
+    # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
+    model_arch_type = 'fc_dnn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -257,7 +261,7 @@ if __name__ == '__main__':
     # eta_growth , max_eps , std , eq , reach_edge_at_end , add_rand_at__X__X , None , cyclic_lr(this is not actually on inner maximization but on outer minimization)
     # L2_norm_grad_scale , L1_norm_grad_scale
     residue_vname = None
-    # residue_vname = 'reach_edge_at_end'
+    # residue_vname = 'all_tanh_gate_flip'
 
     # If False, then segregation is over model prediction
     is_class_segregation_on_ground_truth = True
@@ -405,7 +409,7 @@ if __name__ == '__main__':
 
         # eps_list = [0.03, 0.06, 0.1]
         fast_adv_attack_type_list = ["PGD"]
-        # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD]
+        # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD' , 'FEATURE_FLIP']
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
             eps_list = [0.3]
@@ -473,7 +477,7 @@ if __name__ == '__main__':
                                 group=f"{wandb_group_name}",
                                 config=wandb_config,
                             )
-
+                        # wandb.watch(net, log='all')
                         best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
                                                                                  eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt)
                         if(is_log_wandb):

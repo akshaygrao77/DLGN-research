@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import math
+import wandb
 
 def clip_eta(eta, norm, eps):
     """
@@ -78,8 +80,8 @@ def optimize_linear(grad, eps, norm=np.inf):
     red_ind = list(range(1, len(grad.size())))
     avoid_zero_div = torch.tensor(1e-12, dtype=grad.dtype, device=grad.device)
     if norm == np.inf:
-        # Take sign of gradient
-        optimal_perturbation = torch.sign(grad)
+        # Whether signed or not decided by the caller of this function
+        optimal_perturbation = grad
     elif norm == 1:
         abs_grad = torch.abs(grad)
         sign = torch.sign(grad)
@@ -216,6 +218,99 @@ def get_residue_adv_per_batch(net,org_inputs,kwargs):
 
     return inputs
 
+def get_feature_maps(model):
+    if(isinstance(model, torch.nn.DataParallel)):
+        conv_outs = model.module.linear_conv_outputs
+    else:
+        conv_outs = model.linear_conv_outputs
+    return conv_outs
+
+def get_gateflip_adv_per_batch(net,inputs,kwargs):
+    kwargs.setdefault('rand_init',True)
+    kwargs.setdefault('labels',None)
+    kwargs.setdefault('update_on','all')
+    kwargs.setdefault('criterion',None)
+    residue_vname = kwargs.get("residue_vname",None)
+    criterion,eps,eps_step_size,steps,labels,update_on,rand_init=kwargs['criterion'],kwargs['eps'],kwargs['eps_step_size'],kwargs['steps'],kwargs['labels'],kwargs['update_on'],kwargs['rand_init']
+    # If y_true is not given, assume model's output as y_true
+    if(labels is None):
+        with torch.no_grad():
+          labels = net(inputs)
+          if(len(labels.size())==1 or labels.shape[1]==1):
+              labels = torch.where(labels>0,1.0,0.0)
+              labels = torch.squeeze(labels,1)
+          else:
+            _, labels = torch.max(labels, 1)
+    
+    if(criterion is None):
+        tmp = net(inputs)
+        # Inferring loss function from model output
+        if(len(tmp.size())==1 or tmp.shape[1]==1):
+            criterion = torch.nn.BCEWithLogitsLoss()
+        else:
+            criterion = torch.nn.CrossEntropyLoss()
+    with torch.no_grad():
+        net(inputs)
+        org_fmap = get_feature_maps(net)
+
+    if(rand_init):
+      delta = torch.zeros_like(inputs).uniform_(-eps, eps)
+    else:
+      delta = torch.zeros_like(inputs)
+    delta.data = torch.max(torch.min(1-inputs, delta.data), 0-inputs)
+    delta.requires_grad = True
+
+    for cs in range(steps):
+        output = net(inputs + delta)
+        cur_fmap = get_feature_maps(net)
+        if(len(output.size())==1 or output.shape[1]==1):
+            labels = labels.type(torch.float32)
+            output=torch.squeeze(output,1)
+            predicted = torch.where(output>0,1.0,0.0)
+        else:
+            _, predicted = torch.max(output.data, 1)
+        
+        if(update_on=='corr'):
+          I = (predicted == labels)
+        elif(update_on=='incorr'):
+          I = (predicted != labels)
+        elif(update_on=='all'):
+          I = torch.where(predicted>=0,True,False)
+
+        loss = 0
+        if(residue_vname is not None and "mixed" in residue_vname):
+            loss = criterion(output, labels)
+        if(residue_vname is not None and (residue_vname == "tanh_gate_flip" or residue_vname == "mixed_tanh_gate_flip")):
+            for i in range(len(org_fmap)):
+                cur_tmp = -torch.sign(org_fmap[i]) * torch.tanh(cur_fmap[i])
+                cur_tmp = torch.log(1 + torch.exp(torch.clamp(cur_tmp, -10, 10)))
+                loss += torch.mean(cur_tmp)
+        elif(residue_vname is not None and (residue_vname == "full_gate_flip" or residue_vname == "mixed_full_gate_flip")):
+            for i in range(len(org_fmap)):
+                cur_tmp = -torch.sign(org_fmap[i]) * cur_fmap[i]
+                cur_tmp = torch.log(1 + torch.exp(torch.clamp(cur_tmp, -10, 10)))
+                loss += torch.mean(cur_tmp)
+        elif(residue_vname is not None and (residue_vname == "all_tanh_gate_flip" or residue_vname == "mixed_all_tanh_gate_flip")):
+            for i in range(len(org_fmap)):
+                cur_tmp = -torch.tanh(org_fmap[i]) * torch.tanh(cur_fmap[i])
+                cur_tmp = torch.log(1 + torch.exp(torch.clamp(cur_tmp, -10, 10)))
+                loss += torch.mean(cur_tmp)
+        
+        # print("step:{} loss:{} ".format(cs,loss))
+        loss.backward()
+        grad = delta.grad
+        with torch.no_grad():
+          delta.data[I] = torch.clamp(
+              delta + eps_step_size * torch.sign(grad), -eps, eps)[I]
+          delta.data[I] = torch.max(
+              torch.min(1-inputs, delta.data), 0-inputs)[I]
+        delta.grad.data.zero_()
+    
+    # print("Loss: ",loss)
+    delta = delta.detach()
+    return torch.clamp(inputs + delta, 0, 1)
+
+
 def get_locuslab_adv_per_batch(net,inputs,kwargs):
     kwargs.setdefault('rand_init',True)
     kwargs.setdefault('labels',None)
@@ -290,6 +385,7 @@ def cleverhans_fast_gradient_method(
     targeted=kwargs.get('targeted',False)
     sanity_checks= kwargs.get('sanity_checks',False)
     update_on=kwargs.get('update_on','all')
+    residue_vname = kwargs.get("residue_vname",None)
     """
     PyTorch implementation of the Fast Gradient Method.
     :param model_fn: a callable that takes an input tensor and returns the model logits.
@@ -382,7 +478,17 @@ def cleverhans_fast_gradient_method(
 
     # Define gradient of loss wrt input
     loss.backward()
-    optimal_perturbation = optimize_linear(x.grad, eps, norm)
+    if(residue_vname is not None and "mean_grad" == residue_vname):
+        cgrad = x.grad / torch.mean(x.grad,[1,2]).unsqueeze(1).unsqueeze(2)
+    elif(residue_vname is not None and "L1_norm_grad_scale" == residue_vname):
+        cgrad = (x.grad / (torch.norm(x.grad,p=1,dim=[1,2]).unsqueeze(1).unsqueeze(2)+10e-8)) * x[0].numel()
+    elif(residue_vname is not None and "L2_norm_grad_scale" == residue_vname):
+        cgrad = (x.grad / (torch.norm(x.grad,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2)+10e-8)) * math.sqrt(x[0].numel())
+    else:
+        #Default use sign grad
+        cgrad = torch.sign(x.grad)
+    
+    optimal_perturbation = optimize_linear(cgrad, eps, norm)
     if(update_on=='all'):
       adv_x = x + optimal_perturbation
     elif(update_on=='corr'):
@@ -403,6 +509,10 @@ def cleverhans_fast_gradient_method(
     
     if sanity_checks:
         assert np.all(asserts)
+    # print("cgrad max:{} mean:{}".format(torch.max(torch.max(cgrad,-1)[0],-1)[0],torch.mean(cgrad,[1,2])))
+    # print("x.grad size:{} max:{} mean:{} norm:{}".format(x.grad.size(),torch.max(torch.max(x.grad,-1)[0],-1)[0],torch.mean(x.grad,[1,2]),torch.norm(x.grad,p=1,dim=[1,2])))
+    # print("cgrad:{}".format(cgrad))
+    # print("x.grad:{}".format(x.grad))
     return adv_x
 
 def cleverhans_projected_gradient_descent(

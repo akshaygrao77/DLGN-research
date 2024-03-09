@@ -832,14 +832,14 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
         elif(sub_scheme_type == 'OVER_RECONSTRUCTED'):
             pass
         elif(sub_scheme_type == 'OVER_ADVERSARIAL'):
-            final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_act_collection_on_train)+str(each_save_postfix)
+            final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_act_collection_on_train,residue_vname=residue_vname)+str(each_save_postfix)
             adv_save_path = models_base_path + final_adv_postfix_for_save+"/adv_dataset.npy"
 
             wandb_config_additional_dict = {"eps": eps, "adv_atack_type": adv_attack_type, "num_of_adversarial_optim_stps":
-                                            number_of_adversarial_optimization_steps, "eps_stp_size": eps_step_size, "adv_target": adv_target}
+                                            number_of_adversarial_optimization_steps, "eps_stp_size": eps_step_size, "adv_target": adv_target,"residue_vname":residue_vname}
 
-            each_save_postfix = "EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
-                eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size) + each_save_postfix
+            each_save_postfix = "EPS_{}/ADV_TYPE_{}/{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
+                eps, adv_attack_type, residue_vname, number_of_adversarial_optimization_steps, eps_step_size) + each_save_postfix
 
             is_current_adv_aug_available = os.path.exists(adv_save_path)
             if(is_current_adv_aug_available):
@@ -853,7 +853,7 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
                           adv_save_path)
             else:
                 adv_dataset = generate_adv_examples(
-                    to_be_analysed_dataloader, custom_model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=adv_save_path)
+                    to_be_analysed_dataloader, custom_model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=adv_save_path,residue_vname=residue_vname)
 
             to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                 adv_dataset, shuffle=False, batch_size=128)
@@ -1500,6 +1500,8 @@ if __name__ == '__main__':
                     eps = 0.3
                     adv_attack_type = 'PGD'
                     number_of_adversarial_optimization_steps = 40
+                    residue_vname = None
+                    # residue_vname = "all_tanh_gate_flip"
                     eps_step_size = 0.01
                     adv_target = None
 
