@@ -106,6 +106,8 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
                         HardRelu()(phase_used_flag)).item()
             else:
                 inputs, labels = data
+            if(len(inputs.size())==3):
+                inputs = torch.unsqueeze(inputs,1)
             total_count += inputs.size(0)
 
             inputs, labels = inputs.to(
@@ -211,7 +213,7 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
     return net
 
 
-def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None,npk_reg=0,gatesat_reg=0):
+def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None,npk_reg=0,gatesat_reg=0,gate_weight_l2_reg=0):
     device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
     if device_str == 'cuda':
         if(torch.cuda.device_count() > 1):
@@ -250,6 +252,19 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
             correct += (predicted == labels).sum().item()
 
             loss = criterion(outputs, labels)
+            if(gate_weight_l2_reg != 0):
+                wregloss = 0
+                for layer_name, layer_obj in net.get_gate_layers_ordered_dict().items():
+                    list_to_loop = list(enumerate(layer_obj.children()))
+                    if(len(list_to_loop) == 0):
+                        list_to_loop = [(0, layer_obj)]
+                    for (i, current_layer) in list_to_loop:
+                        assert not isinstance(current_layer, torch.nn.Conv2d), 'Conv2d not supported'
+                        if(isinstance(current_layer, torch.nn.Linear)):
+                            wregloss += torch.norm(current_layer.weight,p=2)
+                print("Loss:{} gate_weight_l2_reg*wregloss:{}".format(loss,gate_weight_l2_reg * wregloss))
+                loss += gate_weight_l2_reg * wregloss
+
             if(npk_reg != 0):
                 beta=4
                 if(isinstance(net, torch.nn.DataParallel)):
@@ -398,8 +413,8 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
-    # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn
-    model_arch_type = 'gal_fc_dnn'
+    # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn
+    model_arch_type = 'fc_dlgn'
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
@@ -411,7 +426,7 @@ if __name__ == '__main__':
     wand_project_name = None
     # wand_project_name = "APR_experiments"
     # wand_project_name = "NPK_reg"
-    wand_project_name = "Galu_act_robustness"
+    wand_project_name = "Gate_weight_reg"
     # wand_project_name = "frequency_augmentation_experiments"
     # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "model_band_frequency_experiments"
@@ -425,6 +440,9 @@ if __name__ == '__main__':
 
     npk_reg = 0
     # npk_reg = 0.01
+
+    gate_weight_l2_reg = 0
+    # gate_weight_l2_reg = 10
 
     gatesat_reg=0
     # gatesat_reg=0.001
@@ -522,8 +540,8 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 16
-        fc_depth = 2
+        fc_width = 128
+        fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -576,6 +594,8 @@ if __name__ == '__main__':
         model_arch_type_str = model_arch_type_str + "_NPKREG_"+str(npk_reg)
     if(gatesat_reg!=0):
         model_arch_type_str = model_arch_type_str + "_GSATREG_"+str(gatesat_reg)
+    if(gate_weight_l2_reg  != 0):
+        model_arch_type_str = model_arch_type_str + "_GWEIGHT_L2_"+str(gate_weight_l2_reg)
     epochs = 32
 
     final_model_save_path = get_model_save_path(model_arch_type_str, dataset, torch_seed, list_of_classes_to_train_on_str)
@@ -980,7 +1000,9 @@ if __name__ == '__main__':
             if(npk_reg != 0):
                 wandb_config["npk_reg"]=npk_reg
             if(gatesat_reg!=0):
-                wandb_config["gatesat_reg"]=gatesat_reg
+                wandb_config["gatesat_reg"] = gatesat_reg
+            if(gate_weight_l2_reg != 0):
+                wandb_config["gate_weight_l2_reg"] = gate_weight_l2_reg
             wandb_config["optimizer"] = optimizer
             wandb_config["criterion"] = criterion
             wandb_config["lr"] = lr
@@ -1002,7 +1024,7 @@ if __name__ == '__main__':
             os.makedirs(model_save_folder)
 
         best_test_acc, net = train_model(net,
-                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg,gatesat_reg)
+                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg,gatesat_reg,gate_weight_l2_reg)
         if(is_log_wandb):
             wandb.log({"best_test_acc": best_test_acc})
             wandb.finish()
