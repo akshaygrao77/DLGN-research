@@ -34,7 +34,7 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
 
     cur_row = []
 
-    kargs = {"criterion":loss_fn,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':False,'norm':np.inf,'residue_vname':residue_vname}
+    kargs = {"criterion":loss_fn,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':False,'norm':np.inf,'residue_vname':residue_vname,"num_of_restrts":number_of_restarts}
     lr_sched_rates = [(40,0.005),(100,0.0025)]
     kargs["labels"] = y
     init_loss = loss_fn(model(X),y).item()
@@ -146,6 +146,7 @@ def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,resid
 if __name__ == '__main__':
     # L2_norm_grad_unitnorm , L2_norm_grad_scale , PGD_unit_norm
     residue_vname = None
+    number_of_restarts = 40
     num_batches = 18
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -161,11 +162,11 @@ if __name__ == '__main__':
     net = torch.load(model_path)
     net = net.to(device)
 
-    alpha_folder = "{}/alpha_debug/residue_{}/".format(model_path.replace(".pt","/"),residue_vname)
+    alpha_folder = "{}/alpha_debug/residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
     if not os.path.exists(alpha_folder):
         os.makedirs(alpha_folder)
 
-    sorted_list_steps = [i for i in range(0,90,1)]
+    sorted_list_steps = [i for i in range(1,91,5)]
     loss_table = generate_table(net,trainloader,sorted_list_steps,num_batches,alpha_folder,residue_vname)
     
     with open("{}/res_{}_nb_{}.csv".format(alpha_folder,residue_vname,num_batches), 'w', newline='') as f:

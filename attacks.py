@@ -526,7 +526,9 @@ def cleverhans_projected_gradient_descent(
     kwargs
 ):
     eps = kwargs['eps']
+    loss_fn = kwargs.get('criterion',None)
     lr_sched = kwargs.get("lr_sched",None)
+    num_restarts = kwargs.get("num_of_restrts",1)
     residue_vname = kwargs.get("residue_vname",None)
     vname_arr = None
     if(residue_vname is not None):
@@ -628,19 +630,13 @@ def cleverhans_projected_gradient_descent(
         ).cpu().numpy()
         asserts.append(assert_le)
 
-    # Initialize loop variables
-    if rand_init:
-        if rand_minmax is None:
-            rand_minmax = eps
-        eta = torch.zeros_like(x).uniform_(-rand_minmax, rand_minmax)
-    else:
-        eta = torch.zeros_like(x)
-    # print("cleverhans_projected_gradient_descent",kwargs['criterion'],eps,eps_iter,nb_iter,kwargs['labels'],kwargs['update_on'],rand_init)
-    # Clip eta
-    eta = clip_eta(eta, norm, eps)
-    adv_x = x + eta
-    if clip_min is not None or clip_max is not None:
-        adv_x = torch.clamp(adv_x, clip_min, clip_max)
+    if(loss_fn is None):
+        tmp = model_fn(x)
+        # Inferring loss function from model output
+        if(len(tmp.size())==1 or tmp.shape[1]==1):
+            loss_fn = torch.nn.BCEWithLogitsLoss()
+        else:
+            loss_fn = torch.nn.CrossEntropyLoss()
 
     if y is None:
         # Using model predictions as ground truth to avoid label leaking
@@ -654,47 +650,85 @@ def cleverhans_projected_gradient_descent(
             _, y = torch.max(outs.data, 1)
         kwargs['labels']=y
 
-    i = 0
-    while i < nb_iter:
-        kwargs['eps'] = eps_iter
-        if(vname_arr and vname_arr[0] == "reach_edge_at_end"):
-            if(i == nb_iter-1):
-                kwargs['eps'] = eps
-        if(lr_sched is not None):
-            for lr_step,lr_step_size in lr_sched:
-                if(i>=lr_step):
-                    kwargs['eps'] = lr_step_size
+    best_adv_x_loss = 0
+    for cur_restart_iter in range(num_restarts):
+        # Initialize loop variables
+        if rand_init:
+            if rand_minmax is None:
+                rand_minmax = eps
+            eta = torch.zeros_like(x).uniform_(-rand_minmax, rand_minmax)
 
-        adv_x = cleverhans_fast_gradient_method(model_fn,adv_x,kwargs)
-
-        # Clipping perturbation eta to norm norm ball
-        eta = adv_x - x
+            # Uncomment the below line for starting at a random point on the border of the norm ball
+            # eta = eps * torch.sign(torch.zeros_like(x).uniform_(-rand_minmax, rand_minmax))
+        else:
+            eta = torch.zeros_like(x)
+        # print("cleverhans_projected_gradient_descent",kwargs['criterion'],eps,eps_iter,nb_iter,kwargs['labels'],kwargs['update_on'],rand_init)
+        # Clip eta
         eta = clip_eta(eta, norm, eps)
         adv_x = x + eta
-
-        if(vname_arr and vname_arr[0]=='add_rand_at'):
-            if(str(i) in vname_arr):
-                rpert = torch.zeros_like(x).uniform_(-rand_minmax, rand_minmax)
-                eta = adv_x + rpert - x
-                eta = clip_eta(eta, norm, eps)
-                adv_x = x + eta
-
-        # Redo the clipping.
-        # FGM already did it, but subtracting and re-adding eta can add some
-        # small numerical error.
         if clip_min is not None or clip_max is not None:
             adv_x = torch.clamp(adv_x, clip_min, clip_max)
+
+        i = 0
+        while i < nb_iter:
+            kwargs['eps'] = eps_iter
+            if(vname_arr and vname_arr[0] == "reach_edge_at_end"):
+                if(i == nb_iter-1):
+                    kwargs['eps'] = eps
+            if(lr_sched is not None):
+                for lr_step,lr_step_size in lr_sched:
+                    if(i>=lr_step):
+                        kwargs['eps'] = lr_step_size
+
+            adv_x = cleverhans_fast_gradient_method(model_fn,adv_x,kwargs)
+
+            # Clipping perturbation eta to norm norm ball
+            eta = adv_x - x
+            eta = clip_eta(eta, norm, eps)
+            adv_x = x + eta
+
+            if(vname_arr and vname_arr[0]=='add_rand_at'):
+                if(str(i) in vname_arr):
+                    rpert = torch.zeros_like(x).uniform_(-rand_minmax, rand_minmax)
+                    eta = adv_x + rpert - x
+                    eta = clip_eta(eta, norm, eps)
+                    adv_x = x + eta
+
+            # Redo the clipping.
+            # FGM already did it, but subtracting and re-adding eta can add some
+            # small numerical error.
+            if clip_min is not None or clip_max is not None:
+                adv_x = torch.clamp(adv_x, clip_min, clip_max)
+            else:
+                adv_x = torch.clamp(adv_x, 0.0,1.0)
+            i += 1
+
+        asserts.append(eps_iter <= eps)
+        if norm == np.inf and clip_min is not None:
+            # TODO necessary to cast clip_min and clip_max to x.dtype?
+            asserts.append(eps + clip_min <= clip_max)
+
+        if sanity_checks:
+            assert np.all(asserts)
+        # Set back correct value before return
+        kwargs['eps'] = eps
+
+        if(num_restarts == 1):
+            best_adv_x = adv_x
         else:
-            adv_x = torch.clamp(adv_x, 0.0,1.0)
-        i += 1
-
-    asserts.append(eps_iter <= eps)
-    if norm == np.inf and clip_min is not None:
-        # TODO necessary to cast clip_min and clip_max to x.dtype?
-        asserts.append(eps + clip_min <= clip_max)
-
-    if sanity_checks:
-        assert np.all(asserts)
-    # Set back correct value before return
-    kwargs['eps'] = eps
-    return adv_x
+            # Just plain loss evaluation doesn't need grads to be switched on
+            with torch.no_grad():
+                if(isinstance(loss_fn,torch.nn.BCEWithLogitsLoss)):
+                    y = y.type(torch.float32)
+                    y_pred = torch.squeeze(model_fn(adv_x),1)
+                elif(isinstance(loss_fn,torch.nn.CrossEntropyLoss)):
+                    y_pred = model_fn(adv_x)
+                    
+                adv_x_loss = loss_fn(y_pred, kwargs['labels'])
+                if(adv_x_loss.item() > best_adv_x_loss):
+                    best_adv_x_loss = adv_x_loss.item()
+                    best_adv_x = adv_x
+            
+            asserts = []
+    
+    return best_adv_x
