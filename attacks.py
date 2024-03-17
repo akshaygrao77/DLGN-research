@@ -484,6 +484,11 @@ def cleverhans_fast_gradient_method(
         cgrad = (x.grad / (torch.norm(x.grad,p=1,dim=[1,2]).unsqueeze(1).unsqueeze(2)+10e-8)) * x[0].numel()
     elif(residue_vname is not None and "L2_norm_grad_scale" == residue_vname):
         cgrad = (x.grad / (torch.norm(x.grad,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2)+10e-8)) * math.sqrt(x[0].numel())
+    elif(residue_vname is not None and "L2_norm_grad_unitnorm" == residue_vname):
+        cgrad = (x.grad / (torch.norm(x.grad,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2)+10e-8))
+    elif(residue_vname is not None and "PGD_unit_norm" == residue_vname):
+        tmp = torch.sign(x.grad)
+        cgrad = tmp / (torch.norm(tmp,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2) + 10e-8)
     else:
         #Default use sign grad
         cgrad = torch.sign(x.grad)
@@ -521,6 +526,7 @@ def cleverhans_projected_gradient_descent(
     kwargs
 ):
     eps = kwargs['eps']
+    lr_sched = kwargs.get("lr_sched",None)
     residue_vname = kwargs.get("residue_vname",None)
     vname_arr = None
     if(residue_vname is not None):
@@ -654,6 +660,11 @@ def cleverhans_projected_gradient_descent(
         if(vname_arr and vname_arr[0] == "reach_edge_at_end"):
             if(i == nb_iter-1):
                 kwargs['eps'] = eps
+        if(lr_sched is not None):
+            for lr_step,lr_step_size in lr_sched:
+                if(i>=lr_step):
+                    kwargs['eps'] = lr_step_size
+
         adv_x = cleverhans_fast_gradient_method(model_fn,adv_x,kwargs)
 
         # Clipping perturbation eta to norm norm ball
