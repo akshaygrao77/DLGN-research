@@ -26,6 +26,7 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
     loss_fn = nn.CrossEntropyLoss()
     eps = 0.3
     eps_step_size = 0.01
+    # eps_step_size = 0.3
     number_of_adversarial_optimization_steps = sorted_list_steps[0]
     update_on = 'all'
     rand_init = True
@@ -68,8 +69,7 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
         cur_row.append((torch.sum(torch.where(torch.sign(adv_x.grad)==1,1,0))/adv_x.grad.numel()).item())
         
         assert (((adv_x - X) > -(eps+1e-5)).all() and ((adv_x - X) < (eps+1e-5)).all()) , 'Wrong'
-        diff = adv_x - X
-        tttmp = torch.where(diff >= 0,(X + eps - adv_x),(adv_x - (X - eps)))
+        tttmp = torch.where(adv_x > X,(torch.clamp(X + eps,clip_min,clip_max) - adv_x),(adv_x - torch.clamp(X - eps,clip_min,clip_max)))
         eps_norm = torch.norm(tttmp,p=1)
         cur_row.append(eps_norm.item())
 
@@ -77,7 +77,7 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
             save_folder = "{}/target_indx_{}/".format(alpha_folder,str(batch_idx))
             if not os.path.exists(save_folder):
                 os.makedirs(save_folder)
-            print("cur_s:{} pgd_at_end_loss:{} norm(adv_x.grad):{} adv_x.grad:{}".format(cur_s,pgd_at_end_loss.item(),torch.norm(adv_x.grad,p=2).item(),torch.flatten(adv_x.grad)))
+            # print("cur_s:{} pgd_at_end_loss:{} norm(adv_x.grad):{} adv_x.grad:{}".format(cur_s,pgd_at_end_loss.item(),torch.norm(adv_x.grad,p=2).item(),torch.flatten(adv_x.grad)))
             cur_debug_losses = []
             with torch.no_grad():
                 for alpha in alphas:
@@ -146,7 +146,7 @@ def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,resid
 if __name__ == '__main__':
     # L2_norm_grad_unitnorm , L2_norm_grad_scale , PGD_unit_norm
     residue_vname = None
-    number_of_restarts = 40
+    number_of_restarts = 1
     num_batches = 18
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -162,11 +162,12 @@ if __name__ == '__main__':
     net = torch.load(model_path)
     net = net.to(device)
 
-    alpha_folder = "{}/alpha_debug/residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
+    # edge_random_start 
+    alpha_folder = "{}/alpha_debug//residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
     if not os.path.exists(alpha_folder):
         os.makedirs(alpha_folder)
 
-    sorted_list_steps = [i for i in range(1,91,5)]
+    sorted_list_steps = [i for i in range(0,120,5)]
     loss_table = generate_table(net,trainloader,sorted_list_steps,num_batches,alpha_folder,residue_vname)
     
     with open("{}/res_{}_nb_{}.csv".format(alpha_folder,residue_vname,num_batches), 'w', newline='') as f:

@@ -659,7 +659,7 @@ def cleverhans_projected_gradient_descent(
             eta = torch.zeros_like(x).uniform_(-rand_minmax, rand_minmax)
 
             # Uncomment the below line for starting at a random point on the border of the norm ball
-            # eta = eps * torch.sign(torch.zeros_like(x).uniform_(-rand_minmax, rand_minmax))
+            # eta = eps * torch.where(eta>=0,1,-1)
         else:
             eta = torch.zeros_like(x)
         # print("cleverhans_projected_gradient_descent",kwargs['criterion'],eps,eps_iter,nb_iter,kwargs['labels'],kwargs['update_on'],rand_init)
@@ -668,6 +668,8 @@ def cleverhans_projected_gradient_descent(
         adv_x = x + eta
         if clip_min is not None or clip_max is not None:
             adv_x = torch.clamp(adv_x, clip_min, clip_max)
+        else:
+            adv_x = torch.clamp(adv_x, 0.0,1.0)
 
         i = 0
         while i < nb_iter:
