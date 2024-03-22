@@ -7,7 +7,19 @@ import json
 import hashlib
 import os
 import tqdm
+import torch.nn as nn
+import torch
 
+class Y_True_Loss(nn.Module):
+    def __init__(self):
+        super(Y_True_Loss, self).__init__()
+
+    def forward(self, inputs, targets):
+        targets = torch.unsqueeze(targets,1).long()
+        y_true_logits = torch.squeeze(torch.gather(inputs,1,targets))
+        loss = torch.mean(y_true_logits)
+
+        return -loss
 
 def create_nested_dir_if_not_exists(directory):
     os.makedirs(directory, exist_ok=True)

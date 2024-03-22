@@ -17,6 +17,7 @@ from external_utils import format_time
 from utils.data_preprocessing import preprocess_dataset_get_dataset, generate_dataset_from_loader,preprocess_dataset_get_data_loader,get_data_loader
 from structure.dlgn_conv_config_structure import DatasetConfig
 import numpy as np
+from utils.generic_utils import Y_True_Loss
 
 from attacks import cleverhans_projected_gradient_descent,cleverhans_fast_gradient_method,get_locuslab_adv_per_batch,get_residue_adv_per_batch
 
@@ -24,6 +25,7 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
     relu=torch.nn.ReLU()
     model.eval()
     loss_fn = nn.CrossEntropyLoss()
+    tr_loss_fn = Y_True_Loss()
     eps = 0.3
     eps_step_size = 0.01
     # eps_step_size = 0.3
@@ -35,7 +37,7 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
 
     cur_row = []
 
-    kargs = {"criterion":loss_fn,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':False,'norm':np.inf,'residue_vname':residue_vname,"num_of_restrts":number_of_restarts}
+    kargs = {"criterion":tr_loss_fn,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':False,'norm':np.inf,'residue_vname':residue_vname,"num_of_restrts":number_of_restarts}
     lr_sched_rates = [(40,0.005),(100,0.0025)]
     kargs["labels"] = y
     init_loss = loss_fn(model(X),y).item()
@@ -84,13 +86,12 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
                     if(residue_vname is not None and residue_vname == "L2_norm_grad_unitnorm"):
                         cgrad = (adv_x.grad / (torch.norm(adv_x.grad,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2) + 10e-8))
                     elif(residue_vname is not None and residue_vname == "L2_norm_grad_scale"):
-                        print("adv_x  size ",adv_x.size())
                         cgrad = (adv_x.grad / (torch.norm(adv_x.grad,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2) + 10e-8)) * math.sqrt(adv_x[0].numel())
-                    elif(residue_vname is None):
-                        cgrad = torch.sign(adv_x.grad)
                     elif(residue_vname is not None and residue_vname == "PGD_unit_norm"):
                         tmp = torch.sign(adv_x.grad)
                         cgrad = (tmp / (torch.norm(tmp,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2) + 10e-8))
+                    else:
+                        cgrad = torch.sign(adv_x.grad)
 
                     # cgrad = (adv_x.grad / (torch.norm(adv_x.grad,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2) + 10e-8)) * math.sqrt(adv_x[0].numel())
                     tmp_X = torch.clamp(adv_x + alpha * cgrad,X-eps,X+eps)
@@ -144,10 +145,10 @@ def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,resid
 
 
 if __name__ == '__main__':
-    # L2_norm_grad_unitnorm , L2_norm_grad_scale , PGD_unit_norm
+    # L2_norm_grad_unitnorm , L2_norm_grad_scale , PGD_unit_norm , plain_grad_without_sign
     residue_vname = None
-    number_of_restarts = 1
-    num_batches = 18
+    number_of_restarts = 40
+    num_batches = 250
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     data_config = DatasetConfig(
@@ -162,8 +163,8 @@ if __name__ == '__main__':
     net = torch.load(model_path)
     net = net.to(device)
 
-    # edge_random_start 
-    alpha_folder = "{}/alpha_debug//residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
+    # edge_random_start , Y_True_Loss
+    alpha_folder = "{}/alpha_debug/Y_True_Loss/residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
     if not os.path.exists(alpha_folder):
         os.makedirs(alpha_folder)
 
