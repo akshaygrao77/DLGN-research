@@ -463,12 +463,15 @@ def cleverhans_fast_gradient_method(
 
     # Compute loss
     if(isinstance(loss_fn,torch.nn.BCEWithLogitsLoss)):
-      y = y.type(torch.float32)
-      y_pred = torch.squeeze(model_fn(x),1)
-      predicted = torch.where(y_pred>0,1.0,0.0)
+        y = y.type(torch.float32)
+        y_pred = torch.squeeze(model_fn(x),1)
+        predicted = torch.where(y_pred>0,1.0,0.0)
     elif(isinstance(loss_fn,torch.nn.CrossEntropyLoss)):
-      y_pred = model_fn(x)
-      _, predicted = torch.max(y_pred.data, 1)
+        y_pred = model_fn(x)
+        _, predicted = torch.max(y_pred.data, 1)
+    else:
+        y_pred = model_fn(x)
+        _, predicted = torch.max(y_pred.data, 1)
     
     loss = loss_fn(y_pred, y)
     
@@ -478,7 +481,9 @@ def cleverhans_fast_gradient_method(
 
     # Define gradient of loss wrt input
     loss.backward()
-    if(residue_vname is not None and "mean_grad" == residue_vname):
+    if(residue_vname is not None and "plain_grad_without_sign" == residue_vname):
+        cgrad = x.grad
+    elif(residue_vname is not None and "mean_grad" == residue_vname):
         cgrad = x.grad / torch.mean(x.grad,[1,2]).unsqueeze(1).unsqueeze(2)
     elif(residue_vname is not None and "L1_norm_grad_scale" == residue_vname):
         cgrad = (x.grad / (torch.norm(x.grad,p=1,dim=[1,2]).unsqueeze(1).unsqueeze(2)+10e-8)) * x[0].numel()
@@ -650,7 +655,7 @@ def cleverhans_projected_gradient_descent(
             _, y = torch.max(outs.data, 1)
         kwargs['labels']=y
 
-    best_adv_x_loss = 0
+    best_adv_x_loss = -float("inf")
     for cur_restart_iter in range(num_restarts):
         # Initialize loop variables
         if rand_init:
@@ -724,6 +729,8 @@ def cleverhans_projected_gradient_descent(
                     y = y.type(torch.float32)
                     y_pred = torch.squeeze(model_fn(adv_x),1)
                 elif(isinstance(loss_fn,torch.nn.CrossEntropyLoss)):
+                    y_pred = model_fn(adv_x)
+                else:
                     y_pred = model_fn(adv_x)
                     
                 adv_x_loss = loss_fn(y_pred, kwargs['labels'])

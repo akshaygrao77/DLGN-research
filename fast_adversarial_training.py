@@ -227,7 +227,7 @@ if __name__ == '__main__':
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
     # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
-    model_arch_type = 'fc_dnn'
+    model_arch_type = 'fc_sf_dlgn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -241,8 +241,9 @@ if __name__ == '__main__':
     wand_project_name = "Residual_training"
     # wand_project_name = "madry's_benchmarking"
     # wand_project_name = "reach_end_plot"
+    # wand_project_name = "SVM_Adv_training"
     
-    # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING
+    # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING , GATE_FREEZE_ADV_TRAINING , VALUE_FREEZE_ADV_TRAINING
     exp_type = "ADV_TRAINING"
 
     npk_reg = 0
@@ -398,12 +399,12 @@ if __name__ == '__main__':
             model_arch_type_str = model_arch_type_str + "_NPKREG_"+str(npk_reg)
         start_net_path = None
 
-        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_deep_gated_net_n16_small_PCA_K12_P_0.5_dir.pt"
+        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_sf_dlgn_W_128_D_4_dir/MARGIN_ANALYSIS/svm_gated_C_0.0000001_sf_dlgn.pt"
         if(start_net_path is not None):
             custom_temp_model = torch.load(start_net_path)
             net.load_state_dict(custom_temp_model.state_dict())
             stop_at_adv_test_acc = None
-            stop_at_adv_test_acc = 70.68
+            # stop_at_adv_test_acc = 70.68
 
         net = net.to(device)
 
@@ -484,6 +485,47 @@ if __name__ == '__main__':
                             wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()
                     
+                    elif(exp_type == "GATE_FREEZE_ADV_TRAINING" or exp_type == "VALUE_FREEZE_ADV_TRAINING"):
+                        if(exp_type == "GATE_FREEZE_ADV_TRAINING"):
+                            ordict = net.get_gate_layers_ordered_dict()
+                        elif(exp_type == "VALUE_FREEZE_ADV_TRAINING"):
+                            ordict = net.get_value_layers_ordered_dict()
+
+                        for key in ordict:
+                            for param in  ordict[key].parameters():
+                                param.requires_grad = False
+                        
+                        net = net.to(device)
+                        print("net: ",net)
+                        model_save_path = model_save_path.replace(
+                            "ADV_TRAINING", exp_type)
+                        print("model_save_path: ", model_save_path)
+                        opt = torch.optim.Adam(net.parameters(), lr=1e-4)
+                        if(is_log_wandb):
+                            wandb_run_name = str(
+                                model_arch_type_str)+prefix2.replace(
+                                "/", "_")
+                            wandb_config = get_wandb_config(exp_type,fast_adv_attack_type, adv_attack_type, model_arch_type_str, dataset_str,batch_size,epochs,
+                                eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted,update_on,rand_init,norm,use_ytrue)
+                            wandb_config["optimizer"] = opt
+                            wandb_config["start_net_path"] = start_net_path
+                            wandb_config["torch_seed"] = torch_seed
+                            if(residue_vname is not None):
+                                wandb_config["residue_vname"] = residue_vname
+
+                            wandb.init(
+                                project=f"{wand_project_name}",
+                                name=f"{wandb_run_name}",
+                                group=f"{wandb_group_name}",
+                                config=wandb_config,
+                            )
+
+                        best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt)
+                        if(is_log_wandb):
+                            wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
+                            wandb.finish()
+
                     elif(exp_type == "PART_ADV_TRAINING"):
                         # GATE_NET_FREEZE , VAL_NET_FREEZE
                         transfer_mode = "VAL_NET_FREEZE"
@@ -532,7 +574,7 @@ if __name__ == '__main__':
                             )
 
                         best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,opt=opt)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()

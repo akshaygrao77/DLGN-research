@@ -62,18 +62,24 @@ class SF_DLGN_FC_Network(nn.Module):
         self.input_size_list = input_size_list
         self.initialize_network()
 
-    def initialize_network(self):
-        input_size = self.input_size_list[0]
-        for ind in range(1, len(self.input_size_list)):
-            input_size *= self.input_size_list[ind]
-
+    def init_gate_net(self):
         self.gating_network = SF_DLGN_FC_Gating_Network(
-            self.nodes_in_each_layer_list, input_size, seed=self.seed)
+            self.nodes_in_each_layer_list, self.input_size, seed=self.seed)
+    
+    def init_value_net(self):
+        self.value_network = ALLONES_FC_Value_Network(
+            self.nodes_in_each_layer_list, self.input_size, seed=self.seed, num_classes=self.num_classes)
+
+    def initialize_network(self):
+        self.input_size = self.input_size_list[0]
+        for ind in range(1, len(self.input_size_list)):
+            self.input_size *= self.input_size_list[ind]
+        
+        self.init_gate_net()        
         print("self.gating_network", self.gating_network)
         print("Gating net params:", sum(p.numel()
               for p in self.gating_network.parameters()))
-        self.value_network = ALLONES_FC_Value_Network(
-            self.nodes_in_each_layer_list, input_size, seed=self.seed, num_classes=self.num_classes)
+        self.init_value_net()
         print("self.value_network", self.value_network)
         print("Value net params:", sum(p.numel()
               for p in self.value_network.parameters()))
