@@ -207,6 +207,15 @@ def get_residue_adv_per_batch(net,org_inputs,kwargs):
             elif(residue_vname == 'max_eps'):
                 tmp=max(torch.max(eps_pos).item(),torch.max(eps_neg).item())
                 cur_step_size = (eps_step_size*2*eps)/tmp
+            elif(residue_vname == 'second_max_eps'):
+                tmp=torch.Tensor([max(torch.max(eps_pos).item(),torch.max(eps_neg).item())])
+                tmp = tmp.to(eps_pos.device)
+                z=torch.Tensor([0])
+                z= z.to(eps_pos.device)
+                tmppos = torch.where(eps_pos==tmp,z,eps_pos)
+                tmpneg = torch.where(eps_neg==tmp,z,eps_neg)
+                tmp=max(torch.max(tmppos).item(),torch.max(tmpneg).item())
+                cur_step_size = (eps_step_size*2*eps)/tmp
             elif(residue_vname == 'min_eps'):
                 cur_step_size = eps_step_size/1e-10+(min(torch.min(eps_pos).item(),torch.min(eps_neg).item()))
             inputs[I] = (inputs + cur_step_size * (relsgngrad*eps_pos+(1-relsgngrad)*eps_neg) * sgngrad)[I]

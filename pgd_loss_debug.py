@@ -21,11 +21,11 @@ from utils.generic_utils import Y_True_Loss
 
 from attacks import cleverhans_projected_gradient_descent,cleverhans_fast_gradient_method,get_locuslab_adv_per_batch,get_residue_adv_per_batch
 
-def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_folder,residue_vname,target_indx=16):
+def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_folder,residue_vname,fast_adv_attack_type,target_indx=16):
     relu=torch.nn.ReLU()
     model.eval()
     loss_fn = nn.CrossEntropyLoss()
-    tr_loss_fn = Y_True_Loss()
+    # tr_loss_fn = Y_True_Loss()
     eps = 0.3
     eps_step_size = 0.01
     # eps_step_size = 0.3
@@ -37,7 +37,7 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
 
     cur_row = []
 
-    kargs = {"criterion":tr_loss_fn,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':False,'norm':np.inf,'residue_vname':residue_vname,"num_of_restrts":number_of_restarts}
+    kargs = {"criterion":loss_fn,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':False,'norm':np.inf,'residue_vname':residue_vname,"num_of_restrts":number_of_restarts}
     lr_sched_rates = [(40,0.005),(100,0.0025)]
     kargs["labels"] = y
     init_loss = loss_fn(model(X),y).item()
@@ -58,7 +58,10 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
         kargs['residue_vname'] = residue_vname
         # kargs['lr_sched'] = lr_sched_rates
         torch.manual_seed(torch_seed)
-        adv_x = cleverhans_projected_gradient_descent(model,X,kargs)
+        if fast_adv_attack_type == 'PGD':
+            adv_x = cleverhans_projected_gradient_descent(model,X,kargs)
+        elif fast_adv_attack_type == 'residual_PGD':
+            adv_x = get_residue_adv_per_batch(model,X,kargs)
         adv_x = adv_x.clone().detach().to(torch.float).requires_grad_(True)
         pgd_at_end_loss = loss_fn(model(adv_x),y)
         pgd_at_end_loss.backward()
@@ -118,7 +121,7 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
     return cur_row
            
 
-def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,residue_vname):
+def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,residue_vname,fast_adv_attack_type):
     rows = []
     header = ['init_loss']
     for ii in sorted_list_steps:
@@ -134,7 +137,7 @@ def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,resid
         X, y = X.cuda(), y.cuda()
         
         # if(batch_idx == 16):
-        cur_row = generate_table_row(model,X,y,sorted_list_steps,200+batch_idx,batch_idx,alpha_folder,residue_vname)
+        cur_row = generate_table_row(model,X,y,sorted_list_steps,200+batch_idx,batch_idx,alpha_folder,residue_vname,fast_adv_attack_type)
         rows.append(cur_row)
         
         if(batch_idx > num_batches):
@@ -145,9 +148,11 @@ def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,resid
 
 
 if __name__ == '__main__':
+    fast_adv_attack_type = "residual_PGD"
     # L2_norm_grad_unitnorm , L2_norm_grad_scale , PGD_unit_norm , plain_grad_without_sign
-    residue_vname = None
-    number_of_restarts = 40
+    # eta_growth , max_eps
+    residue_vname = "second_max_eps"
+    number_of_restarts = 1
     num_batches = 250
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -164,12 +169,12 @@ if __name__ == '__main__':
     net = net.to(device)
 
     # edge_random_start , Y_True_Loss
-    alpha_folder = "{}/alpha_debug/Y_True_Loss/residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
+    alpha_folder = "{}/alpha_debug//residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
     if not os.path.exists(alpha_folder):
         os.makedirs(alpha_folder)
 
     sorted_list_steps = [i for i in range(0,120,5)]
-    loss_table = generate_table(net,trainloader,sorted_list_steps,num_batches,alpha_folder,residue_vname)
+    loss_table = generate_table(net,trainloader,sorted_list_steps,num_batches,alpha_folder,residue_vname,fast_adv_attack_type)
     
     with open("{}/res_{}_nb_{}.csv".format(alpha_folder,residue_vname,num_batches), 'w', newline='') as f:
         writer = csv.writer(f)

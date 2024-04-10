@@ -64,7 +64,7 @@ def generate_preacts_all_examples(dataset,model_arch_type,mpath,trainloader,fc_w
 def train_and_save_svms(y_true_sf_gates,save_folder):
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
-    with open(save_folder+"/all_svm_models.pckl", "wb") as f:
+    with open(save_folder+"/all_svm_models_C_0.0001.pckl", "wb") as f:
         with trange(y_true_sf_gates.shape[0], unit="Indx", desc="Running SVM for gate:") as pbar:
             for i in pbar:
                 c1_count = np.sum(y_true_sf_gates[i])
@@ -72,7 +72,7 @@ def train_and_save_svms(y_true_sf_gates,save_folder):
                     y_true_sf_gates[i][0] = 0
                 elif(c1_count == 0):
                     y_true_sf_gates[i][0] = 1
-                clf = svm.SVC(kernel='linear')
+                clf = svm.LinearSVC(C=0.0001,dual=False,random_state=0)
                 clf.fit(filtered_X_train, y_true_sf_gates[i])
                 pickle.dump(clf, f)
 
@@ -88,7 +88,8 @@ if __name__ == '__main__':
             filtered_X_train, filtered_y_train, data_config.batch_size, transforms=data_config.train_transforms)
     filtered_X_train = np.reshape(filtered_X_train,(60000,784))
 
-    model_path = "root/model/save/mnist/adversarial_training/MT_fc_sf_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    # model_path = "root/model/save/mnist/adversarial_training/MT_fc_sf_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_sf_dlgn_W_128_D_4_dir.pt"
 
     save_folder = get_margin_folder(model_path)
 
