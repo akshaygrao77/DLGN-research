@@ -264,6 +264,23 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
                             wregloss += torch.norm(current_layer.weight,p=2)
                 print("Loss:{} gate_weight_l2_reg*wregloss:{}".format(loss,gate_weight_l2_reg * wregloss))
                 loss += gate_weight_l2_reg * wregloss
+            
+            if(svm_c_hp != 0):
+                wregloss = 0
+                hingeloss = 0
+                for layer_name, layer_obj in net.get_gate_layers_ordered_dict().items():
+                    list_to_loop = list(enumerate(layer_obj.children()))
+                    if(len(list_to_loop) == 0):
+                        list_to_loop = [(0, layer_obj)]
+                    for (i, current_layer) in list_to_loop:
+                        assert not isinstance(current_layer, torch.nn.Conv2d), 'Conv2d not supported'
+                        if(isinstance(current_layer, torch.nn.Linear)):
+                            wregloss += torch.norm(current_layer.weight,p=2)
+                            cinputs = torch.flatten(inputs,1)
+                            tmpo = torch.matmul(current_layer.weight,cinputs.T)
+                            hingeloss += torch.mean(torch.clamp(1-torch.sign(tmpo)*tmpo,min=0))
+                print("Loss:{} wregloss:{} hingeloss:{}".format(loss,wregloss,hingeloss))
+                loss += wregloss + svm_c_hp*hingeloss
 
             if(npk_reg != 0):
                 beta=4
@@ -414,7 +431,7 @@ if __name__ == '__main__':
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
     # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn
-    model_arch_type = 'fc_dlgn'
+    model_arch_type = 'fc_sf_dlgn'
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
@@ -426,7 +443,7 @@ if __name__ == '__main__':
     wand_project_name = None
     # wand_project_name = "APR_experiments"
     # wand_project_name = "NPK_reg"
-    wand_project_name = "Gate_weight_reg"
+    wand_project_name = "SVM_loss_training"
     # wand_project_name = "frequency_augmentation_experiments"
     # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "model_band_frequency_experiments"
@@ -443,6 +460,9 @@ if __name__ == '__main__':
 
     gate_weight_l2_reg = 0
     # gate_weight_l2_reg = 10
+
+    svm_c_hp = 0
+    # svm_c_hp = 0.000001
 
     gatesat_reg=0
     # gatesat_reg=0.001
@@ -596,6 +616,8 @@ if __name__ == '__main__':
         model_arch_type_str = model_arch_type_str + "_GSATREG_"+str(gatesat_reg)
     if(gate_weight_l2_reg  != 0):
         model_arch_type_str = model_arch_type_str + "_GWEIGHT_L2_"+str(gate_weight_l2_reg)
+    if(svm_c_hp !=0 ):
+        model_arch_type_str = model_arch_type_str + "_LIN_SVM_C_HP_"+str(svm_c_hp)        
     epochs = 32
 
     final_model_save_path = get_model_save_path(model_arch_type_str, dataset, torch_seed, list_of_classes_to_train_on_str)
@@ -1003,6 +1025,8 @@ if __name__ == '__main__':
                 wandb_config["gatesat_reg"] = gatesat_reg
             if(gate_weight_l2_reg != 0):
                 wandb_config["gate_weight_l2_reg"] = gate_weight_l2_reg
+            if(svm_c_hp is not None):
+                wandb_config["svm_c_hp"] = svm_c_hp
             wandb_config["optimizer"] = optimizer
             wandb_config["criterion"] = criterion
             wandb_config["lr"] = lr
