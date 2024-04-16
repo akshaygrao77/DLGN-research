@@ -43,7 +43,7 @@ def get_wandb_config(exp_type,fast_adv_attack_type, adv_attack_type, model_arch_
 
     return wandb_config
 
-def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0,residue_vname='std',opt=None):
+def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0,residue_vname='std',opt=None,eta_growth_reduced_rate=1):
     targeted = adv_target is not None
     print("Model will be saved at", model_save_path)
     save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
@@ -111,6 +111,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             elif fast_adv_attack_type == 'PGD':
                 inputs = cleverhans_projected_gradient_descent(model,X,kargs)
             elif fast_adv_attack_type == 'residual_PGD':
+                kargs["eta_growth_reduced_rate"] = eta_growth_reduced_rate
                 inputs = get_residue_adv_per_batch(model,X,kargs)
             elif fast_adv_attack_type == 'FEATURE_FLIP':
                 inputs = get_gateflip_adv_per_batch(model,X,kargs)
@@ -227,7 +228,7 @@ if __name__ == '__main__':
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
     # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
-    model_arch_type = 'fc_sf_dlgn'
+    model_arch_type = 'fc_dnn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -258,10 +259,12 @@ if __name__ == '__main__':
     rand_init=True
     norm=np.inf
     use_ytrue=True
+    # Applied only for "eta_growth" version
+    eta_growth_reduced_rate = 1
 
-    # eta_growth , max_eps , std , eq , reach_edge_at_end , add_rand_at__X__X , None , cyclic_lr(this is not actually on inner maximization but on outer minimization)
+    # eta_growth , max_eps , std , eq , reach_edge_at_end , add_rand_at__X__X ,max_dwnscld_eta_growth, None , cyclic_lr(this is not actually on inner maximization but on outer minimization)
     # L2_norm_grad_scale , L1_norm_grad_scale
-    residue_vname = None
+    residue_vname = "max_dwnscld_eta_growth"
     # residue_vname = 'all_tanh_gate_flip'
 
     # If False, then segregation is over model prediction
@@ -399,7 +402,7 @@ if __name__ == '__main__':
             model_arch_type_str = model_arch_type_str + "_NPKREG_"+str(npk_reg)
         start_net_path = None
 
-        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_sf_dlgn_W_128_D_4_dir/MARGIN_ANALYSIS/svm_gated_C_0.0000001_sf_dlgn.pt"
+        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_sf_dlgn_W_128_D_4_dir/MARGIN_ANALYSIS/svm_gated_C_0.01_sf_dlgn.pt"
         if(start_net_path is not None):
             custom_temp_model = torch.load(start_net_path)
             net.load_state_dict(custom_temp_model.state_dict())
@@ -409,7 +412,7 @@ if __name__ == '__main__':
         net = net.to(device)
 
         # eps_list = [0.03, 0.06, 0.1]
-        fast_adv_attack_type_list = ["PGD"]
+        fast_adv_attack_type_list = ["residual_PGD"]
         # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD' , 'FEATURE_FLIP']
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
@@ -442,6 +445,8 @@ if __name__ == '__main__':
                     tttmp=""
                     if(residue_vname is not None):
                         tttmp = "/residue_vname_"+str(residue_vname)
+                    if(residue_vname == "eta_growth" and eta_growth_reduced_rate != 1):
+                        tttmp += "/eta_growth_reduced_rate_"+str(eta_growth_reduced_rate)
                     prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/update_on_{}/R_init_{}/norm_{}/use_ytrue_{}/{}/".format(
                         fast_adv_attack_type, adv_attack_type, eps, batch_size, eps_step_size, number_of_adversarial_optimization_steps,update_on,rand_init,norm,use_ytrue,tttmp)
                     wandb_group_name = "DS_"+str(dataset_str) + "_EXP_"+str(exp_type) +\
@@ -466,6 +471,8 @@ if __name__ == '__main__':
                             wandb_config["torch_seed"] = torch_seed
                             if(residue_vname is not None):
                                 wandb_config["residue_vname"] = residue_vname
+                            if(residue_vname == "eta_growth"):
+                                wandb_config["eta_growth_reduced_rate"] = eta_growth_reduced_rate
                             if(npk_reg != 0):
                                 wandb_config["npk_reg"]=npk_reg
                             if(pca_exp_percent is not None):
@@ -480,7 +487,7 @@ if __name__ == '__main__':
                             )
                         # wandb.watch(net, log='all')
                         best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt,eta_growth_reduced_rate=eta_growth_reduced_rate)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()

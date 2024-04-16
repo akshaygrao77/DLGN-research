@@ -134,13 +134,15 @@ def get_no_backprop_grad(net,inputs,criterion,labels):
 def get_residue_adv_per_batch(net,org_inputs,kwargs):
     kwargs.setdefault('rand_init',True)
     kwargs.setdefault('norm',np.inf)
+    kwargs.setdefault('eta_growth_reduced_rate',1)
     kwargs.setdefault('backpropmode','normal')
-    norm,criterion,eps,eps_step_size,steps,labels,update_on,backpropmode,residue_vname,rand_init = kwargs['norm'],kwargs['criterion'],kwargs['eps'],kwargs['eps_step_size'],kwargs['steps'],kwargs['labels'],kwargs['update_on'],kwargs['backpropmode'],kwargs['residue_vname'],kwargs["rand_init"]
+    norm,criterion,eps,eps_step_size,steps,labels,update_on,backpropmode,residue_vname,rand_init,eta_red_rate = kwargs['norm'],kwargs['criterion'],kwargs['eps'],kwargs['eps_step_size'],kwargs['steps'],kwargs['labels'],kwargs['update_on'],kwargs['backpropmode'],kwargs['residue_vname'],kwargs["rand_init"],kwargs["eta_growth_reduced_rate"]
 
     relu=nn.ReLU()
     if(residue_vname == 'std'):
         eps_step_size = eps_step_size/eps
 
+    org_inputs = torch.flatten(org_inputs,1)
     if(labels is None):
         with torch.no_grad():
           labels = net(org_inputs)
@@ -165,7 +167,7 @@ def get_residue_adv_per_batch(net,org_inputs,kwargs):
     
     cur_step_size = eps_step_size
     if(residue_vname == 'eta_growth'):
-        cur_step_size = 1
+        cur_step_size = eta_red_rate
     for cs in range(steps):
         inputs = inputs.clone().detach().to(torch.float).requires_grad_(True)
         if(residue_vname == 'eta_growth'):
@@ -205,21 +207,28 @@ def get_residue_adv_per_batch(net,org_inputs,kwargs):
             if(residue_vname == 'eq'):
                 cur_step_size = 1.0/(steps-cs)
             elif(residue_vname == 'max_eps'):
-                tmp=max(torch.max(eps_pos).item(),torch.max(eps_neg).item())
-                cur_step_size = (eps_step_size*2*eps)/tmp
+                tmp = torch.unsqueeze(torch.max(torch.max(eps_pos,dim=1)[0],torch.max(eps_neg,dim=1)[0]),-1)
+                cur_step_size = (eps_step_size*2*eps) / (tmp + 1e-10)
+
             elif(residue_vname == 'second_max_eps'):
-                tmp=torch.Tensor([max(torch.max(eps_pos).item(),torch.max(eps_neg).item())])
+                tmp = torch.unsqueeze(torch.max(torch.max(eps_pos,dim=1)[0],torch.max(eps_neg,dim=1)[0]),-1)
                 tmp = tmp.to(eps_pos.device)
                 z=torch.Tensor([0])
                 z= z.to(eps_pos.device)
                 tmppos = torch.where(eps_pos==tmp,z,eps_pos)
                 tmpneg = torch.where(eps_neg==tmp,z,eps_neg)
-                tmp=max(torch.max(tmppos).item(),torch.max(tmpneg).item())
-                cur_step_size = (eps_step_size*2*eps)/tmp
+                tmp = torch.unsqueeze(torch.max(torch.max(tmppos,dim=1)[0],torch.max(tmpneg,dim=1)[0]),-1)
+                cur_step_size = (eps_step_size*2*eps) / (tmp + 1e-10)
             elif(residue_vname == 'min_eps'):
                 cur_step_size = eps_step_size/1e-10+(min(torch.min(eps_pos).item(),torch.min(eps_neg).item()))
-            inputs[I] = (inputs + cur_step_size * (relsgngrad*eps_pos+(1-relsgngrad)*eps_neg) * sgngrad)[I]
-            if(residue_vname == 'eta_growth'):
+            
+            delta_t = (relsgngrad*eps_pos+(1-relsgngrad)*eps_neg) * sgngrad
+            
+            if(residue_vname == 'max_dwnscld_eta_growth'):
+                cur_step_size = eps_step_size / (torch.unsqueeze(torch.max(delta_t,dim=1)[0],-1) + 1e-10)
+                
+            inputs[I] = (inputs + cur_step_size * delta_t)[I]
+            if('eta_growth' in residue_vname):
                 inputs = torch.clamp(inputs, org_inputs-eps, org_inputs+eps)
             assert ((inputs - (org_inputs-eps) > -1e-5).all() and (org_inputs+eps -inputs > -1e-5).all()), 'cur_step_size:{}cs:{} {},{}::{},{} eps_pos max:{} min:{} eps_neg max:{} min:{}'.format(cur_step_size,cs,torch.max(inputs - (org_inputs-eps)),torch.min(inputs - (org_inputs-eps)),torch.max(org_inputs+eps -inputs),torch.min(org_inputs+eps -inputs),torch.max(eps_pos),torch.min(eps_pos),torch.max(eps_neg),torch.min(eps_neg))
             # inputs = torch.clamp(inputs, org_inputs-eps, org_inputs+eps)
