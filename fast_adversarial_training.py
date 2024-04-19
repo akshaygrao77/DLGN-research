@@ -89,6 +89,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
     while(epoch < epochs and (start_net_path is None or (stop_at_adv_test_acc is None or best_test_acc < stop_at_adv_test_acc))):
         correct = 0
         total = 0
+        overall_eps_norm_mean = 0
 
         running_loss = 0.0
         running_before_adv_loss = 0.0
@@ -116,6 +117,8 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             elif fast_adv_attack_type == 'FEATURE_FLIP':
                 inputs = get_gateflip_adv_per_batch(model,X,kargs)
             
+            cur_eps_norm_left = torch.sum(torch.norm(torch.where(inputs > X,(torch.clamp(X + eps,clip_min,clip_max) - inputs),(inputs - torch.clamp(X - eps,clip_min,clip_max))),p=1,dim=[1,2]))
+            overall_eps_norm_mean += cur_eps_norm_left
             output = model(inputs)
             if(len(output.size())==1):
                 predicted = output.data.round()
@@ -166,11 +169,12 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             loader.set_postfix(train_loss=running_loss/(batch_idx+1),before_adv_loss=running_before_adv_loss/(batch_idx+1),
                                train_acc=100.*correct/total, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
 
-        live_train_acc = 100. * correct/total
+        live_train_acc = 100. * correct / total
+        overall_eps_norm_mean = overall_eps_norm_mean / total
         org_test_acc,_ = evaluate_model(net, test_loader)
         test_acc = adv_evaluate_model(net, test_loader, classes, eps, adv_attack_type)
         if(is_log_wandb):
-            wandb.log({"live_train_acc": live_train_acc,"tr_loss":running_loss/(batch_idx+1),'before_adv_tr_loss':running_before_adv_loss/(batch_idx+1),
+            wandb.log({"live_train_acc": live_train_acc,"overall_eps_norm_mean":overall_eps_norm_mean,"tr_loss":running_loss/(batch_idx+1),'before_adv_tr_loss':running_before_adv_loss/(batch_idx+1),
                       "current_epoch": epoch, "test_acc": test_acc,"org_test_acc":org_test_acc})
         if(epoch % 5 == 0):
             per_epoch_save_model_path = model_save_path.replace(
@@ -263,8 +267,8 @@ if __name__ == '__main__':
     eta_growth_reduced_rate = 1
 
     # eta_growth , max_eps , std , eq , reach_edge_at_end , add_rand_at__X__X ,max_dwnscld_eta_growth, None , cyclic_lr(this is not actually on inner maximization but on outer minimization)
-    # L2_norm_grad_scale , L1_norm_grad_scale
-    residue_vname = "max_dwnscld_eta_growth"
+    # L2_norm_grad_scale , L1_norm_grad_scale , feature_norm , feature_norm_sign_preserve
+    residue_vname = "feature_norm_sign_preserve"
     # residue_vname = 'all_tanh_gate_flip'
 
     # If False, then segregation is over model prediction
@@ -290,7 +294,7 @@ if __name__ == '__main__':
 
     is_log_wandb = not(wand_project_name is None)
     if(is_log_wandb):
-        wandb.login()
+        wandb.login(key=os.environ["WANDB_API_KEY"])
 
     # batch_size_list = [256, 128, 64]
     batch_size_list = [64]
@@ -412,7 +416,7 @@ if __name__ == '__main__':
         net = net.to(device)
 
         # eps_list = [0.03, 0.06, 0.1]
-        fast_adv_attack_type_list = ["residual_PGD"]
+        fast_adv_attack_type_list = ["PGD"]
         # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD' , 'FEATURE_FLIP']
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]

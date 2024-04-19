@@ -141,7 +141,7 @@ def get_residue_adv_per_batch(net,org_inputs,kwargs):
     relu=nn.ReLU()
     if(residue_vname == 'std'):
         eps_step_size = eps_step_size/eps
-
+    org_size = org_inputs.size()
     org_inputs = torch.flatten(org_inputs,1)
     if(labels is None):
         with torch.no_grad():
@@ -222,7 +222,8 @@ def get_residue_adv_per_batch(net,org_inputs,kwargs):
             elif(residue_vname == 'min_eps'):
                 cur_step_size = eps_step_size/1e-10+(min(torch.min(eps_pos).item(),torch.min(eps_neg).item()))
             
-            delta_t = (relsgngrad*eps_pos+(1-relsgngrad)*eps_neg) * sgngrad
+            cur_lr = (relsgngrad*eps_pos+(1-relsgngrad)*eps_neg)
+            delta_t = cur_lr * sgngrad
             
             if(residue_vname == 'max_dwnscld_eta_growth'):
                 cur_step_size = eps_step_size / (torch.unsqueeze(torch.max(delta_t,dim=1)[0],-1) + 1e-10)
@@ -234,6 +235,7 @@ def get_residue_adv_per_batch(net,org_inputs,kwargs):
             # inputs = torch.clamp(inputs, org_inputs-eps, org_inputs+eps)
             inputs = torch.clamp(inputs,0.0,1.0)
 
+    inputs = torch.reshape(inputs,org_size)
     return inputs
 
 def get_feature_maps(model):
@@ -509,6 +511,14 @@ def cleverhans_fast_gradient_method(
         cgrad = (x.grad / (torch.norm(x.grad,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2)+10e-8)) * math.sqrt(x[0].numel())
     elif(residue_vname is not None and "L2_norm_grad_unitnorm" == residue_vname):
         cgrad = (x.grad / (torch.norm(x.grad,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2)+10e-8))
+    elif(residue_vname is not None and "feature_norm" == residue_vname):
+        cur_grad_mean = torch.mean(x.grad,dim=[1,2])
+        cur_grad_std = torch.std(x.grad,dim=[1,2])
+        cgrad = ((x.grad - cur_grad_mean.unsqueeze(1).unsqueeze(2)) / (cur_grad_std.unsqueeze(1).unsqueeze(2) + 1e-5))
+    elif(residue_vname is not None and "feature_norm_sign_preserve" == residue_vname):
+        cur_grad_mean = torch.mean(x.grad,dim=[1,2])
+        cur_grad_std = torch.std(x.grad,dim=[1,2])
+        cgrad = torch.sign(x.grad) * torch.abs(((x.grad - cur_grad_mean.unsqueeze(1).unsqueeze(2)) / (cur_grad_std.unsqueeze(1).unsqueeze(2) + 1e-5)))
     elif(residue_vname is not None and "PGD_unit_norm" == residue_vname):
         tmp = torch.sign(x.grad)
         cgrad = tmp / (torch.norm(tmp,p=2,dim=[1,2]).unsqueeze(1).unsqueeze(2) + 10e-8)
