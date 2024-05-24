@@ -10,6 +10,7 @@ import os
 import wandb
 import torch.backends.cudnn as cudnn
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  
 import csv
 from collections import OrderedDict
 
@@ -32,7 +33,7 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
     # eps_step_size = 0.3
     number_of_adversarial_optimization_steps = sorted_list_steps[0]
     update_on = 'all'
-    rand_init = True
+    rand_init = False
     clip_min = 0.0
     clip_max = 1.0
     eta_growth_reduced_rate = 1
@@ -129,7 +130,128 @@ def generate_table_row(model,X,y,sorted_list_steps,torch_seed,batch_idx,alpha_fo
     cur_row.extend(pos_grads)
     cur_row.extend(eps_norms)
     return cur_row
-           
+
+def calculate_loss(X_s,Y_s,cgrad_matched,cgrad_non_matched,X,y,adv_x2):
+    print("X_s:{} Y_s:{}".format(X_s.shape,Y_s.shape))
+    tmp_cgrad = torch.from_numpy(np.reshape(X_s * cgrad_matched + Y_s*cgrad_non_matched,shape=adv_x2.shape))
+    tmp_X = torch.clamp(adv_x2 + tmp_cgrad,X-eps,X+eps)
+    return loss_fn(model(tmp_X),y).item()
+
+def generate_loss_surface(model,loader,step_to_plot,alpha_folder,residue_vname,fast_adv_attack_type,target_indx=16):
+    model.eval()
+    loss_fn = nn.CrossEntropyLoss()
+    # tr_loss_fn = Y_True_Loss()
+    eps = 0.3
+    eps_step_size = 0.01
+    # eps_step_size = 0.3
+    number_of_adversarial_optimization_steps = step_to_plot + 1
+    update_on = 'all'
+    rand_init = False
+    clip_min = 0.0
+    clip_max = 1.0
+    eta_growth_reduced_rate = 1
+    kargs = {"criterion":loss_fn,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':False,'norm':np.inf,'residue_vname':residue_vname,"num_of_restrts":1}
+
+    alphas = np.arange(-1.0, 1.0, 0.001)
+    for batch_idx, data in enumerate(loader, 0):
+        if(batch_idx == target_indx):
+            save_folder_1D = "{}/target_indx_{}/step_to_plot_{}/non_matching_ind/".format(alpha_folder,str(batch_idx),step_to_plot)
+            if not os.path.exists(save_folder_1D):
+                os.makedirs(save_folder_1D)
+            
+            save_folder_2D = "{}/target_indx_{}/step_to_plot_{}/match_vs_non_match/".format(alpha_folder,str(batch_idx),step_to_plot)
+            if not os.path.exists(save_folder_2D):
+                os.makedirs(save_folder_2D)
+            (X, y) = data
+            X, y = X.cuda(), y.cuda()
+            kargs["labels"] = y
+
+            torch.manual_seed(torch_seed)
+            kargs['residue_vname'] = residue_vname
+            if fast_adv_attack_type == 'PGD':
+                adv_x1 = cleverhans_projected_gradient_descent(model,X,kargs)
+            elif fast_adv_attack_type == 'residual_PGD':
+                kargs["eta_growth_reduced_rate"] = eta_growth_reduced_rate
+                adv_x1 = get_residue_adv_per_batch(model,X,kargs)
+            adv_x1 = adv_x1.clone().detach().to(torch.float).requires_grad_(True)
+            loss1 = loss_fn(model(adv_x1),y)
+            loss1.backward()
+            next_step_grad = adv_x1.grad
+            sign_next_grad = torch.flatten(torch.sign(next_step_grad))
+
+            torch.manual_seed(torch_seed)
+            kargs['steps'] = step_to_plot
+            kargs['residue_vname'] = residue_vname
+            if fast_adv_attack_type == 'PGD':
+                adv_x2 = cleverhans_projected_gradient_descent(model,X,kargs)
+            elif fast_adv_attack_type == 'residual_PGD':
+                kargs["eta_growth_reduced_rate"] = eta_growth_reduced_rate
+                adv_x2 = get_residue_adv_per_batch(model,X,kargs)
+            adv_x2 = adv_x2.clone().detach().to(torch.float).requires_grad_(True)
+            loss2 = loss_fn(model(adv_x2),y)
+            loss2.backward()
+            cur_step_grad = adv_x2.grad
+            sign_cur_grad = torch.flatten(torch.sign(cur_step_grad))
+
+            matching_indices = (sign_next_grad == sign_cur_grad).nonzero()
+            non_match_indices = (sign_next_grad != sign_cur_grad).nonzero()
+
+            cgrad = torch.zeros((784),device=adv_x2.device)
+            print("non_match_indices:{} matching_indices:{}".format(non_match_indices.size(),matching_indices.size()))
+
+            for each_no_match_index in non_match_indices:
+                cur_debug_losses = []
+                with torch.no_grad():
+                    cgrad[each_no_match_index] = 1
+                    for alpha in alphas:
+                        tmp_cgrad = torch.reshape(alpha * cgrad,shape=adv_x2.shape)
+                        tmp_X = torch.clamp(adv_x2 + tmp_cgrad,X-eps,X+eps)
+                        cur_debug_losses.append(loss_fn(model(tmp_X),y).item())
+                    cgrad[each_no_match_index] = 0
+                plt.plot(alphas, cur_debug_losses, label = str(step_to_plot))
+                plt.ylabel("Loss")
+                plt.xlabel("Non Matched index's change")
+                plt.legend()
+                plt.savefig("{}/no_match_ind_{}_stp_{}_{}_loss_surface.jpg".format(save_folder_1D,each_no_match_index.item(),str(step_to_plot),residue_vname))
+                plt.close()
+            
+            perm = torch.randperm(matching_indices.size(0))
+            idx = perm[:5]
+            sampled_matching_indices = matching_indices[idx]
+
+            perm = torch.randperm(non_match_indices.size(0))
+            idx = perm[:5]
+            sampled_non_match_indices = non_match_indices[idx]
+            
+            cgrad_non_matched = torch.zeros((784),device=adv_x2.device)
+            cgrad_matched = torch.zeros((784),device=adv_x2.device)
+            alphas = np.arange(-1.0, 1.0, 0.05)
+            with torch.no_grad():
+                for each_non_matched_ind in sampled_non_match_indices:
+                    cgrad_non_matched[each_non_matched_ind] = 1
+                    for each_matched_ind in sampled_matching_indices:
+                        cgrad_matched[each_matched_ind] = 1
+                        X_axis, Y_axis = np.meshgrid(alphas, alphas)
+                        Z_axis = np.zeros_like(X_axis)
+                        fig = plt.figure()
+                        ax = fig.add_subplot(111, projection='3d')
+                        for i in range(len(alphas)):
+                            for j in range(len(alphas)):
+                                tmp_cgrad = torch.reshape(X_axis[i][j] * cgrad_matched + Y_axis[i][j] * cgrad_non_matched,shape=adv_x2.shape)
+                                tmp_X = torch.clamp(adv_x2 + tmp_cgrad,X-eps,X+eps)
+                                Z_axis[i][j] = loss_fn(model(tmp_X),y).item()
+
+                        ax.plot_surface(X_axis, Y_axis, Z_axis)
+                        ax.set_xlabel("Matched index's change")
+                        ax.set_ylabel("Non Matched index's change")
+                        ax.set_zlabel('Loss')
+                        plt.savefig("{}/nomatch_{}_match_{}_stp_{}_{}_loss_surface.jpg".format(save_folder_2D,each_non_matched_ind.item(),each_matched_ind.item(),str(step_to_plot),residue_vname))
+                        plt.close()
+
+                        cgrad_matched[each_matched_ind] = 0
+                    
+                    cgrad_non_matched[each_non_matched_ind] = 0
+
 
 def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,residue_vname,fast_adv_attack_type):
     rows = []
@@ -171,10 +293,10 @@ def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,resid
 
 if __name__ == '__main__':
     model_arch_type = "fc_dnn"
-    fast_adv_attack_type = "residual_PGD"
+    fast_adv_attack_type = "PGD"
     # L2_norm_grad_unitnorm , L2_norm_grad_scale , PGD_unit_norm , plain_grad_without_sign
     # eta_growth , max_eps
-    residue_vname = "eta_growth"
+    residue_vname = None
     number_of_restarts = 1
     num_batches = 25
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -243,8 +365,8 @@ if __name__ == '__main__':
     trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 data_config, "fc_dnn", verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
     
-    model_path = "root/model/save/mnist/adversarial_training/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir_epoch_20.pt"
-    # model_path = "root/model/save/mnist/adversarial_training/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_residual_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/residue_vname_eta_growth/adv_model_dir_epoch_20.pt"
+    # model_path = "root/model/save/mnist/adversarial_training/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_residual_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_18/update_on_all/R_init_True/norm_inf/use_ytrue_True/residue_vname_eta_growth/adv_model_dir_epoch_0.pt"
+    model_path = "root/model/save/mnist/adversarial_training/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir_epoch_5.pt"
     
     # model_arch_type_str = model_arch_type
     # fc_width = 128
@@ -259,15 +381,19 @@ if __name__ == '__main__':
     net = net.to(device)
 
     # edge_random_start , Y_True_Loss , EPS_0.27
-    alpha_folder = "{}/alpha_debug/red_rate0.1/residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
+    # alpha_folder = "{}/alpha_debug/rand_False/residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
+    alpha_folder = "{}/loss_surface_debug/residue_{}/".format(model_path.replace(".pt","/"),residue_vname)
     if not os.path.exists(alpha_folder):
         os.makedirs(alpha_folder)
 
-    sorted_list_steps = [i for i in range(0,120,5)]
-    loss_table = generate_table(net,trainloader,sorted_list_steps,num_batches,alpha_folder,residue_vname,fast_adv_attack_type)
+    # sorted_list_steps = [i for i in range(0,80,5)]
+    # loss_table = generate_table(net,trainloader,sorted_list_steps,num_batches,alpha_folder,residue_vname,fast_adv_attack_type)
     
-    with open("{}/res_{}_nb_{}.csv".format(alpha_folder,residue_vname,num_batches), 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerows(loss_table)
+    # with open("{}/res_{}_nb_{}.csv".format(alpha_folder,residue_vname,num_batches), 'w', newline='') as f:
+    #     writer = csv.writer(f)
+    #     writer.writerows(loss_table)
+    
+    step_to_plot = 40
+    generate_loss_surface(net,trainloader,step_to_plot,alpha_folder,residue_vname,fast_adv_attack_type)
     
     print("Finished exec")
