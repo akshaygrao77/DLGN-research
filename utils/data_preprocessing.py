@@ -227,6 +227,22 @@ def preprocess_dataset_get_data_loader(dataset_config, model_arch_type, verbose=
             filtered_X_test, filtered_y_test, dataset_config.batch_size, transforms=dataset_config.test_transforms)
 
         return train_data_loader, valid_data_loader, test_data_loader
+    elif(dataset_config.name == 'xor'):
+        with np.load(dataset_config.custom_dataset_path, allow_pickle=True) as f:
+            X_train, y_train = f['X_train'], f['y_train']
+            X_test, y_test = f['X_test'], f['y_test']
+        filtered_X_train,filtered_y_train = np.float32(X_train),y_train
+        print("filtered_X_train:{} filtered_y_train:{}".format(filtered_X_train.dtype,filtered_y_train.dtype))
+        filtered_X_test,filtered_y_test = np.float32(X_test),y_test
+        train_data_loader = get_data_loader(
+            filtered_X_train, filtered_y_train, dataset_config.batch_size, transforms=dataset_config.train_transforms)
+        if(is_split_validation):
+            valid_data_loader = get_data_loader(
+                X_valid, y_valid, dataset_config.batch_size, transforms=dataset_config.test_transforms)
+        test_data_loader = get_data_loader(
+            filtered_X_test, filtered_y_test, dataset_config.batch_size, transforms=dataset_config.test_transforms)
+        
+        return train_data_loader, valid_data_loader, test_data_loader
     elif(dataset_config.name == 'imagenet_1000'):
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
@@ -327,9 +343,6 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
         elif(model_arch_type == 'cifar10_conv4_dlgn_with_inbuilt_norm'):
             transform_list = [
                 transforms.ToTensor()]
-        elif(model_arch_type == 'plain_pure_conv4_dnn'):
-            transform_list = [
-                transforms.ToTensor()]
         elif(model_arch_type == 'random_cifar10_conv4_dlgn_with_inbuilt_norm'):
             transform_list = [
                 transforms.ToTensor()]
@@ -374,10 +387,10 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
             #     transforms.Normalize((0.4914, 0.4822, 0.4465),
             #                          (0.2023, 0.1994, 0.2010)),
             # ])
-        elif(model_arch_type == 'conv4_dlgn' or model_arch_type == "conv4_deep_gated_net_n16_small" or model_arch_type == "conv4_dlgn_n16_small" or model_arch_type == "plain_pure_conv4_dnn_n16_small"):
-            transform_list = [
-                transforms.ToTensor(), transforms.Normalize([0.4914, 0.4822, 0.4465], [
-                    0.2023, 0.1994, 0.2010])]
+        # elif(model_arch_type == 'conv4_dlgn' or model_arch_type == "conv4_deep_gated_net_n16_small" or model_arch_type == "conv4_dlgn_n16_small" or model_arch_type == "plain_pure_conv4_dnn_n16_small"):
+        #     transform_list = [
+        #         transforms.ToTensor(), transforms.Normalize([0.4914, 0.4822, 0.4465], [
+        #             0.2023, 0.1994, 0.2010])]
 
         elif(model_arch_type == 'random_conv4_dlgn'):
             transform_list = [
@@ -422,15 +435,19 @@ def preprocess_dataset_get_dataset(dataset_config, model_arch_type, verbose=1, d
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.2023, 0.1994, 0.2010)),
             ]
-        elif(model_arch_type in ['dlgn__im_conv4_dlgn_pad_k_1_st1_bn_wo_bias__','dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__','dlgn__conv4_dlgn_pad0_st1_bn__','dlgn__st1_pad0_vgg16_bn__','dlgn__vgg16_bn__', 'dlgn__pad2_vgg16_bn__', 'dlgn__st1_pad2_vgg16_bn_wo_bias__', 'dlgn__st1_pad1_vgg16_bn_wo_bias__', 'dnn__cvgg16_bn__', 'dnn__st1_pad2_vgg16_bn_wo_bias__']):
+        elif(model_arch_type in ['conv4_sf_dlgn','fc_sf_dlgn','plain_pure_conv4_dnn_n16_small','conv4_dlgn_n16_small','conv4_deep_gated_net_n16_small','conv4_dlgn','plain_pure_conv4_dnn','dlgn__im_conv4_dlgn_pad_k_1_st1_bn_wo_bias__','dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__','dlgn__conv4_dlgn_pad0_st1_bn__','dlgn__st1_pad0_vgg16_bn__','dlgn__vgg16_bn__', 'dlgn__pad2_vgg16_bn__', 'dlgn__st1_pad2_vgg16_bn_wo_bias__', 'dlgn__st1_pad1_vgg16_bn_wo_bias__', 'dnn__cvgg16_bn__', 'dnn__st1_pad2_vgg16_bn_wo_bias__']):
             transform_list = [
                 transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]
+                # !!!IMP!!! The normalization has to be incorporated as part of the very first layer inside the model. Otherwise after standardization the values will be -ve and during adversarial example generation it will be a problem to decide where to clip
+                # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+                ]
             test_transform_list = [
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]
+                # !!!IMP!!! The normalization has to be incorporated as part of the very first layer inside the model. Otherwise after standardization the values will be -ve and during adversarial example generation it will be a problem to decide where to clip
+                # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+                ]
             # transform = transforms.Compose([
             #     transforms.ToTensor()])
 

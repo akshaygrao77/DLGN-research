@@ -51,9 +51,28 @@ class PCA_Layer(nn.Module):
 
         return inp
 
+class FC_Standardize(nn.Module):
+    def __init__(self, mu=None, std=None):
+        super(FC_Standardize, self).__init__()
+        if(mu is None):
+            mu = torch.tensor([0.4914, 0.4822, 0.4465])
+        if(std is None):
+            std = torch.tensor([0.2023, 0.1994, 0.2010])
+        mu = mu[None,:,None,None]
+        std = std[None,:,None,None]
+        self.mu, self.std = mu, std
+
+    def forward(self, x,idevice=None):
+        if(idevice is not None):
+            self.mu = self.mu.to(device=idevice)
+            self.std = self.std.to(device=idevice)
+        return (x - self.mu) / self.std
+
 class SF_DLGN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, beta=4, input_size_list=[28, 28], seed=2022, num_classes=10):
         super(SF_DLGN_FC_Network, self).__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.nodes_in_each_layer_list = nodes_in_each_layer_list
         self.seed = seed
@@ -65,6 +84,7 @@ class SF_DLGN_FC_Network(nn.Module):
     def init_gate_net(self):
         self.gating_network = SF_DLGN_FC_Gating_Network(
             self.nodes_in_each_layer_list, self.input_size, seed=self.seed)
+    
     
     def init_value_net(self):
         self.value_network = ALLONES_FC_Value_Network(
@@ -91,16 +111,22 @@ class SF_DLGN_FC_Network(nn.Module):
         self.initialize_network()
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = FC_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp, verbose=2):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        inp = torch.flatten(inp, 1)
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         inp_gating = torch.ones(inp.size(),
-                                requires_grad=True, device=device)
+                                requires_grad=True, device=self.device)
 
         linear_conv_outputs, _ = self.gating_network(inp, verbose=verbose)
         self.linear_conv_outputs = linear_conv_outputs
@@ -206,6 +232,8 @@ class SF_DLGN_FC_Gating_Network(nn.Module):
 class DLGN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, beta=4, input_size_list=[28, 28], seed=2022, num_classes=10):
         super(DLGN_FC_Network, self).__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.nodes_in_each_layer_list = nodes_in_each_layer_list
         self.seed = seed
@@ -237,16 +265,21 @@ class DLGN_FC_Network(nn.Module):
         self.initialize_network()
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = FC_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp, verbose=2):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         inp_gating = torch.ones(inp.size(),
-                                requires_grad=True, device=device)
+                                requires_grad=True, device=self.device)
 
         linear_conv_outputs, _ = self.gating_network(inp, verbose=verbose)
         self.linear_conv_outputs = linear_conv_outputs
@@ -393,6 +426,8 @@ class ALLONES_FC_Value_Network(nn.Module):
 class DGN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, beta=4, input_size_list=[28, 28], seed=2022, num_classes=10):
         super(DGN_FC_Network, self).__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.nodes_in_each_layer_list = nodes_in_each_layer_list
         self.seed = seed
@@ -424,16 +459,21 @@ class DGN_FC_Network(nn.Module):
         self.initialize_network()
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = FC_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp, verbose=2):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         inp_gating = torch.ones(inp.size(),
-                                requires_grad=True, device=device)
+                                requires_grad=True, device=self.device)
 
         linear_conv_outputs, _ = self.gating_network(inp, verbose=verbose)
         self.linear_conv_outputs = linear_conv_outputs
@@ -562,6 +602,8 @@ class GALU_DNN_FC_Network(nn.Module):
 class DNN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, input_size_list=[28, 28], seed=2022, num_classes=10):
         super(DNN_FC_Network, self).__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.nodes_in_each_layer_list = nodes_in_each_layer_list
         self.seed = seed
@@ -594,12 +636,18 @@ class DNN_FC_Network(nn.Module):
         self.initialize_network()
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = FC_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp, verbose=2):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
         prev_out = torch.flatten(inp, 1)
         num_layers = len(self.list_of_modules)
         layer_outs = []
@@ -625,6 +673,8 @@ class BC_DNN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, input_size_list=[28, 28], seed=2022):
         super(BC_DNN_FC_Network, self).__init__()
         torch.manual_seed(seed)
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         self.nodes_in_each_layer_list = nodes_in_each_layer_list
         self.seed = seed
         self.input_size_list = input_size_list
@@ -655,12 +705,18 @@ class BC_DNN_FC_Network(nn.Module):
         self.initialize_network()
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = FC_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp, verbose=2):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
         prev_out = torch.flatten(inp, 1)
         num_layers = len(self.list_of_modules)
         layer_outs = []
