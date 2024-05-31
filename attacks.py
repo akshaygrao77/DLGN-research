@@ -489,6 +489,9 @@ def cleverhans_fast_gradient_method(
     elif(isinstance(loss_fn,torch.nn.CrossEntropyLoss)):
         y_pred = model_fn(x)
         _, predicted = torch.max(y_pred.data, 1)
+    elif(isinstance(loss_fn,torch.nn.BCELoss)):
+        y_pred = model_fn(x)
+        predicted = y_pred.round()
     else:
         y_pred = model_fn(x)
         _, predicted = torch.max(y_pred.data, 1)

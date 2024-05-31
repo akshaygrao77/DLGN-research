@@ -355,8 +355,8 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
             torch.save(net, per_epoch_model_save_path)
         if(test_acc >= best_test_acc):
             best_test_acc = test_acc
+            torch.save(net, final_model_save_path)
 
-    torch.save(net, final_model_save_path)
     print('Finished Training: Best saved model test acc is:', best_test_acc)
     return best_test_acc, net
 
@@ -425,13 +425,13 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 
 if __name__ == '__main__':
-    # fashion_mnist , mnist , cifar10
-    dataset = 'mnist'
+    # fashion_mnist , mnist , cifar10 , xor
+    dataset = 'cifar10'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
     # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn
-    model_arch_type = 'fc_sf_dlgn'
+    model_arch_type = 'plain_pure_conv4_dnn'
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
@@ -443,7 +443,8 @@ if __name__ == '__main__':
     wand_project_name = None
     # wand_project_name = "APR_experiments"
     # wand_project_name = "NPK_reg"
-    wand_project_name = "SVM_loss_training"
+    # wand_project_name = "XOR_training"
+    wand_project_name = "Cifar10_flamarion_replicate"
     # wand_project_name = "frequency_augmentation_experiments"
     # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "model_band_frequency_experiments"
@@ -475,7 +476,7 @@ if __name__ == '__main__':
     is_normalize_data = True
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__ALL_FREQ_AUG.npy"
+    # custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_40p_0_1r.npy"
     
 
     if(scheme_type == "APR_exps"):
@@ -529,6 +530,18 @@ if __name__ == '__main__':
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+    
+    elif(dataset == "xor"):
+        inp_channel = 1
+        classes = ('Neg','Pos')
+        num_classes = len(classes)
+        
+        data_config = DatasetConfig(
+            'xor', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, 
+            train_transforms=train_transforms,custom_dataset_path=custom_dataset_path)
+
+        trainloader, _, testloader = preprocess_dataset_get_data_loader(
+            data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
     if(custom_dataset_path is not None):
         dataset = custom_dataset_path[custom_dataset_path.rfind("/")+1:custom_dataset_path.rfind(".npy")]
@@ -560,8 +573,8 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 128
-        fc_depth = 4
+        fc_width = 8
+        fc_depth = 1
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -585,6 +598,8 @@ if __name__ == '__main__':
             "_PCA_K"+str(number_of_components_for_pca) + \
             "_P_"+str(pca_exp_percent)
 
+    if("cifar10" in dataset):
+        net.initialize_standardization_layer()
     # list_of_weights, list_of_bias = get_gating_layer_weights(net)
 
     # list_of_weights = convert_list_tensor_to_numpy(list_of_weights)

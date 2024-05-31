@@ -43,7 +43,7 @@ def get_wandb_config(exp_type,fast_adv_attack_type, adv_attack_type, model_arch_
 
     return wandb_config
 
-def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0,residue_vname='std',opt=None,eta_growth_reduced_rate=1):
+def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0,residue_vname='std',opt=None,eta_growth_reduced_rate=1,number_of_restarts=1):
     targeted = adv_target is not None
     print("Model will be saved at", model_save_path)
     save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
@@ -81,7 +81,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
     if fast_adv_attack_type == 'FGSM':
         kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps,"steps":1,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm}
     elif fast_adv_attack_type == 'PGD':
-        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
+        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname,"num_of_restrts":number_of_restarts}
     elif fast_adv_attack_type == 'residual_PGD':
         kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
     elif fast_adv_attack_type == 'FEATURE_FLIP':
@@ -172,11 +172,11 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         live_train_acc = 100. * correct / total
         overall_eps_norm_mean = overall_eps_norm_mean / total
         org_test_acc,_ = evaluate_model(net, test_loader)
-        test_acc = adv_evaluate_model(net, test_loader, classes, eps, adv_attack_type)
+        test_acc = adv_evaluate_model(net, test_loader, classes, eps, adv_attack_type,lossfn=criterion)
         if(is_log_wandb):
             wandb.log({"live_train_acc": live_train_acc,"overall_eps_norm_mean":overall_eps_norm_mean,"tr_loss":running_loss/(batch_idx+1),'before_adv_tr_loss':running_before_adv_loss/(batch_idx+1),
                       "current_epoch": epoch, "test_acc": test_acc,"org_test_acc":org_test_acc})
-        if(epoch % 5 == 0):
+        if(epoch % 2 == 0):
             per_epoch_save_model_path = model_save_path.replace(
                 ".pt", '_epoch_{}.pt'.format(epoch))
             save_adv_image_prefix = per_epoch_save_model_path[0:per_epoch_save_model_path.rfind("/")+1]
@@ -195,7 +195,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         if(dataset is not None and dataset == "cifar10"):
             scheduler.step()
 
-    train_acc = adv_evaluate_model(net, train_loader, classes, eps, adv_attack_type,save_adv_image_prefix=save_adv_image_prefix)
+    train_acc = adv_evaluate_model(net, train_loader, classes, eps, adv_attack_type,save_adv_image_prefix=save_adv_image_prefix,lossfn=criterion)
     if(is_log_wandb):
         wandb.log({"train_acc": train_acc, "test_acc": test_acc})
 
@@ -225,14 +225,14 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
     return custom_model
 
 if __name__ == '__main__':
-    # fashion_mnist , mnist,cifar10
-    dataset = 'mnist'
+    # fashion_mnist , mnist,cifar10 , xor
+    dataset = 'cifar10'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
     # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
-    model_arch_type = 'fc_dnn'
+    model_arch_type = 'plain_pure_conv4_dnn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -243,7 +243,9 @@ if __name__ == '__main__':
     # wand_project_name = "NPK_reg"
     # wand_project_name = "Pruning-exps"
     # wand_project_name = "Part_training_for_robustness"
-    wand_project_name = "Residual_training"
+    # wand_project_name = "Residual_training"
+    # wand_project_name = "XOR_training"
+    wand_project_name = "Cifar10_flamarion_replicate"
     # wand_project_name = "madry's_benchmarking"
     # wand_project_name = "reach_end_plot"
     # wand_project_name = "SVM_Adv_training"
@@ -265,10 +267,11 @@ if __name__ == '__main__':
     use_ytrue=True
     # Applied only for "eta_growth" version
     eta_growth_reduced_rate = 1
+    number_of_restarts = 1
 
     # eta_growth , max_eps , std , eq , reach_edge_at_end , add_rand_at__X__X ,max_dwnscld_eta_growth, None , cyclic_lr(this is not actually on inner maximization but on outer minimization)
     # L2_norm_grad_scale , L1_norm_grad_scale , feature_norm , feature_norm_sign_preserve
-    residue_vname = "feature_norm_sign_preserve"
+    residue_vname = None
     # residue_vname = 'all_tanh_gate_flip'
 
     # If False, then segregation is over model prediction
@@ -301,14 +304,14 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [4, 9]
+    # list_of_classes_to_train_on = [3,8]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
     # pca_exp_percent = 0.85
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__LB_MB_HB.npy"
+    # custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_25p_50r.npy"
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -345,6 +348,17 @@ if __name__ == '__main__':
 
             trainloader, _, testloader = preprocess_dataset_get_data_loader(
                 fashion_mnist_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+        
+        elif(dataset == "xor"):
+            inp_channel = 1
+            classes = ('Neg','Pos')
+            num_classes = len(classes)
+            
+            data_config = DatasetConfig(
+                'xor', is_normalize_data=False, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on,custom_dataset_path=custom_dataset_path)
+
+            trainloader, _, testloader = preprocess_dataset_get_data_loader(
+                data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
 
         if(custom_dataset_path is not None):
             dataset = custom_dataset_path[custom_dataset_path.rfind("/")+1:custom_dataset_path.rfind(".npy")]
@@ -377,8 +391,8 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 128
-            fc_depth = 4
+            fc_width = 8
+            fc_depth = 1
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \
                 "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -416,7 +430,7 @@ if __name__ == '__main__':
         net = net.to(device)
 
         # eps_list = [0.03, 0.06, 0.1]
-        fast_adv_attack_type_list = ["PGD"]
+        fast_adv_attack_type_list = ["FGSM"]
         # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD' , 'FEATURE_FLIP']
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
@@ -428,6 +442,12 @@ if __name__ == '__main__':
             eps_list = [8/255]
             eps_step_size = 2/255
             epochs = 200
+            net.initialize_standardization_layer()
+        elif("xor" in dataset):
+            number_of_adversarial_optimization_steps_list = [5]
+            eps_list = [0.3]
+            eps_step_size = 0.01
+            epochs = 36
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         # number_of_adversarial_optimization_steps_list = [80]
 
@@ -473,6 +493,7 @@ if __name__ == '__main__':
                             wandb_config["optimizer"]=opt
                             wandb_config["start_net_path"] = start_net_path
                             wandb_config["torch_seed"] = torch_seed
+                            wandb_config["number_of_restarts"] = number_of_restarts
                             if(residue_vname is not None):
                                 wandb_config["residue_vname"] = residue_vname
                             if(residue_vname == "eta_growth"):
@@ -491,7 +512,7 @@ if __name__ == '__main__':
                             )
                         # wandb.watch(net, log='all')
                         best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt,eta_growth_reduced_rate=eta_growth_reduced_rate)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt,eta_growth_reduced_rate=eta_growth_reduced_rate,number_of_restarts=number_of_restarts)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()

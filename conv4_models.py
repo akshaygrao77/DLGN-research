@@ -3290,6 +3290,22 @@ class CONV_PCA_Layer(nn.Module):
 
         return inp
 
+class CONV_Standardize(nn.Module):
+    def __init__(self, mu=None, std=None):
+        super(CONV_Standardize, self).__init__()
+        if(mu is None):
+            mu = torch.tensor([0.4914, 0.4822, 0.4465])
+        if(std is None):
+            std = torch.tensor([0.2023, 0.1994, 0.2010])
+        mu = mu[None,:,None,None]
+        std = std[None,:,None,None]
+        self.mu, self.std = mu, std
+
+    def forward(self, x,idevice=None):
+        if(idevice is not None):
+            self.mu = self.mu.to(device=idevice)
+            self.std = self.std.to(device=idevice)
+        return (x - self.mu) / self.std
 
 class Mask_Conv4_DLGN_Net(nn.Module):
     def __init__(self, input_channel, random_inp_percent=40, beta=4, seed=2022, num_classes=10):
@@ -3604,6 +3620,8 @@ class MadryMNIST_CONV4_Net(nn.Module):
 class Plain_CONV4_Net(nn.Module):
     def __init__(self, input_channel, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.input_channel = input_channel
         self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
@@ -3623,12 +3641,18 @@ class Plain_CONV4_Net(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -3670,6 +3694,8 @@ class Plain_CONV4_Net(nn.Module):
 class Plain_CONV4_Net_BN(nn.Module):
     def __init__(self, input_channel, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.input_channel = input_channel
         self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
@@ -3694,12 +3720,18 @@ class Plain_CONV4_Net_BN(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -3748,6 +3780,8 @@ class Plain_CONV4_Net_BN(nn.Module):
 class Plain_CONV4_Net_BN_pad_k_1_BN(nn.Module):
     def __init__(self, input_channel, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.input_channel = input_channel
         self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=2)
@@ -3772,12 +3806,18 @@ class Plain_CONV4_Net_BN_pad_k_1_BN(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -3826,6 +3866,8 @@ class Plain_CONV4_Net_BN_pad_k_1_BN(nn.Module):
 class Galu_Plain_CONV4_Net(nn.Module):
     def __init__(self, input_channel, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.input_channel = input_channel
         self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
@@ -3843,12 +3885,18 @@ class Galu_Plain_CONV4_Net(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -3891,6 +3939,8 @@ class Galu_Plain_CONV4_Net(nn.Module):
 class Plain_CONV4_Net_N16_Small(nn.Module):
     def __init__(self, input_channel, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.input_channel = input_channel
         self.conv1_g = nn.Conv2d(input_channel, 16, 3, padding=1)
@@ -3910,12 +3960,18 @@ class Plain_CONV4_Net_N16_Small(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -3957,6 +4013,8 @@ class Plain_CONV4_Net_N16_Small(nn.Module):
 class Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias_Small(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.num_classes = num_classes
         self.input_channel = input_channel
@@ -3977,13 +4035,19 @@ class Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias_Small(nn.Module):
         d1, d2 = determine_row_col_from_features(self.pca_layer.k)
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
+    
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
 
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -4010,6 +4074,8 @@ class Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias_Small(nn.Module):
 class Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.num_classes = num_classes
         self.input_channel = input_channel
@@ -4031,12 +4097,18 @@ class Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -4063,6 +4135,8 @@ class Plain_CONV4_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
 class Conv4_DLGN_Net(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.input_channel = input_channel
         self.beta = beta
@@ -4085,12 +4159,18 @@ class Conv4_DLGN_Net(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -4110,7 +4190,7 @@ class Conv4_DLGN_Net(nn.Module):
         g4 = nn.Sigmoid()(self.beta * x_g4)
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device)
+                                  requires_grad=True, device=self.device)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
@@ -4150,6 +4230,8 @@ class Conv4_DLGN_Net(nn.Module):
 class IM_Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.input_channel = input_channel
         self.beta = beta
@@ -4172,9 +4254,15 @@ class IM_Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
             inp = inp.to(device=device, non_blocking=True)
@@ -4222,7 +4310,7 @@ class IM_Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
         g4 = nn.Sigmoid()(self.beta * x_g4)
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device,dtype=inp.dtype)
+                                  requires_grad=True, device=self.device,dtype=inp.dtype)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
@@ -4357,6 +4445,8 @@ class IM_Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
 class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias_Small(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.num_classes = num_classes
         self.input_channel = input_channel
@@ -4386,12 +4476,18 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias_Small(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
         
         inp = inp.flip(-1,-2)
         conv_outs = []
@@ -4412,7 +4508,7 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias_Small(nn.Module):
         g4 = nn.Sigmoid()(self.beta * x_g4)
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device,dtype=inp.dtype)
+                                  requires_grad=True, device=self.device,dtype=inp.dtype)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
@@ -4556,6 +4652,8 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias_Small(nn.Module):
 class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.num_classes = num_classes
         self.input_channel = input_channel
@@ -4585,12 +4683,18 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
         
         inp = inp.flip(-1,-2)
         conv_outs = []
@@ -4611,7 +4715,7 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
         g4 = nn.Sigmoid()(self.beta * x_g4)
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device,dtype=inp.dtype)
+                                  requires_grad=True, device=self.device,dtype=inp.dtype)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
@@ -4754,6 +4858,8 @@ class Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
 class Conv4_DLGN_Net_pad0_wo_bn(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(seed)
         self.input_channel = input_channel
         self.beta = beta
@@ -4776,12 +4882,18 @@ class Conv4_DLGN_Net_pad0_wo_bn(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -4801,7 +4913,7 @@ class Conv4_DLGN_Net_pad0_wo_bn(nn.Module):
         g4 = nn.Sigmoid()(self.beta * x_g4)
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device)
+                                  requires_grad=True, device=self.device)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
@@ -4934,6 +5046,8 @@ class Conv4_DLGN_Net_pad0_wo_bn(nn.Module):
 class Conv4_DeepGated_Net(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         self.beta = beta
         self.input_channel = input_channel
         torch.manual_seed(seed)
@@ -4956,13 +5070,18 @@ class Conv4_DeepGated_Net(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -4988,7 +5107,7 @@ class Conv4_DeepGated_Net(nn.Module):
         self.linear_conv_outputs = conv_outs
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device)
+                                  requires_grad=True, device=self.device)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
@@ -5029,6 +5148,8 @@ class Conv4_DeepGated_Net(nn.Module):
 class Conv4_DeepGated_Net_N16_Small(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         self.beta = beta
         self.input_channel = input_channel
         torch.manual_seed(seed)
@@ -5051,13 +5172,18 @@ class Conv4_DeepGated_Net_N16_Small(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
 
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -5083,7 +5209,7 @@ class Conv4_DeepGated_Net_N16_Small(nn.Module):
         self.linear_conv_outputs = conv_outs
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device)
+                                  requires_grad=True, device=self.device)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
@@ -5124,6 +5250,8 @@ class Conv4_DeepGated_Net_N16_Small(nn.Module):
 class Conv4_DeepGated_Net_With_Actual_Inp_Over_WeightNet(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         self.beta = beta
         torch.manual_seed(seed)
 
@@ -5138,9 +5266,15 @@ class Conv4_DeepGated_Net_With_Actual_Inp_Over_WeightNet(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc1 = nn.Linear(128, num_classes)
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         conv_outs = []
         x_g1 = self.conv1_g(inp)
         g1 = nn.Sigmoid()(self.beta * x_g1)
@@ -5382,6 +5516,8 @@ class Conv4_DeepGated_Net_With_Random_Actual_Inp_Over_WeightNet(nn.Module):
 class Conv4_DLGN_Net_N16_Small(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         self.beta = beta
         self.input_channel = input_channel
         torch.manual_seed(seed)
@@ -5404,12 +5540,18 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
         self.input_size_list = [d1, d2]
         return self.pca_layer.k
 
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
     def forward(self, inp):
-        device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+        
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
-            inp = inp.to(device=device, non_blocking=True)
+            inp = inp.to(device=self.device, non_blocking=True)
 
         conv_outs = []
         x_g1 = self.conv1_g(inp)
@@ -5429,7 +5571,7 @@ class Conv4_DLGN_Net_N16_Small(nn.Module):
         g4 = nn.Sigmoid()(self.beta * x_g4)
 
         inp_all_ones = torch.ones(inp.size(),
-                                  requires_grad=True, device=device)
+                                  requires_grad=True, device=self.device)
 
         x_w1 = self.conv1_w(inp_all_ones) * g1
         x_w2 = self.conv2_w(x_w1) * g2
@@ -5505,8 +5647,16 @@ class TorchVision_DeepGatedNet(nn.Module):
         self.gating_network.clear_hooks()
         self.value_network.clear_hooks()
 
-    def forward(self, inp, verbose=2):
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
+    def forward(self, inp,verbose=2):
         idevice = inp.get_device()
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp,idevice)
+
         if hasattr(self, 'pca_layer'):
             inp = self.pca_layer(inp)
             inp = inp.to(device=idevice, non_blocking=True)
@@ -5869,6 +6019,8 @@ def get_img_size(dataset):
         return [1, 28, 28]
     elif("fashion_mnist_" in dataset):
         return [1, 28, 28]
+    elif("xor" in dataset):
+        return [1,2]
 
 
 def get_model_instance_from_dataset(dataset, model_arch_type, seed=2022, mask_percentage=40, num_classes=10, nodes_in_each_layer_list=[], pretrained=False, aux_logits=True):
