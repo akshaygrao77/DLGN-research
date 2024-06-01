@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from structure.fc_models import DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network,BC_DNN_FC_Network,SF_DLGN_FC_Network,GALU_DNN_FC_Network
+from structure.fc_models import DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network,BC_DNN_FC_Network,SF_DLGN_FC_Network,GALU_DNN_FC_Network,BC_SF_DLGN_FC_Network
 from utils.visualise_utils import determine_row_col_from_features
 from sklearn.decomposition import PCA
 from collections import OrderedDict
@@ -6196,6 +6196,9 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
     elif(model_arch_type == "bc_fc_dnn"):
         net = BC_DNN_FC_Network(nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list)
+    elif(model_arch_type == "bc_fc_sf_dlgn"):
+        net = BC_SF_DLGN_FC_Network(
+            nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
     elif(model_arch_type == "fc_sf_dlgn"):
         net = SF_DLGN_FC_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)

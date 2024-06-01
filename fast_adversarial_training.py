@@ -226,13 +226,14 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
 
 if __name__ == '__main__':
     # fashion_mnist , mnist,cifar10 , xor
-    dataset = 'cifar10'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
     # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
-    model_arch_type = 'plain_pure_conv4_dnn'
+    # conv4_sf_dlgn , bc_fc_sf_dlgn
+    model_arch_type = 'bc_fc_sf_dlgn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -304,7 +305,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [3,8]
+    list_of_classes_to_train_on = [3,8]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
@@ -391,8 +392,8 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 8
-            fc_depth = 1
+            fc_width = 128
+            fc_depth = 4
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \
                 "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -437,11 +438,15 @@ if __name__ == '__main__':
             eps_list = [0.3]
             eps_step_size = 0.01
             epochs = 36
+            # In madry's paper lr for MNIST was 1e-4
+            opt = torch.optim.Adam(net.parameters(), lr=1e-4)
         elif("cifar10" in dataset):
             number_of_adversarial_optimization_steps_list = [10]
             eps_list = [8/255]
             eps_step_size = 2/255
             epochs = 200
+            # In flamarion paper lr for CIFAR10 was 0.2
+            opt = torch.optim.Adam(net.parameters(), lr=0.2)
             net.initialize_standardization_layer()
         elif("xor" in dataset):
             number_of_adversarial_optimization_steps_list = [5]
@@ -471,8 +476,8 @@ if __name__ == '__main__':
                         tttmp = "/residue_vname_"+str(residue_vname)
                     if(residue_vname == "eta_growth" and eta_growth_reduced_rate != 1):
                         tttmp += "/eta_growth_reduced_rate_"+str(eta_growth_reduced_rate)
-                    prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/update_on_{}/R_init_{}/norm_{}/use_ytrue_{}/{}/".format(
-                        fast_adv_attack_type, adv_attack_type, eps, batch_size, eps_step_size, number_of_adversarial_optimization_steps,update_on,rand_init,norm,use_ytrue,tttmp)
+                    prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/OPT_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/update_on_{}/R_init_{}/norm_{}/use_ytrue_{}/{}/".format(
+                        fast_adv_attack_type, adv_attack_type, eps,str(opt).replace("\n",""), batch_size, eps_step_size, number_of_adversarial_optimization_steps,update_on,rand_init,norm,use_ytrue,tttmp)
                     wandb_group_name = "DS_"+str(dataset_str) + "_EXP_"+str(exp_type) +\
                         "_fast_adv_training_TYP_"+str(model_arch_type_str)
                     model_save_prefix += prefix2
@@ -483,7 +488,6 @@ if __name__ == '__main__':
                         os.makedirs(model_save_prefix)
 
                     if(exp_type == "ADV_TRAINING"):
-                        opt = torch.optim.Adam(net.parameters(), lr=1e-4)
                         if(is_log_wandb):
                             wandb_run_name = str(
                                 model_arch_type_str)+prefix2.replace(
