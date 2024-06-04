@@ -68,7 +68,7 @@ def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_adv
     return wandb_config
 
 
-def plain_evaluate_model(net, dataloader, classes=None):
+def plain_evaluate_model(net, dataloader, classes=None,is_get_classwise_acc=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     correct = 0
     total = 0
@@ -83,6 +83,11 @@ def plain_evaluate_model(net, dataloader, classes=None):
         frequency_pred = frequency_pred.to(device, non_blocking=True)
         all_classes = torch.arange(0, num_classes)
         all_classes = all_classes.to(device, non_blocking=True)
+        if is_get_classwise_acc:
+            classwise_acc = torch.zeros(num_classes)
+            classwise_acc = classwise_acc.to(device, non_blocking=True)
+            classwise_count = torch.zeros(num_classes)
+            classwise_count = classwise_count.to(device, non_blocking=True)
 
     loader = tqdm.tqdm(dataloader, desc='Evaluating')
     # since we're not training, we don't need to calculate the gradients for our outputs
@@ -103,17 +108,31 @@ def plain_evaluate_model(net, dataloader, classes=None):
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-        if(classes is not None):
-            temp = torch.cat((predicted.float(), all_classes))
-            temp = temp.to(device)
-            frequency_pred += torch.histc(temp, num_classes) - 1
+        with torch.no_grad():
+            if(classes is not None):
+                temp = torch.cat((predicted.float(), all_classes))
+                temp = temp.to(device)
+                frequency_pred += torch.histc(temp, num_classes) - 1
+                if is_get_classwise_acc:
+                    corr_mask = torch.where(predicted == labels,1,0)
+                    for cur_class in range(num_classes):
+                        class_mask = torch.where(labels==cur_class,1,0)
+                        classwise_count[cur_class] += class_mask.sum().item()
+                        classwise_acc[cur_class] += (corr_mask * class_mask).sum().item()
 
         cur_time = time.time()
         step_time = cur_time - begin_time
         acc = 100.*correct/total
         loader.set_postfix(
             acc=acc, ratio="{}/{}".format(correct, total), stime=format_time(step_time))
-
+    if frequency_pred is not None:
+        frequency_pred = (frequency_pred/total)*100
+        frequency_pred = torch.round(frequency_pred)
+        if is_get_classwise_acc:
+            for cur_class in range(num_classes):
+                classwise_acc[cur_class] = (classwise_acc[cur_class] / classwise_count[cur_class])*100
+            classwise_acc = torch.round(classwise_acc)
+            return acc,frequency_pred,classwise_acc
     return acc, frequency_pred
 
 
@@ -650,7 +669,7 @@ if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn ,  fc_sf_dlgn , madry_mnist_conv4_dnn
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'bc_fc_sf_dlgn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -659,7 +678,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [4,9]
+    list_of_classes_to_train_on = [3,8]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
@@ -675,7 +694,7 @@ if __name__ == '__main__':
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_bc_fc_sf_dlgn_W_16_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB.npy"
@@ -749,7 +768,7 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 128
+        fc_width = 16
         fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
@@ -790,8 +809,10 @@ if __name__ == '__main__':
         # wand_project_name = "Gatesat-exp"
         # wand_project_name = "minute_FC_dlgn"
         # wand_project_name = "L2RegCNNs"
-        wand_project_name = "adversarial_attacks_latest_madrys"
+        # wand_project_name = "adversarial_attacks_latest_madrys"
         # wand_project_name = "madry's_benchmarking"
+        # wand_project_name = "SVM_loss_training"
+        wand_project_name = "Cifar10_flamarion_replicate"
 
         torch_seed = 2022
         # FEATURE_FLIP , PGD , FGSM
@@ -823,7 +844,7 @@ if __name__ == '__main__':
         if("mnist" in dataset):
             # 40 is a good sweet spot more than that doesn't help much typically
             number_of_adversarial_optimization_steps = 40
-            eps_list = [0.3,0.1]
+            eps_list = [0.3]
             eps_step_size = 0.01
         elif("cifar10" in dataset):
             number_of_adversarial_optimization_steps = 10
@@ -834,6 +855,9 @@ if __name__ == '__main__':
 
         if(is_log_wandb):
             wandb.login()
+        criterion= None
+        if("bc_" in model_arch_type):
+            criterion = nn.BCELoss()
 
         if(direct_model_path is not None):
             number_of_augment_iterations = 1
@@ -861,6 +885,9 @@ if __name__ == '__main__':
                 net = get_model_from_path(
                     dataset, model_arch_type, model_save_path,custom_model=net)
 
+                if("cifar10" in dataset):
+                    net.initialize_standardization_layer()
+                
                 net = net.to(device)
                 device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
                 if device_str == 'cuda':
@@ -928,38 +955,48 @@ if __name__ == '__main__':
                     else:
                         print("adv_save_path:", adv_save_path)
                         adv_dataset = generate_adv_examples(
-                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname)
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,lossfn=criterion)
 
                     to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
-                        adv_dataset, shuffle=False, batch_size=128)
+                        adv_dataset, shuffle=False, batch_size=batch_size)
 
                     save_images_from_dataloader(to_be_analysed_adversarial_dataloader, classes,
                                                 postfix_folder_for_save='/adver/', save_image_prefix=save_folder)
 
-                    eval_adv_acc, _ = plain_evaluate_model(
-                        net, to_be_analysed_adversarial_dataloader)
+                    eval_adv_acc, adv_frequency_pred,adv_classwise_acc = plain_evaluate_model(
+                        net, to_be_analysed_adversarial_dataloader,classes,True)
                     
                     if(number_of_restarts>1):
+                        avg_adv_frequency_pred = adv_frequency_pred
+                        avg_adv_classwise_acc = adv_classwise_acc
                         avg_adv_acc = eval_adv_acc
                         for cur_restart in range(number_of_restarts-1):
                             adv_dataset = generate_adv_examples(
-                                eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname)
+                                eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,lossfn=criterion)
 
                             to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                                 adv_dataset, shuffle=False, batch_size=256)
 
-                            eval_adv_acc, _ = plain_evaluate_model(
-                                net, to_be_analysed_adversarial_dataloader)
+                            eval_adv_acc, freq_pred,classwise_acc = plain_evaluate_model(
+                                net, to_be_analysed_adversarial_dataloader,classes,True)
+                            avg_adv_classwise_acc += classwise_acc
+                            avg_adv_frequency_pred += freq_pred
                             avg_adv_acc += eval_adv_acc
                             print("Restart :{} adv acc:{}".format(cur_restart,eval_adv_acc))
                         eval_adv_acc = avg_adv_acc/number_of_restarts
+                        adv_classwise_acc = avg_adv_classwise_acc/number_of_restarts
+                        adv_frequency_pred = avg_adv_frequency_pred/number_of_restarts
 
-                    eval_orig_acc, _ = plain_evaluate_model(
-                        net, eval_loader)
+                    eval_orig_acc, orig_frequency_pred,org_classwise_acc = plain_evaluate_model(
+                        net, eval_loader,classes,True)
 
                     if(is_log_wandb):
                         wandb.log({"eval_orig_acc": eval_orig_acc,
-                                  "eval_adv_acc": eval_adv_acc})
+                                  "eval_adv_acc": eval_adv_acc,
+                                  "adv_frequency_pred":adv_frequency_pred,
+                                  "orig_frequency_pred":orig_frequency_pred,
+                                  "org_classwise_acc":org_classwise_acc,
+                                  "adv_classwise_acc":adv_classwise_acc})
                         wandb.finish()
                 elif(exp_type == "ADV_ATTACK_PER_CLASS"):
                     class_indx_to_visualize = [i for i in range(len(classes))]
@@ -985,7 +1022,7 @@ if __name__ == '__main__':
                     else:
                         print("adv_save_path:", adv_save_path)
                         adv_dataset = generate_adv_examples(
-                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname)
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,lossfn=criterion)
 
                     to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                         adv_dataset, shuffle=False, batch_size=128)
@@ -1047,20 +1084,17 @@ if __name__ == '__main__':
                         save_images_from_dataloader(to_be_analysed_adversarial_dataloader, classes,
                                                     postfix_folder_for_save='/adver/', save_image_prefix=save_folder)
 
-                        eval_orig_acc, _ = plain_evaluate_model(
-                            net, per_class_eval_data_loader)
-                        eval_adv_acc, frequency_pred = plain_evaluate_model(
+                        eval_orig_acc, orig_frequency_pred = plain_evaluate_model(
+                            net, per_class_eval_data_loader,classes)
+                        eval_adv_acc, adv_frequency_pred = plain_evaluate_model(
                             net, per_class_tobe_analysed_data_loader, classes)
-
-                        frequency_pred = (
-                            frequency_pred / len(per_class_tobe_analysed_dataset))*100
-                        frequency_pred = torch.round(frequency_pred)
-                        print("frequency_pred", frequency_pred)
+                        print("frequency_pred", adv_frequency_pred)
 
                         if(is_log_wandb):
                             wandb.log({"eval_orig_acc": eval_orig_acc,
                                        "eval_adv_acc": eval_adv_acc,
-                                       "frequency_pred": frequency_pred})
+                                       "adv_frequency_pred": adv_frequency_pred,
+                                       "orig_frequency_pred":orig_frequency_pred})
                             wandb.finish()
                 elif(exp_type == "ADV_ATTACK_EVAL_VIA_RECONST"):
                     wandb_group_name = "DS_"+str(dataset_str) + \
