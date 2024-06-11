@@ -16,6 +16,7 @@ from model_trainer import evaluate_model
 from visualization import run_visualization_on_config
 from structure.dlgn_conv_config_structure import DatasetConfig
 from collections import OrderedDict
+from utils.generic_utils import Y_Logits_Binary_class_Loss
 from attacks import cleverhans_projected_gradient_descent,cleverhans_fast_gradient_method,get_locuslab_adv_per_batch,get_residue_adv_per_batch,get_gateflip_adv_per_batch
 
 
@@ -43,7 +44,7 @@ def get_wandb_config(exp_type,fast_adv_attack_type, adv_attack_type, model_arch_
 
     return wandb_config
 
-def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0,residue_vname='std',opt=None,eta_growth_reduced_rate=1,number_of_restarts=1):
+def perform_adversarial_training(model, train_loader, test_loader, eps_step_size, adv_target, eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path,outer_criterion,inner_criterion, epochs=32, wand_project_name=None, lr_type='cyclic', lr_max=5e-3,dataset=None,npk_reg=0,update_on='all',rand_init=True,norm=np.inf,use_ytrue=True,clip_min=0.0,clip_max=1.0,residue_vname='std',opt=None,eta_growth_reduced_rate=1,number_of_restarts=1):
     targeted = adv_target is not None
     print("Model will be saved at", model_save_path)
     save_adv_image_prefix = model_save_path[0:model_save_path.rfind("/")+1]
@@ -60,10 +61,6 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
     is_log_wandb = not(wand_project_name is None)
     best_test_acc = 0
     best_rob_orig_acc = 0
-
-    criterion = nn.CrossEntropyLoss()
-    if("bc_" in model_arch_type):
-        criterion = nn.BCELoss()
     
     epoch = 0
     if(dataset is not None and dataset == "cifar10" or (residue_vname is not None and residue_vname == "cyclic_lr")):
@@ -79,13 +76,13 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=200)
 
     if fast_adv_attack_type == 'FGSM':
-        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps,"steps":1,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm}
+        kargs = {"criterion":inner_criterion,"eps":eps,"eps_step_size":eps,"steps":1,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm}
     elif fast_adv_attack_type == 'PGD':
-        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname,"num_of_restrts":number_of_restarts}
+        kargs = {"criterion":inner_criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname,"num_of_restrts":number_of_restarts}
     elif fast_adv_attack_type == 'residual_PGD':
-        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
+        kargs = {"criterion":inner_criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
     elif fast_adv_attack_type == 'FEATURE_FLIP':
-        kargs = {"criterion":criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
+        kargs = {"criterion":inner_criterion,"eps":eps,"eps_step_size":eps_step_size,"steps":number_of_adversarial_optimization_steps,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':targeted,'norm':norm,'residue_vname':residue_vname}
     while(epoch < epochs and (start_net_path is None or (stop_at_adv_test_acc is None or best_test_acc < stop_at_adv_test_acc))):
         correct = 0
         total = 0
@@ -103,7 +100,7 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
                 lr = lr_schedule(epoch + (batch_idx+1)/len(train_loader))
                 opt.param_groups[0].update(lr=lr)
             
-            before_adv_loss = criterion(model(X), y)
+            before_adv_loss = outer_criterion(model(X), y)
             running_before_adv_loss += before_adv_loss.item() * y.size(0)
 
             kargs["labels"] = y if use_ytrue else None  
@@ -121,13 +118,13 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
             overall_eps_norm_mean += cur_eps_norm_left
             output = model(inputs)
             if(len(output.size())==1):
-                predicted = output.data.round()
+                predicted = torch.sigmoid(output.data).round()
             else:
                 _, predicted = torch.max(output.data, 1)
             correct += (predicted == y).sum().item()
             total += y.size(0)
 
-            loss = criterion(output, y)
+            loss = outer_criterion(output, y)
             if(npk_reg != 0):
                 beta=4
                 if(isinstance(net, torch.nn.DataParallel)):
@@ -172,11 +169,11 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         live_train_acc = 100. * correct / total
         overall_eps_norm_mean = overall_eps_norm_mean / total
         org_test_acc,_ = evaluate_model(net, test_loader)
-        test_acc = adv_evaluate_model(net, test_loader, classes, eps, adv_attack_type,lossfn=criterion)
+        test_acc = adv_evaluate_model(net, test_loader, classes, eps, adv_attack_type,lossfn=inner_criterion)
         if(is_log_wandb):
             wandb.log({"live_train_acc": live_train_acc,"overall_eps_norm_mean":overall_eps_norm_mean,"tr_loss":running_loss/(batch_idx+1),'before_adv_tr_loss':running_before_adv_loss/(batch_idx+1),
-                      "current_epoch": epoch, "test_acc": test_acc,"org_test_acc":org_test_acc})
-        if(epoch % 2 == 0):
+                      "current_epoch": epoch, "test_acc": test_acc,"org_test_acc":org_test_acc},step=epoch)
+        if(epoch % 1 == 0):
             per_epoch_save_model_path = model_save_path.replace(
                 ".pt", '_epoch_{}.pt'.format(epoch))
             save_adv_image_prefix = per_epoch_save_model_path[0:per_epoch_save_model_path.rfind("/")+1]
@@ -195,9 +192,9 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         if(dataset is not None and dataset == "cifar10"):
             scheduler.step()
 
-    train_acc = adv_evaluate_model(net, train_loader, classes, eps, adv_attack_type,save_adv_image_prefix=save_adv_image_prefix,lossfn=criterion)
+    train_acc = adv_evaluate_model(net, train_loader, classes, eps, adv_attack_type,save_adv_image_prefix=save_adv_image_prefix,lossfn=inner_criterion)
     if(is_log_wandb):
-        wandb.log({"train_acc": train_acc, "test_acc": test_acc})
+        wandb.log({"train_acc": train_acc, "test_acc": test_acc},step=epoch)
 
     print('Finished adversarial Training: Best saved model test acc is:', best_test_acc)
     return best_test_acc,best_rob_orig_acc, torch.load(model_save_path)
@@ -392,7 +389,7 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 128
+            fc_width = 64
             fc_depth = 4
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \
@@ -430,8 +427,17 @@ if __name__ == '__main__':
 
         net = net.to(device)
 
+        outer_criterion = nn.CrossEntropyLoss()
+        if("bc_" in model_arch_type):
+            outer_criterion = nn.BCEWithLogitsLoss().to(device)
+        
+        inner_criterion = nn.CrossEntropyLoss()
+        if("bc_" in model_arch_type):
+            # inner_criterion = nn.BCEWithLogitsLoss().to(device)
+            inner_criterion = Y_Logits_Binary_class_Loss().to(device)
+
         # eps_list = [0.03, 0.06, 0.1]
-        fast_adv_attack_type_list = ["FGSM"]
+        fast_adv_attack_type_list = ["PGD"]
         # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD' , 'FEATURE_FLIP']
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
@@ -476,8 +482,8 @@ if __name__ == '__main__':
                         tttmp = "/residue_vname_"+str(residue_vname)
                     if(residue_vname == "eta_growth" and eta_growth_reduced_rate != 1):
                         tttmp += "/eta_growth_reduced_rate_"+str(eta_growth_reduced_rate)
-                    prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/OPT_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/update_on_{}/R_init_{}/norm_{}/use_ytrue_{}/{}/".format(
-                        fast_adv_attack_type, adv_attack_type, eps,str(opt).replace("\n",""), batch_size, eps_step_size, number_of_adversarial_optimization_steps,update_on,rand_init,norm,use_ytrue,tttmp)
+                    prefix2 = str(torch_seed_str)+"fast_adv_attack_type_{}/adv_type_{}/EPS_{}/OPT_{}/batch_size_{}/eps_stp_size_{}/adv_steps_{}/update_on_{}/R_init_{}/norm_{}/use_ytrue_{}/out_lossfn_{}/inner_lossfn_{}/{}/".format(
+                        fast_adv_attack_type, adv_attack_type, eps,str(opt).replace("\n",""), batch_size, eps_step_size, number_of_adversarial_optimization_steps,update_on,rand_init,norm,use_ytrue,str(outer_criterion),str(inner_criterion),tttmp)
                     wandb_group_name = "DS_"+str(dataset_str) + "_EXP_"+str(exp_type) +\
                         "_fast_adv_training_TYP_"+str(model_arch_type_str)
                     model_save_prefix += prefix2
@@ -498,6 +504,8 @@ if __name__ == '__main__':
                             wandb_config["start_net_path"] = start_net_path
                             wandb_config["torch_seed"] = torch_seed
                             wandb_config["number_of_restarts"] = number_of_restarts
+                            wandb_config["outer_criterion"] = outer_criterion
+                            wandb_config["inner_criterion"] = inner_criterion
                             if(residue_vname is not None):
                                 wandb_config["residue_vname"] = residue_vname
                             if(residue_vname == "eta_growth"):
@@ -516,7 +524,7 @@ if __name__ == '__main__':
                             )
                         # wandb.watch(net, log='all')
                         best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt,eta_growth_reduced_rate=eta_growth_reduced_rate,number_of_restarts=number_of_restarts)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, outer_criterion,inner_criterion, epochs, wand_project_name,dataset=dataset,npk_reg=npk_reg,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt,eta_growth_reduced_rate=eta_growth_reduced_rate,number_of_restarts=number_of_restarts)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()
@@ -546,6 +554,8 @@ if __name__ == '__main__':
                             wandb_config["optimizer"] = opt
                             wandb_config["start_net_path"] = start_net_path
                             wandb_config["torch_seed"] = torch_seed
+                            wandb_config["outer_criterion"] = outer_criterion
+                            wandb_config["inner_criterion"] = inner_criterion
                             if(residue_vname is not None):
                                 wandb_config["residue_vname"] = residue_vname
 
@@ -557,7 +567,7 @@ if __name__ == '__main__':
                             )
 
                         best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, outer_criterion,inner_criterion, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()
@@ -595,6 +605,8 @@ if __name__ == '__main__':
                             wandb_config = get_wandb_config(exp_type,fast_adv_attack_type, adv_attack_type, model_arch_type_str, dataset_str,batch_size,epochs,
                                 eps, number_of_adversarial_optimization_steps, eps_step_size, model_save_path, is_targetted,update_on,rand_init,norm,use_ytrue)
                             wandb_config["optimizer"]=opt
+                            wandb_config["outer_criterion"] = outer_criterion
+                            wandb_config["inner_criterion"] = inner_criterion
                             wandb_config["torch_seed"] = torch_seed
                             wandb_config["teacher_model_path"] = teacher_model_path
                             wandb_config["transfer_mode"] = transfer_mode
@@ -610,7 +622,7 @@ if __name__ == '__main__':
                             )
 
                         best_test_acc,best_rob_orig_acc, best_model = perform_adversarial_training(net, trainloader, testloader, eps_step_size, adv_target,
-                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt)
+                                                                                 eps, fast_adv_attack_type, adv_attack_type, number_of_adversarial_optimization_steps, model_save_path,outer_criterion,inner_criterion, epochs, wand_project_name,dataset=dataset,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,opt=opt)
                         if(is_log_wandb):
                             wandb.log({"adv_tr_best_test_acc": best_test_acc,"adv_tr_org_test_acc":best_rob_orig_acc})
                             wandb.finish()

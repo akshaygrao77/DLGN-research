@@ -10,6 +10,13 @@ import tqdm
 import torch.nn as nn
 import torch
 
+class Y_Logits_Binary_class_Loss(nn.Module):
+    def __init__(self):
+        super(Y_Logits_Binary_class_Loss, self).__init__()
+
+    def forward(self, inputs, targets):
+        return torch.mean((1 - 2*targets) * inputs)
+
 class Y_True_Loss(nn.Module):
     def __init__(self):
         super(Y_True_Loss, self).__init__()

@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import math
 import wandb
+from utils.generic_utils import Y_Logits_Binary_class_Loss
 
 def clip_eta(eta, norm, eps):
     """
@@ -482,20 +483,24 @@ def cleverhans_fast_gradient_method(
             loss_fn = torch.nn.CrossEntropyLoss()
 
     # Compute loss
-    if(isinstance(loss_fn,torch.nn.BCEWithLogitsLoss)):
+    if(isinstance(loss_fn,torch.nn.BCEWithLogitsLoss) or isinstance(loss_fn,Y_Logits_Binary_class_Loss)):
         y = y.type(torch.float32)
-        y_pred = torch.squeeze(model_fn(x),1)
+        tmp = model_fn(x)
+        # Remember BCE loss is always for two classes if u have N,K tensor, then each of K is considered binary classification independently
+        if(len(tmp.size())==2):
+            y_pred = torch.squeeze(tmp,1)
+        else:
+            y_pred = tmp
         predicted = torch.where(y_pred>0,1.0,0.0)
     elif(isinstance(loss_fn,torch.nn.CrossEntropyLoss)):
         y_pred = model_fn(x)
         _, predicted = torch.max(y_pred.data, 1)
     elif(isinstance(loss_fn,torch.nn.BCELoss)):
-        y_pred = model_fn(x)
+        y_pred = torch.sigmoid(model_fn(x))
         predicted = y_pred.round()
     else:
         y_pred = model_fn(x)
         _, predicted = torch.max(y_pred.data, 1)
-    
     loss = loss_fn(y_pred, y)
     
     # If attack is targeted, minimize loss of target label rather than maximize loss of correct label
@@ -631,7 +636,7 @@ def cleverhans_projected_gradient_descent(
         raise ValueError(
             "eps must be greater than or equal to 0, got {} instead".format(eps)
         )
-    if eps == 0:
+    if eps == 0 or nb_iter == 0:
         return x
     if eps_iter < 0:
         raise ValueError(
@@ -681,7 +686,7 @@ def cleverhans_projected_gradient_descent(
             y = torch.where(outs>0,1,0)
             y = torch.squeeze(y,1)
         elif(len(outs.size())==1):
-            y = outs.data.round()
+            y = torch.sigmoid(outs.data).round()
         else:
             _, y = torch.max(outs.data, 1)
         kwargs['labels']=y
@@ -756,7 +761,7 @@ def cleverhans_projected_gradient_descent(
         else:
             # Just plain loss evaluation doesn't need grads to be switched on
             with torch.no_grad():
-                if(isinstance(loss_fn,torch.nn.BCEWithLogitsLoss)):
+                if(isinstance(loss_fn,torch.nn.BCEWithLogitsLoss) or isinstance(loss_fn,torch.nn.Y_Logits_Binary_class_Loss)):
                     y = y.type(torch.float32)
                     y_pred = torch.squeeze(model_fn(adv_x),1)
                 elif(isinstance(loss_fn,torch.nn.CrossEntropyLoss)):

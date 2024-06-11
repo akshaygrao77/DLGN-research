@@ -24,7 +24,7 @@ from utils.APR import APRecombination, mix_data
 from apr_evaluator import apr_evaluate_model
 from collections import OrderedDict
 from structure.generic_structure import CustomSimpleDataset
-
+from utils.generic_utils import Y_Logits_Binary_class_Loss
 
 def evaluate_model(net, dataloader, num_classes_trained_on=None):
     net.eval()
@@ -47,7 +47,7 @@ def evaluate_model(net, dataloader, num_classes_trained_on=None):
             outputs = net(images)
             # the class with the highest energy is what we choose as prediction
             if(len(outputs.size())==1):
-                predicted = outputs.data.round()
+                predicted = torch.sigmoid(outputs).data.round()
             else:
                 _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
@@ -245,7 +245,7 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
             # forward + backward + optimize
             outputs = net(inputs)
             if(len(outputs.size())==1):
-                predicted = outputs.data.round()
+                predicted = torch.sigmoid(outputs.data).round()
             else:
                 _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
@@ -426,12 +426,12 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10 , xor
-    dataset = 'cifar10'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
     # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn
-    model_arch_type = 'plain_pure_conv4_dnn'
+    model_arch_type = 'bc_fc_sf_dlgn'
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
@@ -470,7 +470,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [4,9]
+    list_of_classes_to_train_on = [3,8]
 
     train_transforms = None
     is_normalize_data = True
@@ -573,8 +573,8 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 8
-        fc_depth = 1
+        fc_width = 16
+        fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -617,7 +617,7 @@ if __name__ == '__main__':
         cudnn.benchmark = True
 
     if("bc_" in model_arch_type):
-        criterion = nn.BCELoss().to(device)
+        criterion = nn.BCEWithLogitsLoss().to(device)
     else:
         criterion = nn.CrossEntropyLoss().to(device)
     lr = 3e-4

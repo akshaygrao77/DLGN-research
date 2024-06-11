@@ -146,9 +146,9 @@ class BC_SF_DLGN_FC_Network(nn.Module):
 
         self.output_logits = self.value_network(
             inp_gating, self.gating_node_outputs, verbose=verbose)
-        final_layer_out = self.sigmoid(self.output_logits)
+        final_layer_out = self.output_logits
         
-        return torch.squeeze(final_layer_out,-1).type(torch.float32)
+        return torch.squeeze(final_layer_out,-1)
 
     def get_gate_layers_ordered_dict(self):
         gating_net_layers_ordered = OrderedDict()
@@ -549,9 +549,15 @@ class ALLONES_FC_Value_Network(nn.Module):
                 prev_out = torch.unsqueeze(prev_out,-1)
             elif(gs_len < pout_len):
                 gating_signals[indx] = torch.unsqueeze(gating_signals[indx],-1)
+            if(verbose > 2):
+                print("prev_out-----:{} indx:{}".format(prev_out,indx))
             prev_out = prev_out * gating_signals[indx]
+            if(verbose > 2):
+                print("prev_out:{} indx:{}".format(prev_out,indx))
 
         prev_out = self.output_layer(prev_out)
+        if(verbose > 2):
+            print("prev_out final:{} ".format(prev_out))
         return prev_out
 
     def __str__(self):
@@ -867,8 +873,8 @@ class BC_DNN_FC_Network(nn.Module):
             prev_out = self.relu(prev_out)
 
         self.linear_conv_outputs = layer_outs
-        self.prev_out = self.sigmoid(self.output_layer(prev_out))
-        return torch.squeeze(self.prev_out,-1).type(torch.float32)
+        self.prev_out = self.output_layer(prev_out)
+        return torch.squeeze(self.prev_out,-1)
 
     def __str__(self):
         ret = "Value network "+" \n module_list:"
