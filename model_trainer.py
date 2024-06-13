@@ -25,6 +25,7 @@ from apr_evaluator import apr_evaluate_model
 from collections import OrderedDict
 from structure.generic_structure import CustomSimpleDataset
 from utils.generic_utils import Y_Logits_Binary_class_Loss
+from adversarial_attacks_tester import adv_evaluate_model
 
 def evaluate_model(net, dataloader, num_classes_trained_on=None):
     net.eval()
@@ -213,7 +214,7 @@ def apr_train_model(net, type_of_APR, trainloader, testloader, epochs, criterion
     return net
 
 
-def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None,npk_reg=0,gatesat_reg=0,gate_weight_l2_reg=0):
+def train_model(net, trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name=None,npk_reg=0,gatesat_reg=0,gate_weight_l2_reg=0,is_plot_adv_curves=False):
     device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
     if device_str == 'cuda':
         if(torch.cuda.device_count() > 1):
@@ -342,8 +343,14 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
         train_acc = 100. * correct/total
         test_acc, _ = evaluate_model(
             net, testloader)
-        if(is_log_wandb):
-            wandb.log({"train_acc": train_acc, "test_acc": test_acc})
+        if is_plot_adv_curves:
+            pgd_acc = adv_evaluate_model(net, testloader,classes, 0.3, "PGD")
+            fgsm_acc = adv_evaluate_model(net, testloader,classes, 0.3, "FGSM")
+            if(is_log_wandb):
+                wandb.log({"train_acc": train_acc, "test_acc": test_acc,"tr_loss":running_loss/(batch_idx+1),"pgd_tst_acc":pgd_acc,"fgsm_tst_acc":fgsm_acc})
+        else:
+            if(is_log_wandb):
+                wandb.log({"train_acc": train_acc, "test_acc": test_acc,"tr_loss":running_loss/(batch_idx+1)})
 
         print("Test_acc: ", test_acc)
         per_epoch_model_save_path = final_model_save_path.replace(
@@ -431,7 +438,7 @@ if __name__ == '__main__':
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
     # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn
-    model_arch_type = 'bc_fc_sf_dlgn'
+    model_arch_type = 'bc_fc_dnn'
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
@@ -1063,7 +1070,7 @@ if __name__ == '__main__':
             os.makedirs(model_save_folder)
 
         best_test_acc, net = train_model(net,
-                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg,gatesat_reg,gate_weight_l2_reg)
+                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg,gatesat_reg,gate_weight_l2_reg,is_plot_adv_curves=True)
         if(is_log_wandb):
             wandb.log({"best_test_acc": best_test_acc})
             wandb.finish()

@@ -170,9 +170,10 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         overall_eps_norm_mean = overall_eps_norm_mean / total
         org_test_acc,_ = evaluate_model(net, test_loader)
         test_acc = adv_evaluate_model(net, test_loader, classes, eps, adv_attack_type,lossfn=inner_criterion)
+        fgsm_tst_acc = adv_evaluate_model(net, testloader,classes, eps, "FGSM",lossfn=inner_criterion)
         if(is_log_wandb):
             wandb.log({"live_train_acc": live_train_acc,"overall_eps_norm_mean":overall_eps_norm_mean,"tr_loss":running_loss/(batch_idx+1),'before_adv_tr_loss':running_before_adv_loss/(batch_idx+1),
-                      "current_epoch": epoch, "test_acc": test_acc,"org_test_acc":org_test_acc},step=epoch)
+                      "current_epoch": epoch, "test_acc": test_acc,"org_test_acc":org_test_acc,"fgsm_tst_acc":fgsm_tst_acc},step=epoch)
         if(epoch % 1 == 0):
             per_epoch_save_model_path = model_save_path.replace(
                 ".pt", '_epoch_{}.pt'.format(epoch))
@@ -230,7 +231,7 @@ if __name__ == '__main__':
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
     # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
     # conv4_sf_dlgn , bc_fc_sf_dlgn
-    model_arch_type = 'bc_fc_sf_dlgn'
+    model_arch_type = 'bc_fc_dnn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -389,7 +390,7 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 64
+            fc_width = 16
             fc_depth = 4
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \
@@ -437,7 +438,7 @@ if __name__ == '__main__':
             inner_criterion = Y_Logits_Binary_class_Loss().to(device)
 
         # eps_list = [0.03, 0.06, 0.1]
-        fast_adv_attack_type_list = ["PGD"]
+        fast_adv_attack_type_list = ["FGSM"]
         # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD' , 'FEATURE_FLIP']
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]
