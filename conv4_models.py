@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from structure.fc_models import DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network,BC_DNN_FC_Network,SF_DLGN_FC_Network,GALU_DNN_FC_Network,BC_SF_DLGN_FC_Network
+from structure.fc_models import DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network,BC_DNN_FC_Network,SF_DLGN_FC_Network,GALU_DNN_FC_Network,BC_SF_DLGN_FC_Network,BC_DLGN_FC_Network
 from utils.visualise_utils import determine_row_col_from_features
 from sklearn.decomposition import PCA
 from collections import OrderedDict
@@ -4140,17 +4140,23 @@ class Conv4_DLGN_Net(nn.Module):
         torch.manual_seed(seed)
         self.input_channel = input_channel
         self.beta = beta
-
-        self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
+        self.num_classes = num_classes
+        self.init_gate_net()
+        self.init_value_net()
+    
+    def init_gate_net(self):
+        self.conv1_g = nn.Conv2d(self.input_channel, 128, 3, padding=1)
         self.conv2_g = nn.Conv2d(128, 128, 3, padding=1)
         self.conv3_g = nn.Conv2d(128, 128, 3, padding=1)
         self.conv4_g = nn.Conv2d(128, 128, 3, padding=1)
-        self.conv1_w = nn.Conv2d(input_channel, 128, 3, padding=1)
+    
+    def init_value_net(self):
+        self.conv1_w = nn.Conv2d(self.input_channel, 128, 3, padding=1)
         self.conv2_w = nn.Conv2d(128, 128, 3, padding=1)
         self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
         self.conv4_w = nn.Conv2d(128, 128, 3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc1 = nn.Linear(128, num_classes)
+        self.fc1 = nn.Linear(128, self.num_classes)
 
     def initialize_PCA_transformation(self, data, explained_var_required):
         self.pca_layer = CONV_PCA_Layer(
@@ -4165,6 +4171,8 @@ class Conv4_DLGN_Net(nn.Module):
         self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
 
     def forward(self, inp):
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         if hasattr(self, 'standardize_layer'):
             inp = self.standardize_layer(inp)
         
@@ -4202,6 +4210,25 @@ class Conv4_DLGN_Net(nn.Module):
         x_w6 = self.fc1(x_w5)
 
         return x_w6
+    
+    def get_gate_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        gating_net_layers_ordered["conv1_g"] = self.conv1_g
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["conv3_g"] = self.conv3_g
+        gating_net_layers_ordered["conv4_g"] = self.conv4_g
+        gating_net_layers_ordered["pool1"] = self.pool
+        return gating_net_layers_ordered
+
+    def get_value_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        gating_net_layers_ordered["conv1_w"] = self.conv1_w
+        gating_net_layers_ordered["conv2_w"] = self.conv2_w
+        gating_net_layers_ordered["conv3_w"] = self.conv3_w
+        gating_net_layers_ordered["conv4_w"] = self.conv4_w
+        gating_net_layers_ordered["fc1"] = self.fc1
+
+        return gating_net_layers_ordered
 
     def get_layer_object(self, network_type, layer_num):
         if(network_type == "GATE_NET"):
@@ -4237,9 +4264,9 @@ class Conv4_SF_DLGN_Net(nn.Module):
         self.beta = beta
 
         self.conv1_g = nn.Conv2d(input_channel, 128, 3, padding=1)
-        self.conv2_g = nn.Conv2d(3, 128, 3, padding=1)
-        self.conv3_g = nn.Conv2d(3, 128, 3, padding=1)
-        self.conv4_g = nn.Conv2d(3, 128, 3, padding=1)
+        self.conv2_g = nn.Conv2d(input_channel, 128, 3, padding=1)
+        self.conv3_g = nn.Conv2d(input_channel, 128, 3, padding=1)
+        self.conv4_g = nn.Conv2d(input_channel, 128, 3, padding=1)
         self.conv1_w = nn.Conv2d(input_channel, 128, 3, padding=1)
         self.conv2_w = nn.Conv2d(128, 128, 3, padding=1)
         self.conv3_w = nn.Conv2d(128, 128, 3, padding=1)
@@ -6198,6 +6225,9 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
         net = BC_DNN_FC_Network(nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list)
     elif(model_arch_type == "bc_fc_sf_dlgn"):
         net = BC_SF_DLGN_FC_Network(
+            nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
+    elif(model_arch_type == "bc_fc_dlgn"):
+        net = BC_DLGN_FC_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
     elif(model_arch_type == "fc_sf_dlgn"):
         net = SF_DLGN_FC_Network(

@@ -230,8 +230,8 @@ if __name__ == '__main__':
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
     # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
-    # conv4_sf_dlgn , bc_fc_sf_dlgn
-    model_arch_type = 'bc_fc_dnn'
+    # conv4_sf_dlgn , bc_fc_sf_dlgn 
+    model_arch_type = 'conv4_dlgn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -244,13 +244,14 @@ if __name__ == '__main__':
     # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "Residual_training"
     # wand_project_name = "XOR_training"
-    wand_project_name = "Cifar10_flamarion_replicate"
+    # wand_project_name = "Cifar10_flamarion_replicate"
     # wand_project_name = "madry's_benchmarking"
     # wand_project_name = "reach_end_plot"
     # wand_project_name = "SVM_Adv_training"
+    wand_project_name = "Thesis_runs_freeze_exp"
     
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING , GATE_FREEZE_ADV_TRAINING , VALUE_FREEZE_ADV_TRAINING
-    exp_type = "ADV_TRAINING"
+    exp_type = "VALUE_FREEZE_ADV_TRAINING"
 
     npk_reg = 0
     # npk_reg = 0.01
@@ -303,7 +304,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3,8]
+    # list_of_classes_to_train_on = [3,8]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
@@ -419,7 +420,7 @@ if __name__ == '__main__':
             model_arch_type_str = model_arch_type_str + "_NPKREG_"+str(npk_reg)
         start_net_path = None
 
-        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_sf_dlgn_W_128_D_4_dir/MARGIN_ANALYSIS/svm_gated_C_0.01_sf_dlgn.pt"
+        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
         if(start_net_path is not None):
             custom_temp_model = torch.load(start_net_path)
             net.load_state_dict(custom_temp_model.state_dict())
@@ -438,7 +439,7 @@ if __name__ == '__main__':
             inner_criterion = Y_Logits_Binary_class_Loss().to(device)
 
         # eps_list = [0.03, 0.06, 0.1]
-        fast_adv_attack_type_list = ["FGSM"]
+        fast_adv_attack_type_list = ["PGD"]
         # fast_adv_attack_type_list = ['FGSM', 'PGD' ,'residual_PGD' , 'FEATURE_FLIP']
         if("mnist" in dataset):
             number_of_adversarial_optimization_steps_list = [40]

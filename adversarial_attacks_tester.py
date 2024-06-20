@@ -674,7 +674,7 @@ if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn ,  fc_sf_dlgn , madry_mnist_conv4_dnn , bc_fc_dnn , bc_fc_sf_dlgn
-    model_arch_type = 'bc_fc_sf_dlgn'
+    model_arch_type = 'fc_sf_dlgn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -683,7 +683,7 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3,8]
+    # list_of_classes_to_train_on = [3,8]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
@@ -695,12 +695,13 @@ if __name__ == '__main__':
     # "is_train_on_phase": True
     # GATE_NET_FREEZE , VAL_NET_FREEZE
     # wandb_config_additional_dict = {
-    #     "transfer_mode": "GATE_NET_FREEZE"}
+    #     "transfer_mode": "VAL_NET_FREEZE"}
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/bc_fc_sf_dlgn_W_16_D_4_dir.pt"
-    direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_bc_fc_sf_dlgn_W_64_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/out_lossfn_BCEWithLogitsLoss()/inner_lossfn_Y_Logits_Binary_class_Loss()/adv_model_dir.pt"
+    # direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
+    direct_model_path = "root/model/save/mnist/adversarial_training/MT_fc_sf_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB.npy"
@@ -774,7 +775,7 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 16
+        fc_width = 128
         fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
@@ -818,15 +819,16 @@ if __name__ == '__main__':
         # wand_project_name = "adversarial_attacks_latest_madrys"
         # wand_project_name = "madry's_benchmarking"
         # wand_project_name = "SVM_loss_training"
-        wand_project_name = "Cifar10_flamarion_replicate"
+        # wand_project_name = "Cifar10_flamarion_replicate"
+        wand_project_name = "Thesis_runs_attacks"
 
         torch_seed = 2022
         # FEATURE_FLIP , PGD , FGSM
-        adv_attack_type = "FGSM"
+        adv_attack_type = "PGD"
         adv_target = None
         # ACTIVATION_COMPARE , ADV_ATTACK , ACT_COMPARE_RECONST_ORIGINAL , ADV_ATTACK_EVAL_VIA_RECONST , ADV_ATTACK_PER_CLASS , FREQ_BAND_ADV_ATTACK_PER_CLASS
         # AFTER_ATT_FREQ_BAND_ADV_ATTACK_PER_CLASS
-        exp_type = "ADV_ATTACK"
+        exp_type = "ADV_ATTACK_PER_CLASS"
         is_adv_attack_on_train = False
         eps_step_size = 0.06
 
@@ -850,7 +852,7 @@ if __name__ == '__main__':
         if("mnist" in dataset):
             # 40 is a good sweet spot more than that doesn't help much typically
             number_of_adversarial_optimization_steps = 40
-            eps_list = [0.3]
+            eps_list = [0.3,0.2]
             eps_step_size = 0.01
         elif("cifar10" in dataset):
             number_of_adversarial_optimization_steps = 10
@@ -963,7 +965,7 @@ if __name__ == '__main__':
                     else:
                         print("adv_save_path:", adv_save_path)
                         adv_dataset = generate_adv_examples(
-                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,lossfn=criterion)
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,lossfn=criterion)
 
                     to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                         adv_dataset, shuffle=False, batch_size=batch_size)
@@ -1030,7 +1032,7 @@ if __name__ == '__main__':
                     else:
                         print("adv_save_path:", adv_save_path)
                         adv_dataset = generate_adv_examples(
-                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,lossfn=criterion)
+                            eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue,residue_vname=residue_vname,lossfn=criterion)
 
                     to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                         adv_dataset, shuffle=False, batch_size=128)

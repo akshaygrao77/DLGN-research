@@ -93,6 +93,8 @@ class RawActivationAnalyser():
     # [B,128,28,28]
     def reset_raw_analyser_state(self):
         self.total_tcollect_img_count = 0
+        self.active_gate_count_all_layers = None
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # Count based states
         # Size: [Num of points(batch dim, Num filters aggregated over layer, W , H]
         self.post_activation_values_all_batches = None
@@ -346,6 +348,10 @@ class RawActivationAnalyser():
 
         return
 
+    def initialise_simple_record_states(self):
+        self.total_tcollect_img_count = 0
+        self.active_gate_count_all_layers=None
+
     def initialise_raw_record_states(self):
         self.total_tcollect_img_count = 0
         self.post_activation_values_all_batches = None
@@ -383,6 +389,27 @@ class RawActivationAnalyser():
             else:
                 self.post_activation_values_all_batches = np.concatenate(
                     (self.post_activation_values_all_batches, current_post_activation_values), axis=0)
+    
+    def update_simple_record_states_per_batch(self):
+        if(isinstance(self.model, torch.nn.DataParallel)):
+            conv_outs = self.model.module.linear_conv_outputs
+        else:
+            conv_outs = self.model.linear_conv_outputs
+        
+        if(self.active_gate_count_all_layers is None):
+            self.active_gate_count_all_layers = []
+            for indx in range(len(conv_outs)):
+                each_conv_output = conv_outs[indx]
+                self.active_gate_count_all_layers.append(torch.zeros(each_conv_output.shape[1:]).to(device=each_conv_output.device))
+
+        beta = 4
+        current_post_activation_values = None
+        with torch.no_grad():
+            for indx in range(len(conv_outs)):
+                each_conv_output = conv_outs[indx]
+                t1 = torch.where(each_conv_output>0,1.0,0.0)
+                tmp = torch.sum(t1,dim=0)
+                self.active_gate_count_all_layers[indx] += tmp
 
     def record_raw_activation_states_per_batch(self, per_class_per_batch_data):
         c_inputs, _ = per_class_per_batch_data
@@ -391,12 +418,17 @@ class RawActivationAnalyser():
 
         # Forward pass to store layer outputs from hooks
         self.model(c_inputs)
+        if self.is_simple_analysis==False:
+            # Intiialise the structure to hold i's for which pixels are positive or negative
+            if(self.post_activation_values_all_batches is None):
+                self.initialise_raw_record_states()
 
-        # Intiialise the structure to hold i's for which pixels are positive or negative
-        if(self.post_activation_values_all_batches is None):
-            self.initialise_raw_record_states()
+            self.update_raw_record_states_per_batch()
+        else:
+            if self.active_gate_count_all_layers is None:
+                self.initialise_simple_record_states()
+            self.update_simple_record_states_per_batch()
 
-        self.update_raw_record_states_per_batch()
         self.total_tcollect_img_count += current_batch_size
 
     def record_raw_activation_states(self, per_class_data_loader, class_label, number_of_batch_to_collect, is_save_original_image=True):
@@ -428,59 +460,60 @@ class RawActivationAnalyser():
 
                 if(not(number_of_batch_to_collect is None) and i == number_of_batch_to_collect - 1):
                     break
+            
+            if self.is_simple_analysis == False:
+                temp = torch.from_numpy(
+                    self.post_activation_values_all_batches)
+                pos_hrelu = HardRelu()(temp)
+                neg_hrelu = HardRelu()(-temp)
 
-            temp = torch.from_numpy(
-                self.post_activation_values_all_batches)
-            pos_hrelu = HardRelu()(temp)
-            neg_hrelu = HardRelu()(-temp)
+                temp = pos_hrelu + neg_hrelu
+                tones = torch.ones(temp.size())
+                neg_hrelu = torch.where(temp == 0, tones, neg_hrelu)
 
-            temp = pos_hrelu + neg_hrelu
-            tones = torch.ones(temp.size())
-            neg_hrelu = torch.where(temp == 0, tones, neg_hrelu)
+                self.post_activation_values_positive_hrelu_counts = torch.sum(
+                    pos_hrelu, dim=0)
+                self.post_activation_values_negative_hrelu_counts = torch.sum(
+                    neg_hrelu, dim=0)
 
-            self.post_activation_values_positive_hrelu_counts = torch.sum(
-                pos_hrelu, dim=0)
-            self.post_activation_values_negative_hrelu_counts = torch.sum(
-                neg_hrelu, dim=0)
+                prob_pos = self.post_activation_values_positive_hrelu_counts / \
+                    self.total_tcollect_img_count
+                prob_neg = self.post_activation_values_negative_hrelu_counts / \
+                    self.total_tcollect_img_count
+                prob_zero = 1 - (prob_pos + prob_neg)
+                entropy_bin_list = [prob_pos, prob_neg, prob_zero]
 
-            prob_pos = self.post_activation_values_positive_hrelu_counts / \
-                self.total_tcollect_img_count
-            prob_neg = self.post_activation_values_negative_hrelu_counts / \
-                self.total_tcollect_img_count
-            prob_zero = 1 - (prob_pos + prob_neg)
-            entropy_bin_list = [prob_pos, prob_neg, prob_zero]
+                self.post_activation_values_gate_entropy = calculate_entropy(
+                    entropy_bin_list)
+                print("self.post_activation_values_all_batches",
+                    self.post_activation_values_all_batches.shape)
+                print("self.post_activation_values_positive_hrelu_counts",
+                    self.post_activation_values_positive_hrelu_counts.size())
 
-            self.post_activation_values_gate_entropy = calculate_entropy(
-                entropy_bin_list)
-            print("self.post_activation_values_all_batches",
-                  self.post_activation_values_all_batches.shape)
-            print("self.post_activation_values_positive_hrelu_counts",
-                  self.post_activation_values_positive_hrelu_counts.size())
+                post_act_values_pos_hrelu_counts = torch.sum(
+                    pos_hrelu, dim=[i for i in range(1, len(pos_hrelu.size()))])
+                post_act_values_neg_hrelu_counts = torch.sum(
+                    neg_hrelu, dim=[i for i in range(1, len(neg_hrelu.size()))])
 
-            post_act_values_pos_hrelu_counts = torch.sum(
-                pos_hrelu, dim=[i for i in range(1, len(pos_hrelu.size()))])
-            post_act_values_neg_hrelu_counts = torch.sum(
-                neg_hrelu, dim=[i for i in range(1, len(neg_hrelu.size()))])
+                each_sample_layer_out_size = torch.numel(
+                    pos_hrelu[0])
+                prob_pos = post_act_values_pos_hrelu_counts / each_sample_layer_out_size
+                prob_neg = post_act_values_neg_hrelu_counts / each_sample_layer_out_size
+                prob_zero = 1 - (prob_pos + prob_neg)
+                overall_entropy_bin = torch.vstack((prob_pos, prob_neg, prob_zero))
+                overall_entropy_bin = torch.transpose(overall_entropy_bin, 0, 1)
+                self.post_activation_values_entropy_per_sample = torch.zeros(
+                    self.total_tcollect_img_count)
+                # print("overall_entropy_bin size", overall_entropy_bin.size())
+                for indx in range(len(overall_entropy_bin)):
+                    each_entropy_bin_list = overall_entropy_bin[indx]
+                    temp_entr = calculate_entropy(
+                        each_entropy_bin_list)
+                    self.post_activation_values_entropy_per_sample[indx] = temp_entr
 
-            each_sample_layer_out_size = torch.numel(
-                pos_hrelu[0])
-            prob_pos = post_act_values_pos_hrelu_counts / each_sample_layer_out_size
-            prob_neg = post_act_values_neg_hrelu_counts / each_sample_layer_out_size
-            prob_zero = 1 - (prob_pos + prob_neg)
-            overall_entropy_bin = torch.vstack((prob_pos, prob_neg, prob_zero))
-            overall_entropy_bin = torch.transpose(overall_entropy_bin, 0, 1)
-            self.post_activation_values_entropy_per_sample = torch.zeros(
-                self.total_tcollect_img_count)
-            # print("overall_entropy_bin size", overall_entropy_bin.size())
-            for indx in range(len(overall_entropy_bin)):
-                each_entropy_bin_list = overall_entropy_bin[indx]
-                temp_entr = calculate_entropy(
-                    each_entropy_bin_list)
-                self.post_activation_values_entropy_per_sample[indx] = temp_entr
-
-            print("self.post_activation_values_entropy_per_sample",
-                  self.post_activation_values_entropy_per_sample.size())
-            print("each_sample_layer_out_size", each_sample_layer_out_size)
+                print("self.post_activation_values_entropy_per_sample",
+                    self.post_activation_values_entropy_per_sample.size())
+                print("each_sample_layer_out_size", each_sample_layer_out_size)
 
         # print("self.post_activation_values_all_batches",
         #       self.post_activation_values_all_batches)
@@ -495,10 +528,11 @@ class RawActivationAnalyser():
                                                 is_act_collection_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                                 wand_project_name, wandb_group_name, torch_seed,
                                                 root_save_prefix="root/ACT_PATTERN_PER_CLASS", final_postfix_for_save="", analysed_model_path="",
-                                                is_save_graph_visualizations=True, is_save_activation_records=True, wandb_config_additional_dict=None):
+                                                is_save_graph_visualizations=True, is_save_activation_records=True, wandb_config_additional_dict=None,is_simple_analysis=False):
         self.root_save_prefix = root_save_prefix
         self.final_postfix_for_save = final_postfix_for_save
         self.class_label = class_label
+        self.is_simple_analysis = is_simple_analysis
         is_log_wandb = not(wand_project_name is None)
 
         # torch.manual_seed(torch_seed)
@@ -632,7 +666,7 @@ def run_raw_activation_analysis_on_config(dataset, model_arch_type, is_template_
                                           valid_split_size, torch_seed, wandb_group_name, exp_type,
                                           root_save_prefix='root/RAW_ACT_PATTERN_ANALYSIS', final_postfix_for_save="",
                                           custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, analysed_model_path="",
-                                          is_save_graph_visualizations=True, is_save_activation_records=True, wandb_config_additional_dict=None):
+                                          is_save_graph_visualizations=True, is_save_activation_records=True, wandb_config_additional_dict=None,is_simple_analysis=False):
     if(root_save_prefix is None):
         root_save_prefix = 'root/RAW_ACT_PATTERN_ANALYSIS'
     if(final_postfix_for_save is None):
@@ -697,7 +731,7 @@ def run_raw_activation_analysis_on_config(dataset, model_arch_type, is_template_
                                                                  is_template_image_on_train, is_class_segregation_on_ground_truth, activation_calculation_batch_size,
                                                                  wand_project_name, wandb_group_name, torch_seed,
                                                                  root_save_prefix, final_postfix_for_save, analysed_model_path, is_save_graph_visualizations, is_save_activation_records,
-                                                                 wandb_config_additional_dict=wandb_config_additional_dict)
+                                                                 wandb_config_additional_dict=wandb_config_additional_dict,is_simple_analysis=is_simple_analysis)
             list_of_act_analyser.append(act_analyser)
     elif(exp_type == "GENERATE_RECORD_STATS_OVERALL"):
         class_label = 'ALL_CLASSES'
@@ -768,7 +802,7 @@ def load_and_save_activation_analysis_on_config(dataset, valid_split_size, model
     return list_of_act_analyser
 
 
-def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data_loader, it_start=1, num_iter=None, direct_model_path=None):
+def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data_loader, it_start=1, num_iter=None, direct_model_path=None,is_simple_analysis=False):
     if(num_iter is None):
         num_iter = it_start + 1
     list_of_list_of_act_analyser = []
@@ -828,11 +862,20 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
                                                                          valid_split_size, torch_seed, wandb_group_name, exp_type, is_save_activation_records=is_save_activation_records,
                                                                          class_indx_to_visualize=class_ind_visualize, custom_data_loader=custom_data_loader,
                                                                          custom_model=custom_model, root_save_prefix=each_save_prefix, final_postfix_for_save=each_save_postfix,
-                                                                         is_save_graph_visualizations=is_save_graph_visualizations, analysed_model_path=analysed_model_path)
+                                                                         is_save_graph_visualizations=is_save_graph_visualizations, analysed_model_path=analysed_model_path,is_simple_analysis=is_simple_analysis)
         elif(sub_scheme_type == 'OVER_RECONSTRUCTED'):
             pass
         elif(sub_scheme_type == 'OVER_ADVERSARIAL'):
-            final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_act_collection_on_train,residue_vname=residue_vname)+str(each_save_postfix)
+            update_on='all'
+            rand_init=True
+            norm=np.inf
+            use_ytrue=True
+            criterion= None
+            residue_vname = None
+            if("bc_" in model_arch_type):
+                # criterion = torch.nn.BCEWithLogitsLoss()
+                criterion = Y_Logits_Binary_class_Loss()
+            final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_act_collection_on_train,update_on,rand_init,norm,use_ytrue,residue_vname,criterion)+str(each_save_postfix)
             adv_save_path = models_base_path + final_adv_postfix_for_save+"/adv_dataset.npy"
 
             wandb_config_additional_dict = {"eps": eps, "adv_atack_type": adv_attack_type, "num_of_adversarial_optim_stps":
@@ -853,7 +896,7 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
                           adv_save_path)
             else:
                 adv_dataset = generate_adv_examples(
-                    to_be_analysed_dataloader, custom_model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=adv_save_path,residue_vname=residue_vname)
+                    to_be_analysed_dataloader, custom_model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=is_save_adv, save_path=adv_save_path,residue_vname=residue_vname,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
 
             to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                 adv_dataset, shuffle=False, batch_size=128)
@@ -869,7 +912,7 @@ def run_generate_scheme(models_base_path, to_be_analysed_dataloader, custom_data
                                                                          custom_data_loader=custom_loader, custom_model=custom_model, root_save_prefix=each_save_prefix,
                                                                          final_postfix_for_save=each_save_postfix, is_save_graph_visualizations=is_save_graph_visualizations,
                                                                          class_indx_to_visualize=class_ind_visualize,
-                                                                         analysed_model_path=analysed_model_path, wandb_config_additional_dict=wandb_config_additional_dict)
+                                                                         analysed_model_path=analysed_model_path, wandb_config_additional_dict=wandb_config_additional_dict,is_simple_analysis=is_simple_analysis)
 
         list_of_list_of_act_analyser.append(list_of_act_analyser)
 
@@ -1033,6 +1076,60 @@ def generate_class_pair_wise_stats_array(list_of_act_analyser, classes):
             current_pair_stats = [ovrl_phrelu_diff_min.cpu().numpy(), ovrl_phrelu_diff_max.cpu().numpy(), ovrl_phrelu_diff_std.cpu().numpy(), ovrl_phrelu_diff_mean.cpu().numpy(), ovrl_phrelu_entr_min.cpu().numpy(), ovrl_phrelu_entr_max.cpu().numpy(), ovrl_phrelu_entr_std.cpu().numpy(), ovrl_phrelu_entr_mean.cpu().numpy(),
                                   ovrl_nhrelu_diff_min.cpu().numpy(), ovrl_nhrelu_diff_max.cpu().numpy(), ovrl_nhrelu_diff_std.cpu().numpy(), ovrl_nhrelu_diff_mean.cpu().numpy(), ovrl_nhrelu_entr_min.cpu().numpy(), ovrl_nhrelu_entr_max.cpu().numpy(), ovrl_nhrelu_entr_std.cpu().numpy(), ovrl_nhrelu_entr_mean.cpu().numpy()]
             current_class_pairing_stats.append(current_pair_stats)
+        pairwise_class_stats.append(current_class_pairing_stats)
+    return pairwise_class_stats
+
+def generate_per_class_comb_simple_stats(list_of_act_analyser_of_class_comb):
+    # min_data_size = float("inf")
+    # for each_class_act_analyser in list_of_act_analyser_of_class_comb:
+    #     min_data_size = min(min_data_size,each_class_act_analyser.total_tcollect_img_count)
+    # print("min_data_size ",min_data_size)
+
+    # First get the pixels which is not active for both classes. This is achieved by adding a one to an initially zero tensor whenever class has active gates at that index
+    all_class_inactive_gates_all_layers = [torch.zeros_like(a) for a in list_of_act_analyser_of_class_comb[0].active_gate_count_all_layers]
+    for ii in range(len(list_of_act_analyser_of_class_comb)):
+        each_class_act_analyser = list_of_act_analyser_of_class_comb[ii]
+        cur_active_gate_count_all_layers = each_class_act_analyser.active_gate_count_all_layers
+        for lind in range(len(all_class_inactive_gates_all_layers)):
+            # More than 10% of the time gates should be active to consider that pixel active in this stage
+            all_class_inactive_gates_all_layers[lind] = all_class_inactive_gates_all_layers[lind] + torch.where(cur_active_gate_count_all_layers[lind] > 0.1*each_class_act_analyser.total_tcollect_img_count,1.0,0.0)
+    
+    common_active_gate_count_all_layers = [list_of_act_analyser_of_class_comb[0].active_gate_count_all_layers[ind][all_class_inactive_gates_all_layers[ind] != 0] for ind in range(len(list_of_act_analyser_of_class_comb[0].active_gate_count_all_layers))]
+    aggregated_active_gate_counts_all_layers = [list_of_act_analyser_of_class_comb[0].active_gate_count_all_layers[ind][all_class_inactive_gates_all_layers[ind] != 0] for ind in range(len(list_of_act_analyser_of_class_comb[0].active_gate_count_all_layers))]
+    # print([a.shape for a in common_active_gate_count_all_layers])
+    # print([a.shape for a in all_class_inactive_gates_all_layers])
+    
+    for ii in range(1, len(list_of_act_analyser_of_class_comb)):
+        each_class_act_analyser = list_of_act_analyser_of_class_comb[ii]
+        cur_active_gate_count_all_layers = each_class_act_analyser.active_gate_count_all_layers
+        for lind in range(len(cur_active_gate_count_all_layers)):
+            common_active_gate_count_all_layers[lind] = torch.minimum(common_active_gate_count_all_layers[lind],cur_active_gate_count_all_layers[lind][all_class_inactive_gates_all_layers[lind] != 0])
+            aggregated_active_gate_counts_all_layers[lind] += cur_active_gate_count_all_layers[lind][all_class_inactive_gates_all_layers[lind] != 0]
+    
+    overall_mean_gate_overlap = 0
+    for lind in range(len(common_active_gate_count_all_layers)):
+        common_active_gate_count_all_layers[lind] = (common_active_gate_count_all_layers[lind]*len(list_of_act_analyser_of_class_comb)) / aggregated_active_gate_counts_all_layers[lind]
+        # print(common_active_gate_count_all_layers[lind])
+        # print(aggregated_active_gate_counts_all_layers[lind])
+        tp = torch.mean(common_active_gate_count_all_layers[lind])
+        # print("common_active_gate_count_all_layers[lind] ind:{}-->{} cmean:{}   {}".format(lind,common_active_gate_count_all_layers[lind].shape,tp,common_active_gate_count_all_layers[lind]))
+        overall_mean_gate_overlap += tp
+    ret = overall_mean_gate_overlap/len(common_active_gate_count_all_layers)
+    # print("ret ",ret)
+    return ret
+
+
+def generate_simple_class_pair_wise_stats_array(list_of_act_analyser, classes):
+    current_combination_act_analysers = [None] * 2
+    pairwise_class_stats = []
+    for each_source_c_indx in range(len(classes)):
+        current_class_pairing_stats = []
+        current_combination_act_analysers[0] = list_of_act_analyser[each_source_c_indx]
+        for each_dest_c_indx in range(len(classes)):
+            print(each_source_c_indx,each_dest_c_indx)
+            current_combination_act_analysers[1] = list_of_act_analyser[each_dest_c_indx]
+            overall_mean_gate_overlap = generate_per_class_comb_simple_stats(current_combination_act_analysers)
+            current_class_pairing_stats.append([overall_mean_gate_overlap.item()])
         pairwise_class_stats.append(current_class_pairing_stats)
     return pairwise_class_stats
 
@@ -1328,7 +1425,7 @@ if __name__ == '__main__':
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = True
     is_save_activation_records = False
-    # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE , ADV_VS_ORIG_REPORT , CLASS_WISE_REPORT
+    # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE , ADV_VS_ORIG_REPORT , CLASS_WISE_REPORT ,  SIMPLE_CLASS_WISE_REPORT
     scheme_type = "GENERATE_MERGE_AND_SAVE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
@@ -1340,7 +1437,7 @@ if __name__ == '__main__':
     # list_of_classes_to_train_on = [3, 8]
 
     classes, num_classes, ret_config = get_preprocessing_and_other_configs(
-        dataset, valid_split_size)
+        dataset, valid_split_size,batch_size=128)
     ret_config.list_of_classes = list_of_classes_to_train_on
     trainloader, _, testloader = preprocess_dataset_get_data_loader(
         ret_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=is_split_validation)
@@ -1480,7 +1577,7 @@ if __name__ == '__main__':
 
             direct_model_path = None
 
-            direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+            direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
 
             if(merge_scheme_type == "OVER_ORIGINAL_VS_ADVERSARIAL"):
                 num_iterations = 1
@@ -1525,8 +1622,8 @@ if __name__ == '__main__':
                                     [list_of_merged_act1_act2], class_combination_tuple_list)
 
             elif(merge_scheme_type == "TWO_CUSTOM_MODELS"):
-                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_n16_small_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
-                direct_model_path2 = "root/model/save/mnist/V2_iterative_augmenting/DS_mnist/MT_conv4_dlgn_n16_small_ET_GENERATE_ALL_FINAL_TEMPLATE_IMAGES/_COLL_OV_train/SEG_GT/TMP_COLL_BS_1/TMP_LOSS_TP_TEMP_LOSS/TMP_INIT_zero_init_image/_torch_seed_2022_c_thres_0.73/aug_conv4_dlgn_iter_1_dir.pt"
+                direct_model_path1 = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+                direct_model_path2 = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
                 num_iterations = 1
                 it_start = 1
                 for current_it_start in range(it_start, num_iterations + 1):
@@ -1617,7 +1714,7 @@ if __name__ == '__main__':
                     generate_class_combination_statistics(
                         list_of_merged_act1_act2, class_combination_tuple_list)
     elif(scheme_type == "CLASS_WISE_REPORT"):
-        is_save_adv = True
+        is_save_adv = False
         eps = 0.3
         adv_attack_type = 'PGD'
         number_of_adversarial_optimization_steps = 40
@@ -1627,8 +1724,8 @@ if __name__ == '__main__':
         is_save_graph_visualizations = False
         current_it_start = 1
         models_base_path = None
-        std_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir.pt"
-        adv_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+        std_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
+        adv_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
 
         tmp_image_over_what_str = 'test'
         if(is_act_collection_on_train):
@@ -1880,5 +1977,123 @@ if __name__ == '__main__':
         generate_all_classes_only_diff_excel_report(
             only_diff_xls_save_location, all_model_adv_vs_orig_ex_stats)
         print("xls_save_location", xls_save_location)
+    elif(scheme_type == "SIMPLE_CLASS_WISE_REPORT"):
+        is_save_adv = True
+        eps = 0.3
+        adv_attack_type = 'PGD'
+        number_of_adversarial_optimization_steps = 40
+        eps_step_size = 0.01
+        adv_target = None
+        class_ind_visualize = None
+        is_save_graph_visualizations = False
+        current_it_start = 1
+        models_base_path = None
+        residue_vname = None
+        std_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
+        adv_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+
+        tmp_image_over_what_str = 'test'
+        if(is_act_collection_on_train):
+            tmp_image_over_what_str = 'train'
+
+        seg_over_what_str = 'MP'
+        if(is_class_segregation_on_ground_truth):
+            seg_over_what_str = 'GT'
+
+        if('CLEAN' in std_model_path or 'APR_TRAINING' in std_model_path):
+            first_prefix = std_model_path[0:std_model_path.rfind(
+                ".pt")]
+        else:
+            first_prefix = std_model_path[0:std_model_path.rfind(
+                "/")+1]
+
+        final_postfix_for_save = "/{}/EPS_{}/ADV_TYPE_{}/NUM_ADV_STEPS_{}/eps_step_size_{}/".format(
+            first_prefix, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size)
+
+        if('CLEAN' in adv_model_path or 'APR_TRAINING' in adv_model_path):
+            prefix = adv_model_path[0:adv_model_path.rfind(
+                ".pt")]
+        else:
+            prefix = adv_model_path[0:adv_model_path.rfind(
+                "/")+1]
+
+        image_save_prefix_folder = str(prefix)+"/RAW_ACT_ANALYSIS/SIMPLE_CLASS_WISE_REPORT/"+str(dataset_str)+"/MT_"+str(model_arch_type)+"_ET_"+str(exp_type)+"/_ACT_OV_"+str(tmp_image_over_what_str)+"/SEG_"+str(
+            seg_over_what_str)+"/TMP_COLL_BS_"+str(activation_calculation_batch_size)+"_NO_TO_COLL_"+str(number_of_batch_to_collect)+"/_torch_seed_"+str(torch_seed)+"/" + str(final_postfix_for_save) + "/"
+
+        if not os.path.exists(image_save_prefix_folder):
+            os.makedirs(image_save_prefix_folder)
+
+        std_model_merged_classwise_pair_stats_store_location = image_save_prefix_folder + \
+            "/std_model_cp_stats.npy"
+        print("std_model_merged_classwise_pair_stats_store_location",
+              std_model_merged_classwise_pair_stats_store_location)
+        adv_model_merged_classwise_pair_stats_store_location = image_save_prefix_folder + \
+            "/adv_model_cp_stats.npy"
+        xls_save_location = image_save_prefix_folder + \
+            "/adv_std_model_over_adv_orig_examples_report"
+        
+        sub_scheme_type = 'OVER_ORIGINAL'
+        list_of_list_of_act_analyser = run_generate_scheme(
+            models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=std_model_path,is_simple_analysis=True)
+        if(class_combination_tuple_list is not None):
+            generate_class_combination_statistics(
+                list_of_list_of_act_analyser, class_combination_tuple_list)
+        std_model_pairwise_class_stats_for_orig = generate_simple_class_pair_wise_stats_array(
+            list_of_list_of_act_analyser[0], classes)
+        print("std_model_pairwise_class_stats_for_orig shape:",
+                np.array(std_model_pairwise_class_stats_for_orig).shape)
+        list_of_list_of_act_analyser = run_generate_scheme(
+            models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=adv_model_path,is_simple_analysis=True)
+        if(class_combination_tuple_list is not None):
+            generate_class_combination_statistics(
+                list_of_list_of_act_analyser, class_combination_tuple_list)
+        adv_model_pairwise_class_stats_for_orig = generate_simple_class_pair_wise_stats_array(
+            list_of_list_of_act_analyser[0], classes)
+        print("adv_model_pairwise_class_stats_for_orig shape:",
+                np.array(adv_model_pairwise_class_stats_for_orig).shape)
+
+        sub_scheme_type = 'OVER_ADVERSARIAL'
+
+        list_of_list_of_act_analyser = run_generate_scheme(
+            models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=std_model_path,is_simple_analysis=True)
+        if(class_combination_tuple_list is not None):
+            generate_class_combination_statistics(
+                list_of_list_of_act_analyser, class_combination_tuple_list)
+        std_model_pairwise_class_stats_for_adv = generate_simple_class_pair_wise_stats_array(
+            list_of_list_of_act_analyser[0], classes)
+        print("std_model_pairwise_class_stats_for_adv shape:",
+                np.array(std_model_pairwise_class_stats_for_adv).shape)
+        list_of_list_of_act_analyser = run_generate_scheme(
+            models_base_path, to_be_analysed_dataloader, custom_data_loader, current_it_start, direct_model_path=adv_model_path,is_simple_analysis=True)
+        if(class_combination_tuple_list is not None):
+            generate_class_combination_statistics(
+                list_of_list_of_act_analyser, class_combination_tuple_list)
+        adv_model_pairwise_class_stats_for_adv = generate_simple_class_pair_wise_stats_array(
+            list_of_list_of_act_analyser[0], classes)
+        print("adv_model_pairwise_class_stats_for_adv shape:",
+                np.array(adv_model_pairwise_class_stats_for_adv).shape)
+
+        std_model_merged_classpair_stats = np.array(merge_two_pairwise_class_stats_in_alternative_manner(
+            std_model_pairwise_class_stats_for_adv, std_model_pairwise_class_stats_for_orig))
+        adv_model_merged_classpair_stats = np.array(merge_two_pairwise_class_stats_in_alternative_manner(
+            adv_model_pairwise_class_stats_for_adv, adv_model_pairwise_class_stats_for_orig))
+        
+        with open(adv_model_merged_classwise_pair_stats_store_location, 'wb') as file:
+            np.savez(
+                file, arr=adv_model_merged_classpair_stats)
+
+        with open(std_model_merged_classwise_pair_stats_store_location, 'wb') as file:
+            np.savez(
+                file, arr=std_model_merged_classpair_stats)
+
+        print("std_model_merged_classpair_stats shape:",
+                std_model_merged_classpair_stats.shape)
+        print("adv_model_merged_classpair_stats shape:",
+                adv_model_merged_classpair_stats.shape)
+        print("xls_save_location ",xls_save_location)
+        generate_class_pairwise_excel_report(
+            xls_save_location, std_model_merged_classpair_stats, adv_model_merged_classpair_stats)
+
+        
 
     print("Finished execution!!!")
