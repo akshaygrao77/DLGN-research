@@ -6137,6 +6137,9 @@ def get_img_size(dataset):
         return [1, 28, 28]
     elif(dataset == "imagenet_1000"):
         return [3, 224, 224]
+    elif("mnist_resized" in dataset or "fashion_mnist_resized" in dataset):
+        resized_size = int(dataset[dataset.rfind("__")+2:])
+        return [1, resized_size, resized_size]
     elif("mnist_" in dataset):
         return [1, 28, 28]
     elif("fashion_mnist_" in dataset):
