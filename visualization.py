@@ -23,6 +23,7 @@ from conv4_models import get_model_instance, get_img_size
 import scipy.ndimage as nd
 from collections import OrderedDict
 from external_utils import format_time
+# from adversarial_attacks_tester import generate_adv_examples,get_adv_save_str
 
 # from vgg_net_16 import DLGN_VGG_Network, DLGN_VGG_LinearNetwork, DLGN_VGG_WeightNetwork
 # from mnist_dlgn_fc import DLGN_FC_Network, DLGN_FC_Gating_Network, DLGN_FC_Value_Network
@@ -3240,7 +3241,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                 entropy_calculation_batch_size, number_of_batches_to_calculate_entropy_on, root_save_prefix='root', final_postfix_for_save="aug_indx_1",
                                 custom_model=None, custom_data_loader=None, class_indx_to_visualize=None, wandb_config_additional_dict=None,
                                 vis_version='V2', random_sample_gate_percent=None, layer_nums_to_visualize=None,alpha=0,p_epsilon=None,v4lr=0.1,
-                                class_analysis_mode=None,src_classes_set=None,list_of_dest_classes_set=None):
+                                analysis_mode=None,src_classes_set=None,list_of_dest_classes_set=None):
     output_template_list_per_class = None
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Running for "+str(dataset))
@@ -3308,9 +3309,9 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                 per_class_data_loader = torch.utils.data.DataLoader(per_class_dataset, batch_size=template_image_calculation_batch_size)
                 tmp_gen.collect_all_active_pixels_into_ymaps(per_class_data_loader, class_label, number_of_batch_to_collect, collect_threshold)
                 for lind in range(len(current_overall_y)):
-                    if class_analysis_mode == "DIFF":
+                    if analysis_mode == "DIFF":
                         current_overall_y[lind] = HardRelu()(current_overall_y[lind] - HardRelu()(tmp_gen.overall_y[lind]))
-                    elif class_analysis_mode == "OVRLP":
+                    elif analysis_mode == "OVRLP":
                         current_overall_y[lind] = current_overall_y[lind] * HardRelu()(tmp_gen.overall_y[lind])
 
             c_indx = dest_classes_set[0]
@@ -3325,16 +3326,15 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
             # for lind in range(len(current_overall_y)):
             #     current_overall_y[lind] = torch.where(current_overall_y[lind]>0,1.0,-1.0)
             tmp_gen.overall_y = current_overall_y
-            postfix_save_append_str = str(class_analysis_mode)+'/SRC'+'_'.join(map(str,src_classes_set))+"/DST"+'_'.join(map(str,dest_classes_set))+'_'
+            postfix_save_append_str = str(analysis_mode)+'/SRC'+'_'.join(map(str,src_classes_set))+"/DST"+'_'.join(map(str,dest_classes_set))+'_'
             tmp_gen.generate_template_image_per_class(exp_type,
                                                     per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                                     is_class_segregation_on_ground_truth, template_initial_image_type,
                                                     template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold, entropy_calculation_batch_size,
                                                     number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save+postfix_save_append_str, wandb_config_additional_dict=wandb_config_additional_dict,
                                                     vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent,alpha = alpha,v4lr=v4lr,is_skip_collection=True)
-
     
-    return 
+        return 
 
     for c_indx in class_indx_to_visualize:
         class_label = classes[c_indx]
@@ -3357,7 +3357,63 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                                                                                              wandb_config_additional_dict=wandb_config_additional_dict, vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent,alpha = alpha)
             output_template_list_per_class[c_indx] = list_of_reconst_images
         else:
-            if(exp_type == "GENERATE_TEMPLATE_IMAGES"):
+            if(exp_type == "GENERATE_TEMPLATE_IMAGES_ADV_ORIG"):
+                per_class_loader = torch.utils.data.DataLoader(per_class_dataset, batch_size=template_image_calculation_batch_size,shuffle=False)
+                eps = 0.3
+                adv_attack_type = 'PGD'
+                number_of_adversarial_optimization_steps = 40
+                eps_step_size = 0.01
+                adv_target = None
+                residue_vname = None
+                update_on='all'
+                rand_init=True
+                norm=np.inf
+                use_ytrue=True
+                criterion= None
+                adv_save_path = None
+                if("bc_" in model_arch_type):
+                    # criterion = torch.nn.BCEWithLogitsLoss()
+                    criterion = Y_Logits_Binary_class_Loss()
+
+                adv_dataset = generate_adv_examples(
+                    per_class_loader, model, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect, is_save_adv=False, save_path=adv_save_path,residue_vname=residue_vname,update_on=update_on,rand_init=rand_init,norm=norm,use_ytrue=use_ytrue)
+
+                tmp_gen = TemplateImageGenerator(
+                    model, get_initial_image(dataset, template_initial_image_type))
+                per_class_adv_data_loader = torch.utils.data.DataLoader(adv_dataset, batch_size=template_image_calculation_batch_size)
+                tmp_gen.collect_all_active_pixels_into_ymaps(per_class_adv_data_loader, class_label, number_of_batch_to_collect, collect_threshold)
+                current_adv_overall_y = [HardRelu()(a) for a in tmp_gen.overall_y]
+
+                tmp_gen = TemplateImageGenerator(
+                    model, get_initial_image(dataset, template_initial_image_type))
+                tmp_gen.collect_all_active_pixels_into_ymaps(per_class_loader, class_label, number_of_batch_to_collect, collect_threshold)
+                current_orig_overall_y = [HardRelu()(a) for a in tmp_gen.overall_y]
+
+                current_overall_y = [None]*len(current_orig_overall_y)
+                for lind in range(len(current_overall_y)):
+                    if analysis_mode == "ADV_DIFF_ORIG":
+                        current_overall_y[lind] = HardRelu()(current_adv_overall_y[lind] - HardRelu()(current_orig_overall_y[lind]))
+                    elif analysis_mode == "ORIG_DIFF_ADV":
+                        current_overall_y[lind] = HardRelu()(current_orig_overall_y[lind] - HardRelu()(current_adv_overall_y[lind]))
+                    elif analysis_mode == "ADV_OVRLP_ORIG":
+                        current_overall_y[lind] = current_adv_overall_y[lind] * HardRelu()(current_orig_overall_y[lind])
+
+                tmp_gen = TemplateImageGenerator(
+                    model, get_initial_image(dataset, template_initial_image_type))
+                tmp_gen.reset_collection_state()
+                # This is important to decide
+                for lind in range(len(current_overall_y)):
+                    current_overall_y[lind] = torch.where(current_overall_y[lind]>0,1.0,-1.0)
+                tmp_gen.overall_y = current_overall_y
+                postfix_save_append_str = "_"+str(analysis_mode)+"_"
+
+                tmp_gen.generate_template_image_per_class(exp_type,
+                                                        per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
+                                                        is_class_segregation_on_ground_truth, template_initial_image_type,
+                                                        template_image_calculation_batch_size, template_loss_type, wand_project_name, wandb_group_name, torch_seed, number_of_image_optimization_steps, collect_threshold, entropy_calculation_batch_size,
+                                                        number_of_batches_to_calculate_entropy_on, root_save_prefix=root_save_prefix, final_postfix_for_save=final_postfix_for_save+postfix_save_append_str, wandb_config_additional_dict=wandb_config_additional_dict,
+                                                        vis_version=vis_version, random_sample_gate_percent=random_sample_gate_percent,alpha = alpha,v4lr=v4lr,is_skip_collection=True)
+            elif(exp_type == "GENERATE_TEMPLATE_IMAGES"):
                 tmp_gen.generate_template_image_per_class(exp_type,
                                                         per_class_dataset, class_label, c_indx, number_of_batch_to_collect, classes, model_arch_type, dataset, is_template_image_on_train,
                                                         is_class_segregation_on_ground_truth, template_initial_image_type,
@@ -3444,8 +3500,11 @@ if __name__ == '__main__':
     # p_epsilon = 0.3
     v4lr = 0.1
     number_of_image_optimization_steps = 51
-    # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES , GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG , GENERATE_TEMPLATE_IMAGES_FOR_CLASS_ANALYSIS
-    exp_type = "GENERATE_TEMPLATE_IMAGES_FOR_CLASS_ANALYSIS"
+    # TEMPLATE_ACC,GENERATE_TEMPLATE_IMAGES , TEMPLATE_ACC_WITH_CUSTOM_PLOTS , GENERATE_ALL_FINAL_TEMPLATE_IMAGES , GENERATE_TEMPLATE_IMAGES_LAYER_WISE_AVG 
+    # GENERATE_TEMPLATE_IMAGES_ADV_ORIG , GENERATE_TEMPLATE_IMAGES_FOR_CLASS_ANALYSIS
+    exp_type = "GENERATE_TEMPLATE_IMAGES_ADV_ORIG"
+    # ADV_DIFF_ORIG , ORIG_DIFF_ADV , ADV_OVRLP_ORIG
+    analysis_mode = "ORIG_DIFF_ADV"
     temp_collect_threshold = 0.90
     entropy_calculation_batch_size = 64
     number_of_batches_to_calculate_entropy_on = None
@@ -3525,13 +3584,13 @@ if __name__ == '__main__':
     
     if exp_type == "GENERATE_TEMPLATE_IMAGES_FOR_CLASS_ANALYSIS":
         # OVRLP , DIFF
-        class_analysis_mode="DIFF"
+        analysis_mode="DIFF"
         class_comb_length = 2
 
         for src_class_indx in range(len(classes)):
             src_classes_set = [src_class_indx]
             list_of_dest_classes_set = []
-            if class_analysis_mode == "OVRLP":
+            if analysis_mode == "OVRLP":
                 for dest_class_indx in range(src_class_indx+1,len(classes)) :
                     tmp = []
                     i=0
@@ -3542,7 +3601,7 @@ if __name__ == '__main__':
                             i+=1
                         cur+=1
                     list_of_dest_classes_set.append(tmp)
-            elif class_analysis_mode == "DIFF":
+            elif analysis_mode == "DIFF":
                 dest_class_indx = src_class_indx+1
                 while((dest_class_indx+class_comb_length)%len(classes)-2 != src_class_indx ):
                     tmp = []
@@ -3564,14 +3623,14 @@ if __name__ == '__main__':
                                     number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version=vis_version,
                                     root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent,
                                     class_indx_to_visualize=class_indx_to_visualize, layer_nums_to_visualize=layer_nums_to_visualize,alpha=alpha,p_epsilon=p_epsilon,
-                                    v4lr=v4lr,class_analysis_mode=class_analysis_mode,src_classes_set=src_classes_set,list_of_dest_classes_set=list_of_dest_classes_set)
+                                    v4lr=v4lr,analysis_mode=analysis_mode,src_classes_set=src_classes_set,list_of_dest_classes_set=list_of_dest_classes_set)
 
-    else:    
+    else:
         run_visualization_on_config(dataset, model_arch_type, is_template_image_on_train, is_class_segregation_on_ground_truth, template_initial_image_type,
                                     template_image_calculation_batch_size, template_loss_type, number_of_batch_to_collect, wand_project_name, is_split_validation,
                                     valid_split_size, torch_seed, number_of_image_optimization_steps, wandb_group_name, exp_type, temp_collect_threshold, entropy_calculation_batch_size,
                                     number_of_batches_to_calculate_entropy_on, custom_model=custom_model, wandb_config_additional_dict=wandb_config, vis_version=vis_version,
-                                    root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent,
+                                    root_save_prefix=root_save_prefix, random_sample_gate_percent=random_per_layer_sample_gate_percent,analysis_mode=analysis_mode,
                                     class_indx_to_visualize=class_indx_to_visualize, layer_nums_to_visualize=layer_nums_to_visualize,alpha=alpha,p_epsilon=p_epsilon,v4lr=v4lr)
 
     print("Execution completed")
