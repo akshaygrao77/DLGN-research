@@ -143,7 +143,7 @@ class BC_SF_DLGN_FC_Network(nn.Module):
             each_linear_conv_output = linear_conv_outputs[indx]
             self.gating_node_outputs[indx] = self.sigmoid(
                 self.beta * each_linear_conv_output)
-            print("indx:{} self.gating_node_outputs[indx] size:{}----->{}".format(indx,self.gating_node_outputs[indx].size(),self.gating_node_outputs[indx]))
+            # print("indx:{} self.gating_node_outputs[indx] size:{}----->{}".format(indx,self.gating_node_outputs[indx].size(),self.gating_node_outputs[indx]))
 
         self.output_logits = self.value_network(
             inp_gating, self.gating_node_outputs, verbose=verbose)
@@ -277,7 +277,7 @@ class BC_DLGN_FC_Network(nn.Module):
             each_linear_conv_output = linear_conv_outputs[indx]
             self.gating_node_outputs[indx] = self.sigmoid(
                 self.beta * each_linear_conv_output)
-            print("indx:{} self.gating_node_outputs[indx] size:{}----->{}".format(indx,self.gating_node_outputs[indx].size(),self.gating_node_outputs[indx]))
+            # print("indx:{} self.gating_node_outputs[indx] size:{}----->{}".format(indx,self.gating_node_outputs[indx].size(),self.gating_node_outputs[indx]))
 
         self.output_logits = self.value_network(
             inp_gating, self.gating_node_outputs, verbose=verbose)

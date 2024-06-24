@@ -92,6 +92,8 @@ def save_image(im, path):
         im = format_np_output(im)
         im = Image.fromarray(im)
     im.save(path)
+    tmp = path.replace(".jpg",".pdf")
+    im.save(tmp)
 
 def save_bifurcated_images_from_dataloader(model,dataloader, classes, postfix_folder_for_save='/', save_image_prefix=None):
     device = torch.device(
@@ -379,10 +381,15 @@ def generate_plain_image(image_data, save_path, is_standarize=True, is_standariz
     reshaped_data = generate_plain_image_data(image_data)
     tmp = save_path.replace(".jpg",".jpeg")
     output_plt_image(reshaped_data,tmp)
+    tmp = save_path.replace(".jpg","_v1.pdf")
+    output_plt_image(reshaped_data,tmp)
 
     reshaped_data = recreate_np_image(
         reshaped_data, is_standarize, is_standarize_01)
+    tmp = save_path.replace(".jpg","_v2.pdf")
     save_image(reshaped_data, save_path)
+    save_image(reshaped_data, tmp)
+    print("generate_plain_image ",save_path)
 
 
 def generate_list_of_plain_images_from_data(full_heatmap_data, start=None, end=None, save_each_img_path=None, is_standarize=True):

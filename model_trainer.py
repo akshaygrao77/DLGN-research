@@ -437,8 +437,8 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
-    # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn
-    model_arch_type = 'bc_fc_dnn'
+    # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn , bc_fc_dlgn , bc_fc_sf_dlgn
+    model_arch_type = "fc_dlgn"
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
@@ -451,17 +451,21 @@ if __name__ == '__main__':
     # wand_project_name = "APR_experiments"
     # wand_project_name = "NPK_reg"
     # wand_project_name = "XOR_training"
-    wand_project_name = "Cifar10_flamarion_replicate"
+    # wand_project_name = "Cifar10_flamarion_replicate"
     # wand_project_name = "frequency_augmentation_experiments"
     # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "model_band_frequency_experiments"
     # wand_project_name = "V2_template_visualisation_augmentation"
     # wand_project_name = "Pruning-exps"
     # wand_project_name = "Gatesat-exp"
+    # wand_project_name = "Thesis_runs_freeze_exp"
+    # wand_project_name = "Thesis_runs"
+    # wand_project_name = "Thesis_runs_pca"
+    wand_project_name = "Thesis_runs_resized"
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    # pca_exp_percent = 0.50
+    # pca_exp_percent = 0.95
 
     npk_reg = 0
     # npk_reg = 0.01
@@ -477,13 +481,13 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3,8]
+    # list_of_classes_to_train_on = [4,5]
 
     train_transforms = None
     is_normalize_data = True
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_40p_0_1r.npy"
+    # custom_dataset_path = "data/custom_datasets/resize_dataset/mnist_resized__18.npy"
     
 
     if(scheme_type == "APR_exps"):
@@ -580,7 +584,7 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 16
+        fc_width = 128
         fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
@@ -949,9 +953,9 @@ if __name__ == '__main__':
 
     elif(scheme_type == "PART_TRAINING"):
         # GATE_NET_FREEZE , VAL_NET_FREEZE
-        transfer_mode = "GATE_NET_FREEZE"
+        transfer_mode = "VAL_NET_FREEZE"
 
-        teacher_model_path = "root/model/save/fashion_mnist/adversarial_training/MT_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+        teacher_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
         net = get_model_from_path(
             dataset, model_arch_type, teacher_model_path)
         
@@ -1070,7 +1074,7 @@ if __name__ == '__main__':
             os.makedirs(model_save_folder)
 
         best_test_acc, net = train_model(net,
-                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg,gatesat_reg,gate_weight_l2_reg,is_plot_adv_curves=True)
+                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg,gatesat_reg,gate_weight_l2_reg,is_plot_adv_curves=False)
         if(is_log_wandb):
             wandb.log({"best_test_acc": best_test_acc})
             wandb.finish()
