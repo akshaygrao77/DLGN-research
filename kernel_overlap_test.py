@@ -39,7 +39,7 @@ def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_ana
     return wandb_config
 
 
-def obtain_kernel_overlap(net, analyse_dataset):
+def obtain_kernel_overlap(net, analyse_dataset,is_consider_true_npk=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     X, Y = analyse_dataset
     if(not isinstance(X, torch.Tensor)):
@@ -64,7 +64,11 @@ def obtain_kernel_overlap(net, analyse_dataset):
     else:
         conv_outs = net.linear_conv_outputs
 
-    npk_kernel = torch.matmul(X, torch.transpose(X, 0, 1))
+    if is_consider_true_npk:
+        tmp_X = X
+    else:
+        tmp_X = HardRelu()(X)
+    npk_kernel = torch.matmul(tmp_X, torch.transpose(tmp_X, 0, 1))
     print("Norm XTX", torch.norm(npk_kernel))
     for each_conv_out in conv_outs:
         gate_out = HardRelu()(each_conv_out)
@@ -85,18 +89,26 @@ def obtain_kernel_overlap(net, analyse_dataset):
 
     print("Final Norm npk_kernel:{} for width:{} depth:{}".format(
         torch.norm(npk_kernel), width, depth))
-    overlap = torch.matmul(torch.matmul(
+    tmp = torch.matmul(torch.matmul(
         torch.transpose(Y, 0, 1), npk_kernel), Y)
+    Y_gram = torch.matmul(Y, torch.transpose(Y, 0, 1))
+    print("Y_gram ",Y_gram.shape)
+    overlap = npk_kernel * Y_gram
+    # print(torch.numel(overlap[overlap > 0]),torch.numel(overlap[overlap<0]))
+    # overlap_diff = torch.sum(overlap)
+    # assert tmp==overlap_diff, "Error:{}".format(tmp-overlap_diff)
+    overlap_same_class = torch.sum(torch.where(overlap > 0.,overlap.float(),torch.zeros(1,dtype=torch.float32).to(device=overlap.device)))
+    overlap_diff_class = -torch.sum(torch.where(overlap < 0.,overlap.float(),torch.zeros(1,dtype=torch.float32).to(device=overlap.device)))
 
-    return overlap
+    return tmp,overlap_same_class,overlap_diff_class
 
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
-    # fc_dnn , fc_dlgn , fc_dgn
-    model_arch_type = 'fc_dnn'
+    # fc_dnn , fc_dlgn , fc_dgn , bc_fc_dlgn , bc_fc_sf_dlgn
+    model_arch_type = 'bc_fc_dlgn'
 
     batch_size = 64
 
@@ -106,26 +118,26 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [3, 8]
+    list_of_classes_to_train_on = [2, 9]
 
     map_of_mtype_paths = {
-        "STD": "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir.pt",
-        "ADFS": "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt",
-        "ADEX": "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_128_D_4_dir_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+        "STD": "root/model/save/mnist/CLEAN_TRAINING/TR_ON_2_9/ST_2022/bc_fc_dlgn_W_128_D_4_dir.pt",
+        "ADFS": "root/model/save/mnist/adversarial_training/TR_ON_2_9/MT_bc_fc_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/out_lossfn_BCEWithLogitsLoss()/inner_lossfn_Y_Logits_Binary_class_Loss()/adv_model_dir.pt",
     }
 
-    wand_project_name = "kernel_overlap_experiments"
-    wand_project_name = None
+    wand_project_name = "thesis_kernel_overlap_experiments"
+    # wand_project_name = None
 
     torch_seed = 2022
-    number_of_adversarial_optimization_steps = 161
+    number_of_adversarial_optimization_steps = 40
     adv_attack_type = "PGD"
     adv_target = None
     # K_OVERLAP
     exp_type = "K_OVERLAP"
+    is_consider_NPK = True
     percentage_of_dataset_for_analysis = 100
     eps_step_size = 0.01
-    eps = 0.06
+    eps = 0.3
 
     if(dataset == "cifar10"):
         inp_channel = 3
@@ -252,6 +264,7 @@ if __name__ == '__main__':
             wandb_config["sampl_for_analysis"] = number_of_samples_used_for_analysis
             wandb_config["mtype_paths_map"] = map_of_mtype_paths
             wandb_config["number_of_trails"] = number_of_trails
+            wandb_config["is_consider_NPK"] = is_consider_NPK
             wandb.init(
                 project=f"{wand_project_name}",
                 name=f"{wandb_run_name}",
@@ -263,10 +276,18 @@ if __name__ == '__main__':
         indices = np.arange(0, number_of_samples)
 
         orig_overlap_map = dict()
+        orig_overlap_sameclass_map = dict()
+        orig_overlap_diffclass_map = dict()
         adv_overlap_map = dict()
+        adv_overlap_sameclass_map = dict()
+        adv_overlap_diffclass_map = dict()
         for key in map_of_mtype_paths:
             orig_overlap_map[key] = []
+            orig_overlap_sameclass_map[key] = []
+            orig_overlap_diffclass_map[key] = []
             adv_overlap_map[key] = []
+            adv_overlap_sameclass_map[key] = []
+            adv_overlap_diffclass_map[key] = []
 
         for trail_num in range(number_of_trails):
             np.random.shuffle(indices)
@@ -298,7 +319,7 @@ if __name__ == '__main__':
                         "/")+1]
 
                 adv_dataset = load_or_generate_adv_examples(eval_loader, model_and_data_save_prefix, is_analysis_on_train, net, eps, adv_attack_type,
-                                                            number_of_adversarial_optimization_steps, eps_step_size, adv_target, number_of_batch_to_collect=None, is_save_adv=True)
+                                                            number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False)
                 print("Adv dataset size: X=>{},Y=>{}".format(
                     adv_dataset.list_of_x[0].shape, adv_dataset.list_of_y[0].shape))
                 print("Adv dataset size: X=>{},Y=>{}".format(
@@ -318,26 +339,50 @@ if __name__ == '__main__':
                 print("Analyse adv dataset size: X=>{},Y=>{}".format(
                     analyse_adv_dataset[0].shape, analyse_adv_dataset[1].shape))
 
-                orig_overlap = obtain_kernel_overlap(net, analyse_orig_dataset)
+                orig_overlap,orig_sameclass_overlap,orig_diffclass_overlap = obtain_kernel_overlap(net, analyse_orig_dataset,is_consider_NPK)
                 print("current_model_type:{}=>orig_overlap:{}".format(
                     current_model_type, orig_overlap))
                 orig_overlap_map[current_model_type].append(
                     orig_overlap.item())
-                adv_overlap = obtain_kernel_overlap(net, analyse_adv_dataset)
+                orig_overlap_sameclass_map[current_model_type].append(
+                    orig_sameclass_overlap.item())
+                orig_overlap_diffclass_map[current_model_type].append(
+                    orig_diffclass_overlap.item())
+                adv_overlap,adv_sameclass_overlap,adv_diffclass_overlap = obtain_kernel_overlap(net, analyse_adv_dataset,is_consider_NPK)
                 print("current_model_type:{}=>adv_overlap:{}".format(
                     current_model_type, adv_overlap))
                 adv_overlap_map[current_model_type].append(adv_overlap.item())
+                adv_overlap_sameclass_map[current_model_type].append(
+                    adv_sameclass_overlap.item())
+                adv_overlap_diffclass_map[current_model_type].append(
+                    adv_diffclass_overlap.item())
 
         for current_model_type in map_of_mtype_paths:
             if(is_log_wandb):
                 mean_current_orig_overlap = mean(
                     orig_overlap_map[current_model_type])
+                mean_current_orig_overlap_sameclass = mean(
+                    orig_overlap_sameclass_map[current_model_type])
+                mean_current_orig_overlap_diffclass = mean(
+                    orig_overlap_diffclass_map[current_model_type])
                 mean_current_adv_overlap = mean(
                     adv_overlap_map[current_model_type])
+                mean_current_adv_overlap_sameclass = mean(
+                    adv_overlap_sameclass_map[current_model_type])
+                mean_current_adv_overlap_diffclass = mean(
+                    adv_overlap_diffclass_map[current_model_type])
                 wandb.log({str(current_model_type)+"_or_k_lap": mean_current_orig_overlap,
                            str(current_model_type)+"_ad_k_lap": mean_current_adv_overlap,
-                           "L10_"+str(current_model_type)+"_or_k_lap": math.log10(mean_current_orig_overlap),
-                           "L10_"+str(current_model_type)+"_ad_k_lap": math.log10(mean_current_adv_overlap)})
+                           str(current_model_type)+"same_or_k_lap": mean_current_orig_overlap_sameclass,
+                           str(current_model_type)+"same_ad_k_lap": mean_current_adv_overlap_sameclass,
+                           str(current_model_type)+"diff_or_k_lap": mean_current_orig_overlap_diffclass,
+                           str(current_model_type)+"diff_ad_k_lap": mean_current_adv_overlap_diffclass,
+                           str(current_model_type)+"_or_k_lap_L10": math.log10(mean_current_orig_overlap),
+                           str(current_model_type)+"_ad_k_lap_L10": math.log10(mean_current_adv_overlap),
+                           "same"+str(current_model_type)+"_or_k_lap_L10": math.log10(mean_current_orig_overlap_sameclass),
+                           "same"+str(current_model_type)+"_ad_k_lap_L10": math.log10(mean_current_adv_overlap_sameclass),
+                           "diff"+str(current_model_type)+"_or_k_lap_L10": math.log10(mean_current_orig_overlap_diffclass),
+                           "diff"+str(current_model_type)+"_ad_k_lap_L10": math.log10(mean_current_adv_overlap_diffclass)})
 
         if(is_log_wandb):
             wandb.finish()
