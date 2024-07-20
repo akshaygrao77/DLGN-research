@@ -16,6 +16,7 @@ import torchvision.datasets as datasets
 import os
 from conv4_models import get_model_save_path, get_model_instance_from_dataset
 import wandb
+from vgg_cifar10_trainer import DLGN_VGG_Network_without_BN
 
 import tensorflow as tf
 
@@ -74,6 +75,7 @@ def preprocess_dataset_in_tensorflow(dataset, is_train=True):
 def preprocess_data():
     print('==> Preparing data..')
     transform_train = transforms.Compose([
+        # transforms.Resize(224),
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
@@ -82,6 +84,7 @@ def preprocess_data():
     ])
 
     transform_test = transforms.Compose([
+        # transforms.Resize(224),
         transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465),
                              (0.2023, 0.1994, 0.2010)),
@@ -230,9 +233,17 @@ class DLGN_VGG_Network(nn.Module):
                                   device=device)
 
     def initialize_weights(self, mod_obj):
-        nn.init.kaiming_normal_(mod_obj.weight, mode='fan_in')
-        if mod_obj.bias is not None:
+        if isinstance(mod_obj, nn.Conv2d):
+            nn.init.kaiming_normal_(
+                mod_obj.weight, mode='fan_out', nonlinearity='relu')
+            if mod_obj.bias is not None:
+                nn.init.constant_(mod_obj.bias, 0)
+        elif isinstance(mod_obj, nn.BatchNorm2d):
+            nn.init.constant_(mod_obj.weight, 1)
             nn.init.constant_(mod_obj.bias, 0)
+        # elif isinstance(mod_obj, nn.Linear):
+        #     nn.init.normal_(mod_obj.weight, 0, 0.01)
+        #     nn.init.constant_(mod_obj.bias, 0)
 
     def forward(self, inp, verbose=2):
         beta = 10
@@ -584,8 +595,10 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = 'cuda' if torch.cuda.is_available() else 'cpu'
     # net = DLGN_VGG_Network()
-    net = get_model_instance_from_dataset(
-        dataset=dataset, model_arch_type=model_arch_type, num_classes=10, pretrained=pretrained)
+    if(model_arch_type == "dlgn__vgg16__"):
+        net = DLGN_VGG_Network_without_BN(num_classes=10)
+    # net = get_model_instance_from_dataset(
+    #     dataset=dataset, model_arch_type=model_arch_type, num_classes=10, pretrained=pretrained)
     net.to(device)
 
     print("Device count:", torch.cuda.device_count())

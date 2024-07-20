@@ -9,6 +9,37 @@ import matplotlib.animation as animation
 import matplotlib
 from memory_profiler import profile
 import gc
+from utils.visualise_utils import save_image
+
+
+def recreate_image(recreated_im, unnormalize=False):
+    """
+        Recreates images from a torch variable, sort of reverse preprocessing
+    Args:
+        im_as_var (torch variable): Image to recreate
+    returns:
+        recreated_im (numpy arr): Recreated image in array
+    """
+    reverse_mean = [0.4914, 0.4822, 0.4465]
+    reverse_std = [1/0.2023, 1/0.1994, 1/0.2010]
+
+    arr_max = np.amax(recreated_im)
+    arr_min = np.amin(recreated_im)
+    recreated_im = (recreated_im-arr_min)/(arr_max-arr_min)
+
+    if(unnormalize):
+        for c in range(3):
+            recreated_im[c] /= reverse_std[c]
+            recreated_im[c] -= reverse_mean[c]
+    # recreated_im[recreated_im > 1] = 1
+    # recreated_im[recreated_im < 0] = 0
+    recreated_im = np.round(recreated_im * 255)
+
+    recreated_im = np.uint8(recreated_im)
+    # print("recreated_im shape", recreated_im.shape)
+    # print("recreated_im", recreated_im)
+    # recreated_im = recreated_im..transpose(1, 2, 0)
+    return recreated_im
 
 
 def construct_normalized_heatmaps_from_data(heatmap_data, title, save_path=None, cmap='viridis'):
@@ -122,6 +153,26 @@ def determine_row_col_from_features(num_features):
             return backward, num_features//backward
         interval += 1
     return 0, 0
+
+
+def gallery(array, nrows, ncols):
+    nindex, height, width = array.shape
+    nrows = nindex//ncols
+    assert nindex == nrows*ncols
+    # want result.shape = (height*nrows, width*ncols, intensity)
+    result = (array.reshape(nrows, ncols, height, width)
+              .swapaxes(1, 2)
+              .reshape(height*nrows, width*ncols))
+    return result
+
+
+def generate_plain_image(image_data, save_path):
+    # print("image_data", image_data)
+    row, col = determine_row_col_from_features(image_data.shape[0])
+    reshaped_data = gallery(image_data, row, col)
+    # print("reshaped_data", reshaped_data)
+    re_image = recreate_image(reshaped_data)
+    save_image(re_image, save_path)
 
 
 # @profile
@@ -397,7 +448,7 @@ if __name__ == '__main__':
     #     low=20, high=50, size=(5, 64, 28, 28))
     feature_maps1 = np.random.rand(256, 28, 28)
     # feature_maps1 = np.ones(shape=[72, 28, 28])*128
-    feature_map_for_video = np.random.rand(5, 64, 28, 28)
+    # feature_map_for_video = np.random.rand(5, 64, 28, 28)
     # feature_maps1 = np.random.uniform(low=-50, high=50, size=(72, 28, 28))
     # feature_maps1 = np.random.normal(loc=128, scale=128, size=(72, 28, 28))
     # print("feature_maps1", feature_maps1)
@@ -405,8 +456,8 @@ if __name__ == '__main__':
     # heatmap_feature_map1 = np.round(np.random.rand(128, 28, 28)*255)
     # feature_maps = np.random.rand(128, 28, 28)
     for _ in range(20):
-        list_of_final_plotted_activation_maps = construct_images_from_feature_maps(
-            feature_maps1, "Test title", save_path='root/dummy/new_test.jpg', is_shift=False, is_scale=False)
+        list_of_final_plotted_activation_maps = generate_plain_image(
+            feature_maps1, save_path='root/dummy/plain_test.jpg')
     # # list_of_final_plotted_activation_maps = construct_images_from_feature_maps(
     # #     feature_maps2, "Test title", save_path='root/dummy/titled_final_image_save2')
 

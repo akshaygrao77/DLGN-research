@@ -87,9 +87,11 @@ def get_fixedNPVs(model):
                 tmp.append(torch.reshape(rtmp,(np.prod(list(rtmp.size())),1)))
                 
             prev = torch.squeeze(torch.stack(tmp))
-    
+        print("prev:{} cur_w:{}".format(prev.size(),cur_w.size()))
+
     if(not hasattr(model,"value_network")):
         cur_w = model.output_layer.weight
+        print("cur_w:{}".format(cur_w.size()))
         tmp=[]
         for i in range(prev.size()[0]):
             t1 = torch.unsqueeze(prev[i],0)
@@ -97,6 +99,7 @@ def get_fixedNPVs(model):
             tmp.append(torch.reshape(rtmp,(np.prod(list(rtmp.size())),1)))
             
         prev = torch.squeeze(torch.stack(tmp))
+        print("prev:{} ".format(prev.size()))
 
     return torch.squeeze(torch.reshape(prev,(np.prod(list(prev.size())),1)))
 
@@ -231,8 +234,8 @@ if __name__ == '__main__':
     # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/fc_dnn_W_10_D_1_dir.pt"
     # direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_fc_dnn_W_10_D_1_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
 
-    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/bc_fc_dnn_W_10_D_1_dir.pt"
-    # direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_bc_fc_dnn_W_10_D_1_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.06/batch_size_128/eps_stp_size_0.06/adv_steps_80/adv_model_dir.pt"
+    # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/bc_fc_dnn_W_10_D_1_dir.pt"
+    direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_bc_fc_dnn_W_10_D_2_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB_HB.npy"
@@ -307,7 +310,7 @@ if __name__ == '__main__':
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
         fc_width = 10
-        fc_depth = 1
+        fc_depth = 2
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -380,8 +383,11 @@ if __name__ == '__main__':
                         adv_save_path)
         else:
             print("adv_save_path:", adv_save_path)
+            lossfn = None
+            if("bc_" in model_arch_type):
+                lossfn = nn.BCELoss()
             adv_dataset = generate_adv_examples(
-                eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path)
+                eval_loader, net, eps, adv_attack_type, number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=True, save_path=adv_save_path,lossfn=lossfn)
         
         to_be_analysed_adversarial_dataloader = torch.utils.data.DataLoader(
                         adv_dataset, shuffle=False, batch_size=batch_size)

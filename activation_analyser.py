@@ -1253,7 +1253,7 @@ if __name__ == '__main__':
     exp_type = "GENERATE_RECORD_STATS_PER_CLASS"
     is_save_graph_visualizations = True
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE
-    scheme_type = "LOAD_AND_GENERATE_MERGE"
+    scheme_type = "GENERATE"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ADVERSARIAL'
     collect_threshold = 0.95

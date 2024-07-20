@@ -9,7 +9,7 @@ from collections import OrderedDict
 import torchvision.models as models
 from torch._utils import _get_all_device_indices
 from googlenet_custom import Custom_GoogLeNet
-from utils.forward_visualization_helpers import merge_operations_in_modules, apply_input_on_conv_matrix, merge_layers_operations_in_modules
+from utils.forward_visualization_helpers import merge_operations_in_modules, apply_input_on_conv_matrix, merge_layers_operations_in_modules,conv2d_to_conv_matrix
 
 
 def replace_percent_of_values(inp_np, const_value, percentage):
@@ -4217,7 +4217,7 @@ class Conv4_DLGN_Net(nn.Module):
         gating_net_layers_ordered["conv2_g"] = self.conv2_g
         gating_net_layers_ordered["conv3_g"] = self.conv3_g
         gating_net_layers_ordered["conv4_g"] = self.conv4_g
-        gating_net_layers_ordered["pool1"] = self.pool
+        # gating_net_layers_ordered["pool1"] = self.pool
         return gating_net_layers_ordered
 
     def get_value_layers_ordered_dict(self):
@@ -4348,6 +4348,50 @@ class Conv4_SF_DLGN_Net(nn.Module):
                 return self.pool
             elif(layer_num == 5):
                 return self.fc1
+
+    def get_gate_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        gating_net_layers_ordered["conv1_g"] = self.conv1_g
+        gating_net_layers_ordered["conv2_g"] = self.conv2_g
+        gating_net_layers_ordered["conv3_g"] = self.conv3_g
+        gating_net_layers_ordered["conv4_g"] = self.conv4_g
+        # gating_net_layers_ordered["pool1"] = self.pool
+        return gating_net_layers_ordered
+
+    def exact_forward_vis(self, x) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        conv_matrix_operations_in_each_layer = OrderedDict()
+        conv_bias_operations_in_each_layer = OrderedDict()
+        channel_outs_size_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()[1:]
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_matrix = None
+        merged_conv_bias = None
+        orig_out = x
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_matrix, merged_conv_bias, _ = conv2d_to_conv_matrix(
+                        layer_obj, current_tensor_size)
+                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix
+                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias
+                channel_outs_size_in_each_layer[layer_name] = 128
+
+                tmp = torch.flatten(layer_obj(orig_out),1)
+                convmatrix_output = apply_input_on_conv_matrix(
+                    orig_out, merged_conv_matrix, merged_conv_bias)
+                print(convmatrix_output.size(),tmp.size(),merged_conv_matrix.size(),merged_conv_bias.size())
+                assert tmp.size() == convmatrix_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    tmp - convmatrix_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer
 
 class IM_Conv4_DLGN_Net_pad_k_1_wo_bn_wo_bias(nn.Module):
     def __init__(self, input_channel, beta=4, seed=2022, num_classes=10):

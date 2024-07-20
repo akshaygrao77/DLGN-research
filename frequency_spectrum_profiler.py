@@ -203,10 +203,10 @@ def output_plt_image(images,path,title=""):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
-    dataset = 'fashion_mnist'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'plain_pure_conv4_dnn'
+    model_arch_type = 'conv4_dlgn_n16_small'
     batch_size = 64
 
     is_analysis_on_train = False
@@ -226,7 +226,7 @@ if __name__ == '__main__':
     wandb_config_additional_dict = None
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
-    direct_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/plain_pure_conv4_dnn_dir.pt"
+    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_n16_small_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__LB.npy"
@@ -352,11 +352,11 @@ if __name__ == '__main__':
     class_indx_to_visualize= []
 
     if(is_analyse_adv):
-        number_of_adversarial_optimization_steps = 161
+        number_of_adversarial_optimization_steps = 40
         adv_attack_type = "PGD"
         adv_target = None
-        eps_step_size = 0.06
-        eps = 0.06
+        eps_step_size = 0.01
+        eps = 0.3
         is_adv_attack_on_train = is_analysis_on_train
         final_adv_postfix_for_save = get_adv_save_str(adv_attack_type,eps,eps_step_size,number_of_adversarial_optimization_steps,is_adv_attack_on_train)
         adv_save_path = data_save_prefix + \

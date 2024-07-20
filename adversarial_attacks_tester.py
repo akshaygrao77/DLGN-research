@@ -673,8 +673,9 @@ if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
-    # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn ,  fc_sf_dlgn , madry_mnist_conv4_dnn , bc_fc_dnn , bc_fc_sf_dlgn
-    model_arch_type = 'fc_sf_dlgn'
+    # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn ,  fc_sf_dlgn , madry_mnist_conv4_dnn , 
+    # bc_fc_dnn , bc_fc_sf_dlgn , bc_fc_dlgn , conv4_sf_dlgn
+    model_arch_type = 'conv4_dlgn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -683,25 +684,25 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [3,8]
+    # list_of_classes_to_train_on = [3,9]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    # pca_exp_percent = 0.85
+    # pca_exp_percent = 0.45
 
     wandb_config_additional_dict = None
     # wandb_config_additional_dict = {
     #     "type_of_APR": "APRP","is_train_on_phase": True}
     # "is_train_on_phase": True
     # GATE_NET_FREEZE , VAL_NET_FREEZE
-    # wandb_config_additional_dict = {
-    #     "transfer_mode": "VAL_NET_FREEZE"}
+    wandb_config_additional_dict = {
+        "transfer_mode": "VAL_NET_FREEZE"}
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    # direct_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    direct_model_path = "root/model/save/mnist/PART_TRAINING/TEACHER__root-model-save-mnist-adversarial_training-MT_conv4_dlgn_ET_ADV_TRAINING-ST_2022-fast_adv_attack_type_PGD-adv_type_PGD-EPS_0.3-batch_size_64-eps_stp_size_0.005-adv_steps_40-update_on_all-R_init_True-norm_inf-use_ytrue_True-adv_model_dir.pt/TYP_VAL_NET_FREEZE/ST_2022/conv4_dlgn_dir.pt"
     # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
-    direct_model_path = "root/model/save/mnist/adversarial_training/MT_fc_sf_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_PCA_K10_P_0.45_dir.pt"
 
     custom_dataset_path = None
     # custom_dataset_path = "data/custom_datasets/freq_band_dataset/mnist__MB.npy"
@@ -820,7 +821,11 @@ if __name__ == '__main__':
         # wand_project_name = "madry's_benchmarking"
         # wand_project_name = "SVM_loss_training"
         # wand_project_name = "Cifar10_flamarion_replicate"
-        wand_project_name = "Thesis_runs_attacks"
+        # wand_project_name = "Thesis_runs_attacks"
+        # wand_project_name = "Thesis_runs_attacks_bc"
+        # wand_project_name = "Thesis_runs_pca_attacks"
+        # wand_project_name = "Thesis_runs_pca_same_size_model_attacks"
+        wand_project_name = "Thesis_runs_freeze_exp_attacks"
 
         torch_seed = 2022
         # FEATURE_FLIP , PGD , FGSM
@@ -852,7 +857,7 @@ if __name__ == '__main__':
         if("mnist" in dataset):
             # 40 is a good sweet spot more than that doesn't help much typically
             number_of_adversarial_optimization_steps = 40
-            eps_list = [0.3,0.2]
+            eps_list = [0.3,0.2,0.1]
             eps_step_size = 0.01
         elif("cifar10" in dataset):
             number_of_adversarial_optimization_steps = 10

@@ -169,7 +169,10 @@ def perform_adversarial_training(model, train_loader, test_loader, eps_step_size
         live_train_acc = 100. * correct / total
         overall_eps_norm_mean = overall_eps_norm_mean / total
         org_test_acc,_ = evaluate_model(net, test_loader)
-        test_acc = adv_evaluate_model(net, test_loader, classes, eps, adv_attack_type,lossfn=inner_criterion)
+        if "xor" in model_save_path:
+            test_acc = adv_evaluate_model(net, train_loader, classes, eps, adv_attack_type,lossfn=inner_criterion)
+        else:
+            test_acc = adv_evaluate_model(net, testloader, classes, eps, adv_attack_type,lossfn=inner_criterion)
         fgsm_tst_acc = adv_evaluate_model(net, testloader,classes, eps, "FGSM",lossfn=inner_criterion)
         if(is_log_wandb):
             wandb.log({"live_train_acc": live_train_acc,"overall_eps_norm_mean":overall_eps_norm_mean,"tr_loss":running_loss/(batch_idx+1),'before_adv_tr_loss':running_before_adv_loss/(batch_idx+1),
@@ -224,14 +227,14 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
 
 if __name__ == '__main__':
     # fashion_mnist , mnist,cifar10 , xor
-    dataset = 'mnist'
+    dataset = 'xor'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
     # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
-    # conv4_sf_dlgn , bc_fc_sf_dlgn 
-    model_arch_type = 'conv4_dlgn'
+    # conv4_sf_dlgn , bc_fc_sf_dlgn , bc_fc_dlgn
+    model_arch_type = 'fc_dlgn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -243,15 +246,20 @@ if __name__ == '__main__':
     # wand_project_name = "Pruning-exps"
     # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "Residual_training"
-    # wand_project_name = "XOR_training"
+    wand_project_name = "XOR_training"
     # wand_project_name = "Cifar10_flamarion_replicate"
     # wand_project_name = "madry's_benchmarking"
     # wand_project_name = "reach_end_plot"
     # wand_project_name = "SVM_Adv_training"
-    wand_project_name = "Thesis_runs_freeze_exp"
+    # wand_project_name = "Thesis_runs_freeze_exp"
+    # wand_project_name = "Thesis_runs"
+    # wand_project_name = "Thesis_runs_bc"
+    # wand_project_name = "Thesis_runs_pca"
+    # wand_project_name = "Thesis_runs_resized"
+    # wand_project_name = "Thesis_runs_pca_same_size_model"
     
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING , GATE_FREEZE_ADV_TRAINING , VALUE_FREEZE_ADV_TRAINING
-    exp_type = "VALUE_FREEZE_ADV_TRAINING"
+    exp_type = "ADV_TRAINING"
 
     npk_reg = 0
     # npk_reg = 0.01
@@ -304,14 +312,14 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [3,8]
+    # list_of_classes_to_train_on = [7,9]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    # pca_exp_percent = 0.85
+    # pca_exp_percent = 0.45
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_25p_50r.npy"
+    custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_40p_0_1r_eps_0.65_post_norm_eps_0.32.npy"
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -391,8 +399,8 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 16
-            fc_depth = 4
+            fc_width = 4
+            fc_depth = 3
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \
                 "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -420,7 +428,7 @@ if __name__ == '__main__':
             model_arch_type_str = model_arch_type_str + "_NPKREG_"+str(npk_reg)
         start_net_path = None
 
-        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
+        # start_net_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_sf_dlgn_W_128_D_4_dir.pt"
         if(start_net_path is not None):
             custom_temp_model = torch.load(start_net_path)
             net.load_state_dict(custom_temp_model.state_dict())
@@ -457,10 +465,11 @@ if __name__ == '__main__':
             opt = torch.optim.Adam(net.parameters(), lr=0.2)
             net.initialize_standardization_layer()
         elif("xor" in dataset):
-            number_of_adversarial_optimization_steps_list = [5]
-            eps_list = [0.3]
-            eps_step_size = 0.01
-            epochs = 36
+            number_of_adversarial_optimization_steps_list = [40]
+            eps_list = [0.1]
+            eps_step_size = 0.005
+            epochs = 108
+            opt = torch.optim.Adam(net.parameters(), lr=3e-2)
         # fast_adv_attack_type_list = ['FGSM', 'PGD']
         # number_of_adversarial_optimization_steps_list = [80]
 
@@ -533,8 +542,10 @@ if __name__ == '__main__':
                     
                     elif(exp_type == "GATE_FREEZE_ADV_TRAINING" or exp_type == "VALUE_FREEZE_ADV_TRAINING"):
                         if(exp_type == "GATE_FREEZE_ADV_TRAINING"):
+                            net.init_value_net()
                             ordict = net.get_gate_layers_ordered_dict()
                         elif(exp_type == "VALUE_FREEZE_ADV_TRAINING"):
+                            net.init_gate_net()
                             ordict = net.get_value_layers_ordered_dict()
 
                         for key in ordict:

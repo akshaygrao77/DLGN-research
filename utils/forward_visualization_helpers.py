@@ -105,7 +105,7 @@ def conv2dparams_to_conv_matrix(cweight, cbias, cstride, cpad, image_shape):
     if(cweight.get_device() < 0):
         idevice = torch.device("cpu")
     else:
-        cweight = cweight.type(torch.float16)
+        # cweight = cweight.type(torch.float16)
         idevice = cweight.get_device()
 
     with torch.no_grad():
@@ -197,7 +197,7 @@ def convert_avgpool_to_convmatrix(avgp, image_shape, dtype=torch.float16):
 
 
 def apply_input_on_conv_matrix(input, W, b):
-    f_input = torch.flatten(input)
+    f_input = torch.flatten(input).type(W.dtype).to(device=W.device)
     ret = torch.matmul(W, f_input)+b
 
     return ret

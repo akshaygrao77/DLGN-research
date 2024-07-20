@@ -394,11 +394,11 @@ def get_wandb_config(exp_type, classes, model_arch_type, dataset, is_template_im
 
     return wandb_config
 
-def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40):
+def get_model_from_path(dataset, model_arch_type, model_path,seed=2022, num_classes=10, nodes_in_each_layer_list=[], mask_percentage=40):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     temp_model = torch.load(model_path, map_location=device)
     custom_model = get_model_instance_from_dataset(
-        dataset, model_arch_type)
+        dataset, model_arch_type,seed=torch_seed, num_classes=num_classes_trained_on, nodes_in_each_layer_list=nodes_in_each_layer_list)
     if("masked" in model_arch_type):
         custom_model = get_model_instance_from_dataset(
             dataset, model_arch_type, mask_percentage=mask_percentage)
@@ -433,11 +433,11 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10 , xor
-    dataset = 'mnist'
+    dataset = 'xor'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
-    # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn , bc_fc_dlgn , bc_fc_sf_dlgn
+    # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn , bc_fc_dlgn , bc_fc_sf_dlgn , conv4_sf_dlgn
     model_arch_type = "fc_dlgn"
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
@@ -450,7 +450,7 @@ if __name__ == '__main__':
     wand_project_name = None
     # wand_project_name = "APR_experiments"
     # wand_project_name = "NPK_reg"
-    # wand_project_name = "XOR_training"
+    wand_project_name = "XOR_training"
     # wand_project_name = "Cifar10_flamarion_replicate"
     # wand_project_name = "frequency_augmentation_experiments"
     # wand_project_name = "Part_training_for_robustness"
@@ -461,11 +461,13 @@ if __name__ == '__main__':
     # wand_project_name = "Thesis_runs_freeze_exp"
     # wand_project_name = "Thesis_runs"
     # wand_project_name = "Thesis_runs_pca"
-    wand_project_name = "Thesis_runs_resized"
+    # wand_project_name = "Thesis_runs_resized"
+    # wand_project_name = "Thesis_runs_pca_same_size_model"
+    # wand_project_name = "Thesis_runs_bc"
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    # pca_exp_percent = 0.95
+    # pca_exp_percent = 0.45
 
     npk_reg = 0
     # npk_reg = 0.01
@@ -481,13 +483,13 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [4,5]
+    # list_of_classes_to_train_on = [1,5]
 
     train_transforms = None
     is_normalize_data = True
 
     custom_dataset_path = None
-    # custom_dataset_path = "data/custom_datasets/resize_dataset/mnist_resized__18.npy"
+    custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_40p_0_1r_eps_0.65_post_norm_eps_0.32.npy"
     
 
     if(scheme_type == "APR_exps"):
@@ -504,6 +506,8 @@ if __name__ == '__main__':
             train_transforms = transforms.RandomApply(
                 [APRecombination(img_size=img_size, prob_threshold=aprs_prob_threshold)], p=1.0)
 
+    lr = 3e-4
+    epochs = 32
     if(dataset == "cifar10"):
         inp_channel = 3
         classes = ('plane', 'car', 'bird', 'cat',
@@ -546,13 +550,15 @@ if __name__ == '__main__':
         inp_channel = 1
         classes = ('Neg','Pos')
         num_classes = len(classes)
-        
+
         data_config = DatasetConfig(
             'xor', is_normalize_data=is_normalize_data, valid_split_size=0.1, batch_size=batch_size, list_of_classes=list_of_classes_to_train_on, 
             train_transforms=train_transforms,custom_dataset_path=custom_dataset_path)
 
         trainloader, _, testloader = preprocess_dataset_get_data_loader(
             data_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+        lr = 3e-2
+        epochs = 102
 
     if(custom_dataset_path is not None):
         dataset = custom_dataset_path[custom_dataset_path.rfind("/")+1:custom_dataset_path.rfind(".npy")]
@@ -577,6 +583,7 @@ if __name__ == '__main__':
         classes = temp_classes
 
     model_arch_type_str = model_arch_type
+    nodes_in_each_layer_list = []
     if("masked" in model_arch_type):
         mask_percentage = 90
         model_arch_type_str = model_arch_type_str + \
@@ -584,8 +591,8 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 128
-        fc_depth = 4
+        fc_width = 8
+        fc_depth = 3
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)
@@ -612,7 +619,8 @@ if __name__ == '__main__':
     if("cifar10" in dataset):
         net.initialize_standardization_layer()
     # list_of_weights, list_of_bias = get_gating_layer_weights(net)
-
+    print("total params",sum(p.numel() for p in net.parameters()))
+    # exit()
     # list_of_weights = convert_list_tensor_to_numpy(list_of_weights)
     # for i in range(len(list_of_weights)):
     #     current_weight_np = list_of_weights[i]
@@ -631,7 +639,7 @@ if __name__ == '__main__':
         criterion = nn.BCEWithLogitsLoss().to(device)
     else:
         criterion = nn.CrossEntropyLoss().to(device)
-    lr = 3e-4
+
     weight_decay = 0
     optimizer = optim.Adam(net.parameters(), lr=lr,weight_decay=weight_decay)
     if(weight_decay!=0):
@@ -644,10 +652,9 @@ if __name__ == '__main__':
         model_arch_type_str = model_arch_type_str + "_GWEIGHT_L2_"+str(gate_weight_l2_reg)
     if(svm_c_hp !=0 ):
         model_arch_type_str = model_arch_type_str + "_LIN_SVM_C_HP_"+str(svm_c_hp)        
-    epochs = 32
 
     final_model_save_path = get_model_save_path(model_arch_type_str, dataset, torch_seed, list_of_classes_to_train_on_str)
-    print("final_model_save_path",final_model_save_path)
+    print("final_model_save_path-----------",final_model_save_path)
     if(scheme_type == "iterative_augmenting"):
         # If False, then on test
         is_template_image_on_train = True
@@ -953,11 +960,11 @@ if __name__ == '__main__':
 
     elif(scheme_type == "PART_TRAINING"):
         # GATE_NET_FREEZE , VAL_NET_FREEZE
-        transfer_mode = "VAL_NET_FREEZE"
-
-        teacher_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+        transfer_mode = "GATE_NET_FREEZE"
+        
+        teacher_model_path = "root/model/save/mnist/adversarial_training/MT_fc_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
         net = get_model_from_path(
-            dataset, model_arch_type, teacher_model_path)
+            dataset, model_arch_type, teacher_model_path,seed=torch_seed, num_classes=num_classes_trained_on, nodes_in_each_layer_list=nodes_in_each_layer_list)
         
         if(transfer_mode == "GATE_NET_FREEZE"):
             net.init_value_net()
@@ -972,12 +979,12 @@ if __name__ == '__main__':
                 param.requires_grad = False
             
         net = net.to(device)
-        print("net",net)
+        print("net-----------------",net)
 
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=lr)
 
         final_model_save_path = final_model_save_path.replace(
-            "CLEAN_TRAINING", "PART_TRAINING/TEACHER__"+teacher_model_path.replace("/","-")+"/TYP_"+str(transfer_mode))
+            "CLEAN_TRAINING", "PART_TRAINING/TEACHER__"+teacher_model_path[:150].replace("/","-")+"/TYP_"+str(transfer_mode))
         print("final_model_save_path: ", final_model_save_path)
         
         is_log_wandb = not(wand_project_name is None)
@@ -1074,7 +1081,7 @@ if __name__ == '__main__':
             os.makedirs(model_save_folder)
 
         best_test_acc, net = train_model(net,
-                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg,gatesat_reg,gate_weight_l2_reg,is_plot_adv_curves=False)
+                                         trainloader, testloader, epochs, criterion, optimizer, final_model_save_path, wand_project_name,npk_reg,gatesat_reg,gate_weight_l2_reg,is_plot_adv_curves=True)
         if(is_log_wandb):
             wandb.log({"best_test_acc": best_test_acc})
             wandb.finish()

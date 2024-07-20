@@ -1092,7 +1092,7 @@ def generate_per_class_comb_simple_stats(list_of_act_analyser_of_class_comb):
         cur_active_gate_count_all_layers = each_class_act_analyser.active_gate_count_all_layers
         for lind in range(len(all_class_inactive_gates_all_layers)):
             # More than 10% of the time gates should be active to consider that pixel active in this stage
-            all_class_inactive_gates_all_layers[lind] = all_class_inactive_gates_all_layers[lind] + torch.where(cur_active_gate_count_all_layers[lind] > 0.1*each_class_act_analyser.total_tcollect_img_count,1.0,0.0)
+            all_class_inactive_gates_all_layers[lind] = all_class_inactive_gates_all_layers[lind] + torch.where(cur_active_gate_count_all_layers[lind] > 0.01*each_class_act_analyser.total_tcollect_img_count,1.0,0.0)
     
     common_active_gate_count_all_layers = [list_of_act_analyser_of_class_comb[0].active_gate_count_all_layers[ind][all_class_inactive_gates_all_layers[ind] != 0] for ind in range(len(list_of_act_analyser_of_class_comb[0].active_gate_count_all_layers))]
     aggregated_active_gate_counts_all_layers = [list_of_act_analyser_of_class_comb[0].active_gate_count_all_layers[ind][all_class_inactive_gates_all_layers[ind] != 0] for ind in range(len(list_of_act_analyser_of_class_comb[0].active_gate_count_all_layers))]
@@ -1107,14 +1107,13 @@ def generate_per_class_comb_simple_stats(list_of_act_analyser_of_class_comb):
             aggregated_active_gate_counts_all_layers[lind] += cur_active_gate_count_all_layers[lind][all_class_inactive_gates_all_layers[lind] != 0]
     
     overall_mean_gate_overlap = 0
+    denominator = 0
     for lind in range(len(common_active_gate_count_all_layers)):
         common_active_gate_count_all_layers[lind] = (common_active_gate_count_all_layers[lind]*len(list_of_act_analyser_of_class_comb)) / aggregated_active_gate_counts_all_layers[lind]
-        # print(common_active_gate_count_all_layers[lind])
-        # print(aggregated_active_gate_counts_all_layers[lind])
-        tp = torch.mean(common_active_gate_count_all_layers[lind])
+        overall_mean_gate_overlap += torch.sum(common_active_gate_count_all_layers[lind])
+        denominator += torch.numel(common_active_gate_count_all_layers[lind])
         # print("common_active_gate_count_all_layers[lind] ind:{}-->{} cmean:{}   {}".format(lind,common_active_gate_count_all_layers[lind].shape,tp,common_active_gate_count_all_layers[lind]))
-        overall_mean_gate_overlap += tp
-    ret = overall_mean_gate_overlap/len(common_active_gate_count_all_layers)
+    ret = overall_mean_gate_overlap/denominator
     # print("ret ",ret)
     return ret
 
@@ -1426,7 +1425,7 @@ if __name__ == '__main__':
     is_save_graph_visualizations = True
     is_save_activation_records = False
     # GENERATE , LOAD_AND_SAVE , LOAD_AND_GENERATE_MERGE , GENERATE_MERGE_AND_SAVE , ADV_VS_ORIG_REPORT , CLASS_WISE_REPORT ,  SIMPLE_CLASS_WISE_REPORT
-    scheme_type = "GENERATE_MERGE_AND_SAVE"
+    scheme_type = "SIMPLE_CLASS_WISE_REPORT"
     # OVER_RECONSTRUCTED , OVER_ADVERSARIAL , OVER_ORIGINAL
     sub_scheme_type = 'OVER_ORIGINAL'
     # OVER_ORIGINAL_VS_ADVERSARIAL , TWO_CUSTOM_MODELS

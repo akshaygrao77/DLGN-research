@@ -422,6 +422,13 @@ class SF_DLGN_FC_Network(nn.Module):
           gating_net_layers_ordered["fc"+str(layer_num)+"_g"] = self.gating_network.list_of_modules[layer_num]
 
         return gating_net_layers_ordered
+    
+    def get_value_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        for layer_num in range(len(self.gating_network.list_of_modules)):
+          gating_net_layers_ordered["fc"+str(layer_num)+"_g"] = self.value_network.list_of_modules[layer_num]
+
+        return gating_net_layers_ordered
 
     def get_layer_object(self, network_type, layer_num):
         if(network_type == "GATE_NET"):
@@ -514,17 +521,23 @@ class DLGN_FC_Network(nn.Module):
         input_size = self.input_size_list[0]
         for ind in range(1, len(self.input_size_list)):
             input_size *= self.input_size_list[ind]
-
-        self.gating_network = DLGN_FC_Gating_Network(
-            self.nodes_in_each_layer_list, input_size, seed=self.seed)
+        self.input_size = input_size
+        self.init_gate_net()
         print("self.gating_network", self.gating_network)
         print("Gating net params:", sum(p.numel()
               for p in self.gating_network.parameters()))
-        self.value_network = ALLONES_FC_Value_Network(
-            self.nodes_in_each_layer_list, input_size, seed=self.seed, num_classes=self.num_classes)
+        self.init_value_net()
         print("self.value_network", self.value_network)
         print("Value net params:", sum(p.numel()
               for p in self.value_network.parameters()))
+    
+    def init_gate_net(self):
+        self.gating_network = DLGN_FC_Gating_Network(
+            self.nodes_in_each_layer_list, self.input_size, seed=self.seed)
+
+    def init_value_net(self):
+        self.value_network = ALLONES_FC_Value_Network(
+            self.nodes_in_each_layer_list, self.input_size, seed=self.seed, num_classes=self.num_classes)
 
     def initialize_PCA_transformation(self, data, explained_var_required):
         self.pca_layer = PCA_Layer(data, explained_var_required)
@@ -573,6 +586,13 @@ class DLGN_FC_Network(nn.Module):
         gating_net_layers_ordered = OrderedDict()
         for layer_num in range(len(self.gating_network.list_of_modules)):
           gating_net_layers_ordered["fc"+str(layer_num)+"_g"] = self.gating_network.list_of_modules[layer_num]
+
+        return gating_net_layers_ordered
+
+    def get_value_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        for layer_num in range(len(self.gating_network.list_of_modules)):
+          gating_net_layers_ordered["fc"+str(layer_num)+"_g"] = self.value_network.list_of_modules[layer_num]
 
         return gating_net_layers_ordered
 

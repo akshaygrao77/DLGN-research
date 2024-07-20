@@ -2328,24 +2328,24 @@ if __name__ == '__main__':
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , dlgn__st1_pad2_vgg16_bn_wo_bias__ , dlgn__st1_pad1_vgg16_bn_wo_bias__
-    # dlgn__conv4_dlgn_pad0_st1_bn__ , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , dlgn__im_conv4_dlgn_pad_k_1_st1_bn_wo_bias__
-    model_arch_type = 'dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__'
+    # dlgn__conv4_dlgn_pad0_st1_bn__ , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , dlgn__im_conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , conv4_sf_dlgn
+    model_arch_type = 'conv4_sf_dlgn'
 
     torch_seed = 2022
 
     # RAW_FILTERS_GEN , IMAGE_OUTPUTS_PER_FILTER , IMAGE_SEQ_OUTPUTS_PER_FILTER , IMAGE_OUT_PER_RES_FILTER , APPROX_IMAGE_OUT_PER_RES_FILTER,EXACT_IMAGE_OUT_PER_RES_FILTER
     # list_of_scheme_type = ["IMAGE_OUT_PER_RES_FILTER"]
     list_of_scheme_type = [
-        "APPROX_IMAGE_OUT_PER_RES_FILTER"]
+        "EXACT_IMAGE_OUT_PER_RES_FILTER"]
 
     # std_image_preprocessing , mnist , fashion_mnist
     list_of_filter_vis_dataset = ["mnist"]
 
     batch_size = 14
 
-    eps = 0.06
+    eps = 0.3
     adv_attack_type = 'PGD'
-    number_of_adversarial_optimization_steps = 161
+    number_of_adversarial_optimization_steps = 40
     eps_step_size = 0.01
     adv_target = None
     is_save_adv = True
@@ -2434,7 +2434,8 @@ if __name__ == '__main__':
             print("Running scheme", scheme_type)
 
             if(scheme_type != "RAW_FILTERS_GEN"):
-                model_path = "root/model/save/mnist__MB_HB/CLEAN_TRAINING/ST_2022/dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias___dir.pt"
+                model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_sf_dlgn_dir.pt"
+                # model_path = "root/model/save/mnist/adversarial_training/MT_conv4_sf_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/out_lossfn_CrossEntropyLoss()/inner_lossfn_CrossEntropyLoss()/adv_model_dir.pt"
                 model = get_model_from_path(
                     dataset, model_arch_type, model_path, mask_percentage=mask_percentage)
 
@@ -2594,10 +2595,11 @@ if __name__ == '__main__':
 
                 if(sub_scheme_type == "IND"):
                     list_of_weights, list_of_bias = run_raw_weight_analysis_on_config(model, root_save_prefix=save_prefix, final_postfix_for_save="",
-                                                                                      is_save_graph_visualizations=True)
+                                                                                      is_save_graph_visualizations=False)
 
-                list_of_weights = generate_merged_convolution_weights_at_each_layer(
-                    list_of_weights)
+                if "sf" not in model_arch_type:
+                    list_of_weights = generate_merged_convolution_weights_at_each_layer(
+                        list_of_weights)
 
                 output_params(list_of_weights, root_save_prefix=save_prefix,
                               final_postfix_for_save="MERGED_WEIGHTS")

@@ -30,12 +30,39 @@ class SaveFeatures():
     def hook_fn(self, module, input, output):
         self.features = output
         nw_shape=list(output.size())
+        print("self.features ",self.features)
+        print('nw_shape ',nw_shape)
         nw_shape.append(output.shape[-1])
-        nw = torch.zeros((nw_shape))
+        nw = torch.full((nw_shape),-1000.0)
+        print("nw ",nw.shape)
+        print("output ",output.shape)
         for ind in range(output.shape[-1]):
             nw[:,ind,ind] = output[:,ind]
         # print("nw:{} output:{}".format(nw.shape,output.shape))
         nw = nw.to(device=output.device)
+        print(nw)
+        output = output.cpu()
+        del output
+        return nw
+
+    def clear_store(self):
+        self.features = None
+
+    def close(self):
+        self.hook.remove()
+
+class SetFeaturesToZero():
+    def __init__(self, module):
+        self.hook = module.register_forward_hook(self.hook_fn)
+        self.dont_set_zero_ind = None
+
+    def hook_fn(self, module, input, output):
+        self.features = output
+        nw_shape=list(output.size())
+        nw = torch.full((nw_shape),-1000.0)
+        nw[:,self.dont_set_zero_ind] =  output[:,self.dont_set_zero_ind]
+        nw = nw.to(device=output.device)
+        print(nw)
         output = output.cpu()
         del output
         return nw
@@ -278,7 +305,7 @@ def generate_loss_surface(model,loader,step_to_plot,alpha_folder,residue_vname,f
 def generate_gate_contribution_to_gradient(model,loader,steps_to_plot_list,alpha_folder,residue_vname,fast_adv_attack_type,target_indx=16):
     model.eval()
     # loss_fn = nn.CrossEntropyLoss()
-    loss_fn = nn.BCELoss()
+    loss_fn = nn.BCEWithLogitsLoss()
     # tr_loss_fn = Y_True_Loss()
     eps = 0.3
     eps_step_size = 0.01
@@ -288,11 +315,10 @@ def generate_gate_contribution_to_gradient(model,loader,steps_to_plot_list,alpha
     clip_max = 1.0
     eta_growth_reduced_rate = 1
     kargs = {"criterion":loss_fn,"eps":eps,"eps_step_size":eps_step_size,"steps":0,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':False,'norm':np.inf,'residue_vname':residue_vname,"num_of_restrts":1}
-    
+    loader = tqdm.tqdm(loader, desc='Plotting gate contribution training')
     for batch_idx, data in enumerate(loader, 0):
         if(batch_idx == target_indx):
             ghw = 0.1
-            # gwidth = 2*ghw * len(model.get_gate_layers_ordered_dict())
             gwidth = 0.1
             # set up the figure and axes
             gfig, gaxs = plt.subplots(len(model.get_gate_layers_ordered_dict()),1,figsize=(100, 100))
@@ -317,8 +343,10 @@ def generate_gate_contribution_to_gradient(model,loader,steps_to_plot_list,alpha
                 elif fast_adv_attack_type == 'residual_PGD':
                     kargs["eta_growth_reduced_rate"] = eta_growth_reduced_rate
                     adv_x = get_residue_adv_per_batch(model,X,kargs)
-                
-                gatecont_dict_all_layers = dict()
+                elif fast_adv_attack_type == 'FGSM':
+                    adv_x = cleverhans_fast_gradient_method(model,X,kargs)
+                print(model)
+                ypred = model(adv_x,verbose=4)
                 width = 0.5
                 hw=0.2
                 # set up the figure and axes
@@ -326,11 +354,17 @@ def generate_gate_contribution_to_gradient(model,loader,steps_to_plot_list,alpha
                 with torch.no_grad():
                     ind_a = 0
                     for key,val in model.get_gate_layers_ordered_dict().items():
-                        out_capturer = SaveFeatures(val)
+                        # out_capturer = SaveFeatures(val)
+                        # out_capturer.clear_store()
+                        out_capturer = SetFeaturesToZero(val)
                         out_capturer.clear_store()
-                        model(adv_x)
-                        # We need to take the logits bcoz the model outputs value after applying sigmoid
-                        out = torch.squeeze(model.output_logits)
+                        out = []
+                        for ind in range(val.weight.shape[0]):
+                            out_capturer.dont_set_zero_ind = ind
+                            ymp = torch.squeeze(model(adv_x))
+                            out.append(ymp)
+                        out = torch.stack(out)
+                        assert ypred == torch.sum(out)," Gone case! ypred={} Subnetwork out layer:{} is {}. Sum=== {}".format(ypred,key,out,torch.sum(out))
                         g = torch.squeeze(nn.Sigmoid()(model.beta * out_capturer.features))
                         cur_gate_cont = (1-g) * out
 
@@ -358,6 +392,153 @@ def generate_gate_contribution_to_gradient(model,loader,steps_to_plot_list,alpha
             gfig.savefig(save_folder+"/all_steps_gate_coeff_over_eff_weight_wrt_gradient_{}.jpg".format(steps_to_plot_list))
             plt.close(gfig)
 
+def generate_all_points_gate_contribution_to_gradient(model,loader,steps_to_plot_list,alpha_folder,residue_vname,fast_adv_attack_type):
+    model.eval()
+    # loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.BCEWithLogitsLoss()
+    # tr_loss_fn = Y_True_Loss()
+    eps = 0.3
+    eps_step_size = 0.01
+    update_on = 'all'
+    rand_init = False
+    clip_min = 0.0
+    clip_max = 1.0
+    eta_growth_reduced_rate = 1
+    kargs = {"criterion":loss_fn,"eps":eps,"eps_step_size":eps_step_size,"steps":0,"update_on":update_on,'rand_init':rand_init,'clip_min':clip_min,'clip_max':clip_max,'targeted':False,'norm':np.inf,'residue_vname':residue_vname,"num_of_restrts":1}
+    
+    list_of_dicts = []
+    for sind in range(len(steps_to_plot_list)):
+        layerwise_dict = {}
+        for key,val in model.get_gate_layers_ordered_dict().items():
+            layerwise_dict[key] = []
+        loader = tqdm.tqdm(loader, desc='Generating all gate contribution on dataloader for step_to_plot:{}'.format(steps_to_plot_list[sind]))
+        for batch_idx, data in enumerate(loader, 0):
+            step_to_plot = steps_to_plot_list[sind]
+            kargs["steps"] = step_to_plot
+
+            (X, y) = data
+            X, y = X.cuda(), y.cuda()
+            kargs["labels"] = y
+            
+            torch.manual_seed(torch_seed)
+            kargs['residue_vname'] = residue_vname
+            if fast_adv_attack_type == 'PGD':
+                adv_x = cleverhans_projected_gradient_descent(model,X,kargs)
+            elif fast_adv_attack_type == 'residual_PGD':
+                kargs["eta_growth_reduced_rate"] = eta_growth_reduced_rate
+                adv_x = get_residue_adv_per_batch(model,X,kargs)
+            elif fast_adv_attack_type == 'FGSM':
+                adv_x = cleverhans_fast_gradient_method(model,X,kargs)
+            with torch.no_grad():
+                for key,val in model.get_gate_layers_ordered_dict().items():
+                    out_capturer = SaveFeatures(val)
+                    out_capturer.clear_store()
+                    model(adv_x)
+                    # We need to take the logits bcoz the model outputs value after applying sigmoid
+                    out = torch.squeeze(model.output_logits)
+                    g = torch.squeeze(nn.Sigmoid()(model.beta * out_capturer.features))
+                    cur_gate_cont = (1-g) * out
+                    layerwise_dict[key].append(cur_gate_cont.cpu().numpy())
+                    out_capturer.close()
+        for key,val in model.get_gate_layers_ordered_dict().items():
+            layerwise_dict[key] = np.stack(layerwise_dict[key])
+        list_of_dicts.append(layerwise_dict)
+
+    ghw = 0.1
+    gwidth = 0.1
+    # set up the figure and axes
+    gfig, gaxs = plt.subplots(len(model.get_gate_layers_ordered_dict()),4,figsize=(200, 100))
+    for sind in range(len(steps_to_plot_list)):
+        cur_layerwise_dict = list_of_dicts[sind]
+        step_to_plot = steps_to_plot_list[sind]
+        kargs["steps"] = step_to_plot
+
+        save_folder = alpha_folder
+        save_folder_each_step = "{}/step_to_plot_{}/".format(save_folder,step_to_plot)
+        if not os.path.exists(save_folder_each_step):
+            os.makedirs(save_folder_each_step)
+        width = 0.5
+        hw=0.2
+        # set up the figure and axes
+        fig, axs = plt.subplots(len(model.get_gate_layers_ordered_dict()),4,figsize=(200, 100))
+        with torch.no_grad():
+            ind_a = 0
+            for key,val in model.get_gate_layers_ordered_dict().items():
+                cur_gate_cont = cur_layerwise_dict[key]
+                print(sind,cur_gate_cont.shape)
+
+                xs = np.arange(cur_gate_cont.shape[1])
+
+                axs[ind_a][0].bar(xs-hw, np.median(cur_gate_cont,axis=0),label="Iter:{}".format(step_to_plot),width = width)
+                axs[ind_a][0].legend()
+                axs[ind_a][0].set_title('All Gate contribution median for individual adv step at layer:{}'.format(key))
+                axs[ind_a][0].set_xlabel("Gate Index")
+                axs[ind_a][0].set_xticks(xs)
+                axs[ind_a][0].grid(color = 'green', linestyle = '--', linewidth = 0.5,axis = 'y')
+                axs[ind_a][0].grid(color = 'red', linestyle = '--', linewidth = 0.5,axis = 'x')
+
+                axs[ind_a][1].bar(xs-hw, np.mean(cur_gate_cont,axis=0),label="Iter:{}".format(step_to_plot),width = width)
+                axs[ind_a][1].legend()
+                axs[ind_a][1].set_title('All Gate contribution mean for individual adv step at layer:{}'.format(key))
+                axs[ind_a][1].set_xlabel("Gate Index")
+                axs[ind_a][1].set_xticks(xs)
+                axs[ind_a][1].grid(color = 'green', linestyle = '--', linewidth = 0.5,axis = 'y')
+                axs[ind_a][1].grid(color = 'red', linestyle = '--', linewidth = 0.5,axis = 'x')
+
+                axs[ind_a][2].bar(xs-hw, np.min(cur_gate_cont,axis=0),label="Iter:{}".format(step_to_plot),width = width)
+                axs[ind_a][2].legend()
+                axs[ind_a][2].set_title('All Gate contribution minimum for individual adv step at layer:{}'.format(key))
+                axs[ind_a][2].set_xlabel("Gate Index")
+                axs[ind_a][2].set_xticks(xs)
+                axs[ind_a][2].grid(color = 'green', linestyle = '--', linewidth = 0.5,axis = 'y')
+                axs[ind_a][2].grid(color = 'red', linestyle = '--', linewidth = 0.5,axis = 'x')
+
+                axs[ind_a][3].bar(xs-hw, np.max(cur_gate_cont,axis=0),label="Iter:{}".format(step_to_plot),width = width)
+                axs[ind_a][3].legend()
+                axs[ind_a][3].set_title('All Gate contribution maximum for individual adv step at layer:{}'.format(key))
+                axs[ind_a][3].set_xlabel("Gate Index")
+                axs[ind_a][3].set_xticks(xs)
+                axs[ind_a][3].grid(color = 'green', linestyle = '--', linewidth = 0.5,axis = 'y')
+                axs[ind_a][3].grid(color = 'red', linestyle = '--', linewidth = 0.5,axis = 'x')
+
+                gaxs[ind_a][0].bar(xs - (ghw*sind), np.median(cur_gate_cont,axis=0),label="Iter:{}".format(step_to_plot),width = gwidth)
+                gaxs[ind_a][0].legend()
+                gaxs[ind_a][0].set_title('All Gate contribution median for various adv steps at layer:{}'.format(key))
+                gaxs[ind_a][0].set_xlabel("Gate Index")
+                gaxs[ind_a][0].set_xticks(xs)
+                gaxs[ind_a][0].grid(color = 'green', linestyle = '--', linewidth = 0.5,axis = 'y')
+                gaxs[ind_a][0].grid(color = 'red', linestyle = '--', linewidth = 0.5,axis = 'x')
+
+                gaxs[ind_a][1].bar(xs - (ghw*sind), np.mean(cur_gate_cont,axis=0),label="Iter:{}".format(step_to_plot),width = gwidth)
+                gaxs[ind_a][1].legend()
+                gaxs[ind_a][1].set_title('All Gate contribution mean for various adv steps at layer:{}'.format(key))
+                gaxs[ind_a][1].set_xlabel("Gate Index")
+                gaxs[ind_a][1].set_xticks(xs)
+                gaxs[ind_a][1].grid(color = 'green', linestyle = '--', linewidth = 0.5,axis = 'y')
+                gaxs[ind_a][1].grid(color = 'red', linestyle = '--', linewidth = 0.5,axis = 'x')
+
+                gaxs[ind_a][2].bar(xs - (ghw*sind), np.min(cur_gate_cont,axis=0),label="Iter:{}".format(step_to_plot),width = gwidth)
+                gaxs[ind_a][2].legend()
+                gaxs[ind_a][2].set_title('All Gate contribution minimum for various adv steps at layer:{}'.format(key))
+                gaxs[ind_a][2].set_xlabel("Gate Index")
+                gaxs[ind_a][2].set_xticks(xs)
+                gaxs[ind_a][2].grid(color = 'green', linestyle = '--', linewidth = 0.5,axis = 'y')
+                gaxs[ind_a][2].grid(color = 'red', linestyle = '--', linewidth = 0.5,axis = 'x')
+
+                gaxs[ind_a][3].bar(xs - (ghw*sind), np.max(cur_gate_cont,axis=0),label="Iter:{}".format(step_to_plot),width = gwidth)
+                gaxs[ind_a][3].legend()
+                gaxs[ind_a][3].set_title('All Gate contribution maximum for various adv steps at layer:{}'.format(key))
+                gaxs[ind_a][3].set_xlabel("Gate Index")
+                gaxs[ind_a][3].set_xticks(xs)
+                gaxs[ind_a][3].grid(color = 'green', linestyle = '--', linewidth = 0.5,axis = 'y')
+                gaxs[ind_a][3].grid(color = 'red', linestyle = '--', linewidth = 0.5,axis = 'x')
+
+                ind_a += 1
+            fig.savefig(save_folder_each_step+"/all_gate_coeff_over_eff_weight_wrt_gradient.jpg")
+            plt.close(fig)
+        
+        gfig.savefig(save_folder+"/all_steps_all_gate_coeff_over_eff_weight_wrt_gradient_{}.jpg".format(steps_to_plot_list))
+        plt.close(gfig)
 
 def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,residue_vname,fast_adv_attack_type):
     rows = []
@@ -398,7 +579,8 @@ def generate_table(model,loader,sorted_list_steps,num_batches,alpha_folder,resid
 
 
 if __name__ == '__main__':
-    model_arch_type = "bc_fc_sf_dlgn"
+    # bc_fc_dlgn , bc_fc_sf_dlgn , bc_fc_dnn
+    model_arch_type = "bc_fc_dnn"
     fast_adv_attack_type = "PGD"
     # L2_norm_grad_unitnorm , L2_norm_grad_scale , PGD_unit_norm , plain_grad_without_sign
     # eta_growth , max_eps
@@ -406,6 +588,7 @@ if __name__ == '__main__':
     number_of_restarts = 1
     num_batches = 25
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # fashion_mnist , mnist,cifar10 , xor
     dataset = "mnist"
     # None means that train on all classes
     list_of_classes_to_train_on = None
@@ -473,7 +656,10 @@ if __name__ == '__main__':
     
     # model_path = "root/model/save/mnist/adversarial_training/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_residual_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_18/update_on_all/R_init_True/norm_inf/use_ytrue_True/residue_vname_eta_growth/adv_model_dir_epoch_0.pt"
     # model_path = "root/model/save/mnist/adversarial_training/MT_fc_dnn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir_epoch_5.pt"
-    model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_bc_fc_sf_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    # model_path = "root/model/save/mnist/adversarial_training/TR_ON_3_8/MT_bc_fc_sf_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    # model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/bc_fc_sf_dlgn_W_128_D_4_dir.pt"
+    # model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/bc_fc_dlgn_W_16_D_4_dir.pt"
+    model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_3_8/ST_2022/bc_fc_dnn_W_16_D_4_dir.pt"
     
     # model_arch_type_str = model_arch_type
     # fc_width = 128
@@ -490,7 +676,7 @@ if __name__ == '__main__':
     # edge_random_start , Y_True_Loss , EPS_0.27
     # alpha_folder = "{}/alpha_debug/rand_False/residue_{}/num_restrt_{}/".format(model_path.replace(".pt","/"),residue_vname,number_of_restarts)
     # alpha_folder = "{}/loss_surface_debug/residue_{}/".format(model_path.replace(".pt","/"),residue_vname)
-    alpha_folder = "{}/gate_contribution_debug/residue_{}/".format(model_path.replace(".pt","/"),residue_vname)
+    alpha_folder = "{}/all_gate_contribution_debug/residue_{}/".format(model_path.replace(".pt","/"),residue_vname)
     if not os.path.exists(alpha_folder):
         os.makedirs(alpha_folder)
 
@@ -504,7 +690,9 @@ if __name__ == '__main__':
     # step_to_plot = 40
     # generate_loss_surface(net,trainloader,step_to_plot,alpha_folder,residue_vname,fast_adv_attack_type)
 
-    steps_to_plot_list = [0,10,20,30,40]
+    steps_to_plot_list = [0]
     generate_gate_contribution_to_gradient(net,trainloader,steps_to_plot_list,alpha_folder,residue_vname,fast_adv_attack_type,target_indx=16)
+
+    # generate_all_points_gate_contribution_to_gradient(net,trainloader,steps_to_plot_list,alpha_folder,residue_vname,fast_adv_attack_type)
     
     print("Finished exec")
