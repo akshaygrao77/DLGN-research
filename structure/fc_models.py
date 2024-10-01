@@ -551,7 +551,7 @@ class DLGN_FC_Network(nn.Module):
         self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
         self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
 
-    def forward(self, inp, verbose=2):
+    def forward(self, inp,verbose=2,gate_masks=None):
         if hasattr(self, 'standardize_layer'):
             inp = self.standardize_layer(inp)
 
@@ -576,14 +576,27 @@ class DLGN_FC_Network(nn.Module):
             each_linear_conv_output = linear_conv_outputs[indx]
             self.gating_node_outputs[indx] = nn.Sigmoid()(
                 self.beta * each_linear_conv_output)
+            if(gate_masks is not None):
+                self.gating_node_outputs[indx] *= gate_masks[indx]
+
 
         final_layer_out = self.value_network(
             inp_gating, self.gating_node_outputs, verbose=verbose)
 
         return final_layer_out
 
-    def get_gate_layers_ordered_dict(self):
+    def get_gate_layers_ordered_dict(self,is_include_pca=False):
         gating_net_layers_ordered = OrderedDict()
+        if(is_include_pca and hasattr(self, 'pca_layer')):
+            inp_layer = self.gating_network.list_of_modules[0]
+            print("pc_comp:{} pc_mean;{}".format(self.pca_layer.pc_comp.shape,self.pca_layer.pc_mean.shape))
+            temp_conv = nn.Linear(self.pca_layer.pc_comp.shape[0],self.pca_layer.pc_comp.shape[1])
+            print("temp_conv weight:{} bias:{} pc_comp:{} pc_mean;{}".format(temp_conv.weight.size(),temp_conv.bias.size(),self.pca_layer.pc_comp.shape,self.pca_layer.pc_mean.shape))
+            # temp_conv = temp_conv.to(device=inp_layer.device)
+            temp_conv.weight= torch.nn.Parameter(self.pca_layer.pc_comp.T.float())
+            temp_conv.bias= torch.nn.Parameter(-torch.matmul(self.pca_layer.pc_comp.T,self.pca_layer.pc_mean).float())
+            print("temp_conv weight:{} bias:{} ".format(temp_conv.weight.size(),temp_conv.bias.size()))
+            gating_net_layers_ordered["fc_pca"] = temp_conv
         for layer_num in range(len(self.gating_network.list_of_modules)):
           gating_net_layers_ordered["fc"+str(layer_num)+"_g"] = self.gating_network.list_of_modules[layer_num]
 
@@ -602,13 +615,13 @@ class DLGN_FC_Network(nn.Module):
         elif(network_type == "WEIGHT_NET"):
             return self.value_network.list_of_modules[layer_num]
     
-    def exact_forward_vis(self, x) -> torch.Tensor:
+    def exact_forward_vis(self, x,is_include_pca=False) -> torch.Tensor:
         """
         x - Dummy input with batch size =1 to generate linear transformations
         """
         self.eval()
         x = torch.flatten(x,1)
-        gating_net_layers_ordered = self.get_gate_layers_ordered_dict()
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict(is_include_pca)
         conv_matrix_operations_in_each_layer = OrderedDict()
         conv_bias_operations_in_each_layer = OrderedDict()
         channel_outs_size_in_each_layer = OrderedDict()
