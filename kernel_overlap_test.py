@@ -17,6 +17,7 @@ from conv4_models import Plain_CONV4_Net, Conv4_DLGN_Net, get_model_instance, ge
 from adversarial_attacks_tester import load_or_generate_adv_examples
 from configs.dlgn_conv_config import HardRelu
 from statistics import mean
+import csv
 
 
 def get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset, is_analysis_on_train,
@@ -200,7 +201,7 @@ if __name__ == '__main__':
     dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , bc_fc_dlgn , bc_fc_sf_dlgn
-    model_arch_type = 'bc_fc_sf_dlgn'
+    model_arch_type = 'fc_dlgn'
 
     batch_size = 64
 
@@ -210,11 +211,11 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    list_of_classes_to_train_on = [1, 5]
+    # list_of_classes_to_train_on = [1,9]
 
     map_of_mtype_paths = {
-        "STD": "root/model/save/mnist/CLEAN_TRAINING/TR_ON_1_5/ST_2022/bc_fc_sf_dlgn_W_128_D_4_dir.pt",
-        "ADFS": "root/model/save/mnist/adversarial_training/TR_ON_1_5/MT_bc_fc_sf_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/out_lossfn_BCEWithLogitsLoss()/inner_lossfn_Y_Logits_Binary_class_Loss()/adv_model_dir.pt",
+        "STD": "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_dlgn_W_128_D_4_dir.pt",
+        "ADFS": "root/model/save/mnist/adversarial_training/MT_fc_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt",
     }
 
     wand_project_name = "thesis_kernel_overlap_experiments"
@@ -224,8 +225,8 @@ if __name__ == '__main__':
     number_of_adversarial_optimization_steps = 40
     adv_attack_type = "PGD"
     adv_target = None
-    # K_OVERLAP
-    exp_type = "K_OVERLAP"
+    # K_OVERLAP , All_PAIRS_K_OVERLAP
+    exp_type = "All_PAIRS_K_OVERLAP"
     is_consider_NPK = False
     percentage_of_dataset_for_analysis = 100
     eps_step_size = 0.01
@@ -502,5 +503,167 @@ if __name__ == '__main__':
 
         if(is_log_wandb):
             wandb.finish()
+    elif(exp_type == "All_PAIRS_K_OVERLAP"):
+        tar_classes = [i for i in range(10)]
+        rows = []
+        headers = ["SRC Class","Model Type"]
+        metrics = ["same_or_k_lap_L2","same_ad_k_lap_L2","diff_or_k_lap_L2","diff_ad_k_lap_L2","ado_same_ad_org_k_lap_L2","ado_diff_ad_org_k_lap_L2"]
+        ext_header=[]
+        for tar_class in tar_classes:
+            ext_header.extend([str(tar_class)]*len(metrics))
+        second_row = [""]*len(headers) + metrics*len(tar_classes)
+        overall_header = headers + ext_header
+        allrows = []
+        allrows.append(overall_header)
+        allrows.append(second_row)
+        for src_class in range(10):
+            for current_model_type in map_of_mtype_paths:
+                current_direct_model_path = map_of_mtype_paths[current_model_type]
+
+                isExist = os.path.exists(current_direct_model_path)
+                assert isExist == True, 'Model path does not have saved model'
+
+                custom_temp_model = torch.load(current_direct_model_path)
+                net.load_state_dict(custom_temp_model.state_dict())
+
+                net = net.to(device)
+
+                if('CLEAN' in current_direct_model_path or 'APR_TRAINING' in current_direct_model_path):
+                    model_and_data_save_prefix = current_direct_model_path[0:current_direct_model_path.rfind(
+                        ".pt")]
+                else:
+                    model_and_data_save_prefix = current_direct_model_path[0:current_direct_model_path.rfind(
+                        "/")+1]
+                cur_rows = [str(src_class),str(current_model_type)]
+                for tar_class in tar_classes:
+                    print("SRC Class:{} *********************************** Tar Class:{}".format(src_class,tar_class))
+                    if(tar_class == src_class):
+                        cur_rows.extend(["0"]*len(metrics))
+                        continue
+                    d_config = DatasetConfig(
+                        dataset, is_normalize_data=True, valid_split_size=0.1, batch_size=batch_size, list_of_classes=[src_class,tar_class])
+
+                    trainloader, _, testloader = preprocess_dataset_get_data_loader(
+                        d_config, model_arch_type, verbose=1, dataset_folder="./Datasets/", is_split_validation=False)
+
+                    if(is_analysis_on_train == True):
+                        eval_loader = trainloader
+                    else:
+                        eval_loader = testloader
+
+                    number_of_trails = 1
+
+                    orig_dataset = generate_dataset_from_loader(eval_loader)
+                    if(isinstance(orig_dataset.list_of_x[0], torch.Tensor)):
+                        orig_dataset = torch.stack(
+                            orig_dataset.list_of_x), torch.stack(orig_dataset.list_of_y)
+                    else:
+                        orig_dataset = np.array(orig_dataset.list_of_x), np.array(
+                            orig_dataset.list_of_y)
+
+                    number_of_samples = orig_dataset[0].shape[0]
+                    print("Total number_of_samples", number_of_samples)
+
+                    number_of_samples_used_for_analysis = int(
+                        (percentage_of_dataset_for_analysis/100)*number_of_samples)
+
+                    print("Total number of filtered samples for analysis",
+                        number_of_samples_used_for_analysis)
+
+                    np.random.seed(torch_seed)
+                    indices = np.arange(0, number_of_samples)
+
+                    orig_overlap_map = []
+                    orig_overlap_sameclass_map = []
+                    orig_overlap_diffclass_map = []
+                    adv_overlap_map = []
+                    adv_overlap_sameclass_map = []
+                    adv_overlap_diffclass_map = []
+                    adv_orig_overlap_map = []
+                    adv_orig_overlap_sameclass_map = []
+                    adv_orig_overlap_diffclass_map = []
+
+                    for trail_num in range(number_of_trails):
+                        np.random.shuffle(indices)
+
+                        filtered_indices = indices[:number_of_samples_used_for_analysis]
+
+                        print("Orig dataset size: X=>{},Y=>{}".format(
+                            orig_dataset[0].shape, orig_dataset[1].shape))
+                        analyse_orig_dataset = orig_dataset[0][filtered_indices], orig_dataset[1][filtered_indices]
+                        print("Analyse orig dataset size: X=>{},Y=>{}".format(
+                            analyse_orig_dataset[0].shape, analyse_orig_dataset[1].shape))
+
+
+                        adv_dataset = load_or_generate_adv_examples(eval_loader, "", is_analysis_on_train, net, eps, adv_attack_type,
+                                                                    number_of_adversarial_optimization_steps, eps_step_size, adv_target, is_save_adv=False)
+                        print("Adv dataset size: X=>{},Y=>{}".format(
+                            adv_dataset.list_of_x[0].shape, adv_dataset.list_of_y[0].shape))
+                        print("Adv dataset size: X=>{},Y=>{}".format(
+                            adv_dataset.list_of_x.shape, adv_dataset.list_of_y.shape))
+                        if(not isinstance(adv_dataset.list_of_x, torch.Tensor) and isinstance(adv_dataset.list_of_x[0], torch.Tensor)):
+                            adv_dataset = torch.stack(
+                                adv_dataset.list_of_x), torch.stack(adv_dataset.list_of_y)
+                        elif(isinstance(adv_dataset.list_of_x, torch.Tensor) and isinstance(adv_dataset.list_of_x[0], torch.Tensor)):
+                            adv_dataset = adv_dataset.list_of_x, adv_dataset.list_of_y
+                        else:
+                            adv_dataset = np.array(adv_dataset.list_of_x), np.array(
+                                adv_dataset.list_of_y)
+
+                        print("Adv dataset size: X=>{},Y=>{}".format(
+                            adv_dataset[0].shape, adv_dataset[1].shape))
+                        analyse_adv_dataset = adv_dataset[0][filtered_indices], adv_dataset[1][filtered_indices]
+                        print("Analyse adv dataset size: X=>{},Y=>{}".format(
+                            analyse_adv_dataset[0].shape, analyse_adv_dataset[1].shape))
+
+                        orig_overlap,orig_sameclass_overlap,orig_diffclass_overlap = obtain_kernel_overlap(net, analyse_orig_dataset,is_consider_NPK)
+                        print("current_model_type:{}=>orig_overlap:{}".format(
+                            current_model_type, orig_overlap))
+                        orig_overlap_map.append(
+                            orig_overlap.item())
+                        orig_overlap_sameclass_map.append(
+                            orig_sameclass_overlap.item())
+                        orig_overlap_diffclass_map.append(
+                            orig_diffclass_overlap.item())
+                        adv_overlap,adv_sameclass_overlap,adv_diffclass_overlap = obtain_kernel_overlap(net, analyse_adv_dataset,is_consider_NPK)
+                        print("current_model_type:{}=>adv_overlap:{}".format(
+                            current_model_type, adv_overlap))
+                        adv_overlap_map.append(adv_overlap.item())
+                        adv_overlap_sameclass_map.append(
+                            adv_sameclass_overlap.item())
+                        adv_overlap_diffclass_map.append(
+                            adv_diffclass_overlap.item())
+                        
+                        adv_orig_overlap,adv_orig_sameclass_overlap,adv_orig_diffclass_overlap = obtain_adv_orig_kernel_overlap(net,analyse_orig_dataset, analyse_adv_dataset,is_consider_NPK)
+                        print("current_model_type:{}=>adv_orig_overlap:{}".format(
+                            current_model_type, adv_orig_overlap))
+                        adv_orig_overlap_map.append(adv_orig_overlap.item())
+                        adv_orig_overlap_sameclass_map.append(
+                            adv_orig_sameclass_overlap.item())
+                        adv_orig_overlap_diffclass_map.append(
+                            adv_orig_diffclass_overlap.item())
+
+                        mean_current_orig_overlap = mean(orig_overlap_map)
+                        mean_current_orig_overlap_sameclass = mean(orig_overlap_sameclass_map)
+                        mean_current_orig_overlap_diffclass = mean(orig_overlap_diffclass_map)
+                        mean_current_adv_overlap = mean(adv_overlap_map)
+                        mean_current_adv_overlap_sameclass = mean(adv_overlap_sameclass_map)
+                        mean_current_adv_overlap_diffclass = mean(adv_overlap_diffclass_map)
+                        mean_current_adv_orig_overlap = mean(adv_orig_overlap_map)
+                        mean_current_adv_orig_overlap_sameclass = mean(adv_orig_overlap_sameclass_map)
+                        mean_current_adv_orig_overlap_diffclass = mean(adv_orig_overlap_diffclass_map)
+
+                        cur_rows.append(math.log2(mean_current_orig_overlap_sameclass))
+                        cur_rows.append(math.log2(mean_current_adv_overlap_sameclass))
+                        cur_rows.append(math.log2(mean_current_orig_overlap_diffclass))
+                        cur_rows.append(math.log2(mean_current_adv_overlap_diffclass))
+                        cur_rows.append(math.log2(mean_current_adv_orig_overlap_sameclass))
+                        cur_rows.append(math.log2(mean_current_adv_orig_overlap_diffclass))
+
+                allrows.append(cur_rows)
+        
+    with open("tmp/kernel_overlap_all_classes_mnist.csv", 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(allrows)
 
     print("Finished execution!!!")
