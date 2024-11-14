@@ -3382,22 +3382,31 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
                     model, get_initial_image(dataset, template_initial_image_type))
                 per_class_adv_data_loader = torch.utils.data.DataLoader(adv_dataset, batch_size=template_image_calculation_batch_size)
                 tmp_gen.collect_all_active_pixels_into_ymaps(per_class_adv_data_loader, class_label, number_of_batch_to_collect, collect_threshold)
-                current_adv_overall_y = [HardRelu()(a) for a in tmp_gen.overall_y]
+                # current_adv_overall_y = [HardRelu()(a) for a in tmp_gen.overall_y]
+                current_adv_overall_y = [a for a in tmp_gen.overall_y]
                 
                 if analysis_mode != "ONLY_ADV":
                     tmp_gen = TemplateImageGenerator(
                         model, get_initial_image(dataset, template_initial_image_type))
                     tmp_gen.collect_all_active_pixels_into_ymaps(per_class_loader, class_label, number_of_batch_to_collect, collect_threshold)
-                    current_orig_overall_y = [HardRelu()(a) for a in tmp_gen.overall_y]
+                    # current_orig_overall_y = [HardRelu()(a) for a in tmp_gen.overall_y]
+                    current_orig_overall_y = [a for a in tmp_gen.overall_y]
 
                     current_overall_y = [None]*len(current_orig_overall_y)
                     for lind in range(len(current_overall_y)):
+                        tmp1 = current_adv_overall_y[lind] * current_orig_overall_y[lind]
+                        z=torch.zeros(1,device=tmp1.device)
                         if analysis_mode == "ADV_DIFF_ORIG":
-                            current_overall_y[lind] = HardRelu()(current_adv_overall_y[lind] - HardRelu()(current_orig_overall_y[lind]))
+                            #Both these versions gave almost same output
+                            # current_overall_y[lind] = HardRelu()(current_adv_overall_y[lind] - HardRelu()(current_orig_overall_y[lind]))
+                            current_overall_y[lind] = torch.where(tmp1<0,current_adv_overall_y[lind],z)
+                            print(current_overall_y[lind])
                         elif analysis_mode == "ORIG_DIFF_ADV":
-                            current_overall_y[lind] = HardRelu()(current_orig_overall_y[lind] - HardRelu()(current_adv_overall_y[lind]))
+                            current_overall_y[lind] = torch.where(tmp1<0,current_orig_overall_y[lind],z)
+                            # current_overall_y[lind] = HardRelu()(current_orig_overall_y[lind] - HardRelu()(current_adv_overall_y[lind]))
                         elif analysis_mode == "ADV_OVRLP_ORIG":
-                            current_overall_y[lind] = current_adv_overall_y[lind] * HardRelu()(current_orig_overall_y[lind])
+                            current_overall_y[lind] = torch.where(tmp1>0,current_orig_overall_y[lind],z)
+                            # current_overall_y[lind] = current_adv_overall_y[lind] * HardRelu()(current_orig_overall_y[lind])
                 else:
                     current_overall_y = current_adv_overall_y
 
@@ -3460,7 +3469,7 @@ def run_visualization_on_config(dataset, model_arch_type, is_template_image_on_t
 if __name__ == '__main__':
     print("Start")
     # mnist , cifar10 , fashion_mnist , imagenet_1000
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # cifar10_conv4_dlgn , cifar10_vgg_dlgn_16 , dlgn_fc_w_128_d_4 , random_conv4_dlgn , random_vggnet_dlgn
     # random_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_wo_bn , cifar10_conv4_dlgn_sim_vgg_with_bn
     # random_conv4_dlgn_sim_vgg_with_bn , cifar10_conv4_dlgn_with_inbuilt_norm , random_cifar10_conv4_dlgn_with_inbuilt_norm
@@ -3552,8 +3561,10 @@ if __name__ == '__main__':
     wandb_config = dict()
     custom_model_path = None
 
-    custom_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
+    # custom_model_path = "root/model/save/mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.005/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt"
     # custom_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
+    custom_model_path = "root/model/save/fashion_mnist/adversarial_training/MT_conv4_dlgn_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/out_lossfn_CrossEntropyLoss()/inner_lossfn_CrossEntropyLoss()/adv_model_dir.pt"
+    # custom_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
 
     if(custom_model_path is not None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

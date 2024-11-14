@@ -27,6 +27,18 @@ from structure.generic_structure import CustomSimpleDataset
 from utils.generic_utils import Y_Logits_Binary_class_Loss
 from adversarial_attacks_tester import adv_evaluate_model
 
+# from structure.generic_structure import SaveFeatures
+
+class SaveFeatures():
+    def __init__(self, module):
+        self.hook = module.register_forward_hook(self.hook_fn)
+
+    def hook_fn(self, module, input, output):
+        self.features = output
+
+    def close(self):
+        self.hook.remove()
+
 def evaluate_model(net, dataloader, num_classes_trained_on=None):
     net.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -222,6 +234,12 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
             net = torch.nn.DataParallel(net)
 
         cudnn.benchmark = True
+    if(svm_c_hp != 0):
+        outcapturer = OrderedDict()
+        for key,cur_m in net.get_gate_layers_ordered_dict().items():
+            if isinstance(cur_m, nn.Linear) or isinstance(cur_m, nn.Conv2d):
+                print(key,cur_m.weight.size(),cur_m.bias.size())
+                outcapturer[key] = SaveFeatures(cur_m)
 
     is_log_wandb = not(wand_project_name is None)
     best_test_acc = 0
@@ -269,19 +287,22 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
             if(svm_c_hp != 0):
                 wregloss = 0
                 hingeloss = 0
+                if pca_exp_percent is None:
+                    dummy_input = torch.rand(get_img_size(dataset)).unsqueeze(0)
+                else:
+                    dummy_input = torch.rand((1,number_of_components_for_pca)).unsqueeze(0)
+                dummy_input = dummy_input.to(device)
+                conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer = net.exact_forward_vis(dummy_input,is_no_grad=False)
+                    
                 for layer_name, layer_obj in net.get_gate_layers_ordered_dict().items():
-                    list_to_loop = list(enumerate(layer_obj.children()))
-                    if(len(list_to_loop) == 0):
-                        list_to_loop = [(0, layer_obj)]
-                    for (i, current_layer) in list_to_loop:
-                        assert not isinstance(current_layer, torch.nn.Conv2d), 'Conv2d not supported'
-                        if(isinstance(current_layer, torch.nn.Linear)):
-                            wregloss += torch.norm(current_layer.weight,p=2)
-                            cinputs = torch.flatten(inputs,1)
-                            tmpo = torch.matmul(current_layer.weight,cinputs.T)
-                            hingeloss += torch.mean(torch.clamp(1-torch.sign(tmpo)*tmpo,min=0))
+                    cur_w = conv_matrix_operations_in_each_layer[layer_name]
+                    wregloss += torch.norm(cur_w,p=2)
+                    # wregloss += torch.norm(layer_obj.weight,p=2)
+                    # tmpo = torch.matmul(current_layer.weight,cinputs.T)
+                    # hingeloss += torch.mean(torch.clamp(1-torch.sign(tmpo)*tmpo,min=0))
+                    hingeloss += torch.norm(torch.clamp(1-outcapturer[key].features,min=0),1)
                 print("Loss:{} wregloss:{} hingeloss:{}".format(loss,wregloss,hingeloss))
-                loss += wregloss + svm_c_hp*hingeloss
+                loss += svm_c_hp*(0.01*wregloss + hingeloss)
 
             if(npk_reg != 0):
                 beta=4
@@ -306,10 +327,14 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
                 width = conv_outs[0].size()[1]
                 depth = len(conv_outs)
                 npk_kernel = npk_kernel / (pow(width, depth)*npk_kernel.numel())
-                overlap = nn.ReLU()(torch.matmul(torch.matmul(
-                    torch.transpose(labels, 0, 1), npk_kernel), labels))
+                Y_gram = torch.matmul(labels, torch.transpose(labels, 0, 1))
+                overlap = npk_kernel * Y_gram
+                # overlap = nn.ReLU()(torch.matmul(torch.matmul(
+                #     torch.transpose(labels, 0, 1), npk_kernel), labels))
+                overlap_same_class = torch.sum(torch.where(overlap > 0.,overlap.float(),torch.zeros(1,dtype=torch.float32).to(device=overlap.device)))
+                overlap_diff_class = -torch.sum(torch.where(overlap < 0.,overlap.float(),torch.zeros(1,dtype=torch.float32).to(device=overlap.device)))
                 # print("Loss:{} npk_reg*overlap:{}".format(loss,npk_reg*overlap))
-                loss = loss + npk_reg*overlap
+                loss = loss + npk_reg*(overlap_same_class-overlap_diff_class)
             
             if(gatesat_reg != 0):
                 beta=4
@@ -364,6 +389,10 @@ def train_model(net, trainloader, testloader, epochs, criterion, optimizer, fina
             best_test_acc = test_acc
             torch.save(net, final_model_save_path)
 
+    if(svm_c_hp != 0):
+        for key,cur_m in model.get_gate_layers_ordered_dict().items():
+            if isinstance(cur_m, nn.Linear) or isinstance(cur_m, nn.Conv2d):
+                outcapturer[key].close()
     print('Finished Training: Best saved model test acc is:', best_test_acc)
     return best_test_acc, net
 
@@ -433,7 +462,7 @@ class CustomAugmentDataset(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10 , xor
-    dataset = 'xor'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
@@ -450,7 +479,7 @@ if __name__ == '__main__':
     wand_project_name = None
     # wand_project_name = "APR_experiments"
     # wand_project_name = "NPK_reg"
-    wand_project_name = "XOR_training"
+    # wand_project_name = "XOR_training"
     # wand_project_name = "Cifar10_flamarion_replicate"
     # wand_project_name = "frequency_augmentation_experiments"
     # wand_project_name = "Part_training_for_robustness"
@@ -458,8 +487,9 @@ if __name__ == '__main__':
     # wand_project_name = "V2_template_visualisation_augmentation"
     # wand_project_name = "Pruning-exps"
     # wand_project_name = "Gatesat-exp"
-    # wand_project_name = "Thesis_runs_freeze_exp"
-    # wand_project_name = "Thesis_runs"
+    # wand_project_name = "Thesis_npkreg"
+    # wand_project_name = "PCA_samecap_FMNIST_training"
+    wand_project_name = "SVM_trails"
     # wand_project_name = "Thesis_runs_pca"
     # wand_project_name = "Thesis_runs_resized"
     # wand_project_name = "Thesis_runs_pca_same_size_model"
@@ -470,26 +500,26 @@ if __name__ == '__main__':
     # pca_exp_percent = 0.45
 
     npk_reg = 0
-    # npk_reg = 0.01
+    # npk_reg = 1
 
     gate_weight_l2_reg = 0
     # gate_weight_l2_reg = 10
 
     svm_c_hp = 0
-    # svm_c_hp = 0.000001
+    svm_c_hp = 0.01
 
     gatesat_reg=0
     # gatesat_reg=0.001
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [1,5]
+    # list_of_classes_to_train_on = [6,7]
 
     train_transforms = None
     is_normalize_data = True
 
     custom_dataset_path = None
-    custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_40p_0_1r_eps_0.65_post_norm_eps_0.32.npy"
+    # custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_40p_0_1r_eps_0.65_post_norm_eps_0.32.npy"
     
 
     if(scheme_type == "APR_exps"):
@@ -591,8 +621,8 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 8
-        fc_depth = 3
+        fc_width = 128
+        fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
             "_W_"+str(fc_width)+"_D_"+str(fc_depth)

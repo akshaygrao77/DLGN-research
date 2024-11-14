@@ -227,7 +227,7 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
 
 if __name__ == '__main__':
     # fashion_mnist , mnist,cifar10 , xor
-    dataset = 'xor'
+    dataset = 'mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
@@ -246,13 +246,15 @@ if __name__ == '__main__':
     # wand_project_name = "Pruning-exps"
     # wand_project_name = "Part_training_for_robustness"
     # wand_project_name = "Residual_training"
-    wand_project_name = "XOR_training"
+    # wand_project_name = "XOR_training"
+    # wand_project_name = "PCA_samecap_FMNIST_training"
     # wand_project_name = "Cifar10_flamarion_replicate"
     # wand_project_name = "madry's_benchmarking"
     # wand_project_name = "reach_end_plot"
     # wand_project_name = "SVM_Adv_training"
     # wand_project_name = "Thesis_runs_freeze_exp"
     # wand_project_name = "Thesis_runs"
+    wand_project_name = "Different_EPS_runs"
     # wand_project_name = "Thesis_runs_bc"
     # wand_project_name = "Thesis_runs_pca"
     # wand_project_name = "Thesis_runs_resized"
@@ -312,14 +314,14 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [7,9]
+    # list_of_classes_to_train_on = [6,7]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    # pca_exp_percent = 0.45
+    # pca_exp_percent = 0.95
 
     custom_dataset_path = None
-    custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_40p_0_1r_eps_0.65_post_norm_eps_0.32.npy"
+    # custom_dataset_path = "data/custom_datasets/xor_dataset/xor_dataset_40p_0_1r_eps_0.65_post_norm_eps_0.32.npy"
 
     for batch_size in batch_size_list:
         if(dataset == "cifar10"):
@@ -399,8 +401,8 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 4
-            fc_depth = 3
+            fc_width = 256
+            fc_depth = 4
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \
                 "_W_"+str(fc_width)+"_D_"+str(fc_depth)

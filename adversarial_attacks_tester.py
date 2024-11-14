@@ -671,11 +671,11 @@ def project_to_eps_inf_ball(loader,eps):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn ,  fc_sf_dlgn , madry_mnist_conv4_dnn , 
     # bc_fc_dnn , bc_fc_sf_dlgn , bc_fc_dlgn , conv4_sf_dlgn
-    model_arch_type = 'conv4_dlgn'
+    model_arch_type = 'fc_dlgn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -684,23 +684,24 @@ if __name__ == '__main__':
 
     # None means that train on all classes
     list_of_classes_to_train_on = None
-    # list_of_classes_to_train_on = [3,9]
+    # list_of_classes_to_train_on = [4,5]
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    # pca_exp_percent = 0.45
+    pca_exp_percent = 0.45
 
     wandb_config_additional_dict = None
     # wandb_config_additional_dict = {
     #     "type_of_APR": "APRP","is_train_on_phase": True}
     # "is_train_on_phase": True
     # GATE_NET_FREEZE , VAL_NET_FREEZE
-    wandb_config_additional_dict = {
-        "transfer_mode": "VAL_NET_FREEZE"}
+    # wandb_config_additional_dict = {
+    #     "transfer_mode": "VAL_NET_FREEZE"}
     # wandb_config_additional_dict = {"type_of_APR": "APRS"}
 
     direct_model_path = None
-    direct_model_path = "root/model/save/mnist/PART_TRAINING/TEACHER__root-model-save-mnist-adversarial_training-MT_conv4_dlgn_ET_ADV_TRAINING-ST_2022-fast_adv_attack_type_PGD-adv_type_PGD-EPS_0.3-batch_size_64-eps_stp_size_0.005-adv_steps_40-update_on_all-R_init_True-norm_inf-use_ytrue_True-adv_model_dir.pt/TYP_VAL_NET_FREEZE/ST_2022/conv4_dlgn_dir.pt"
+    direct_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/fc_dlgn_W_222_D_4_PCA_K3_P_0.45_dir.pt"
+    # direct_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/fc_dlgn_W_128_D_4_PCA_K188_P_0.95_dir.pt"
     # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
     # direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_PCA_K10_P_0.45_dir.pt"
 
@@ -776,7 +777,7 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 128
+        fc_width = 222
         fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
@@ -824,8 +825,8 @@ if __name__ == '__main__':
         # wand_project_name = "Thesis_runs_attacks"
         # wand_project_name = "Thesis_runs_attacks_bc"
         # wand_project_name = "Thesis_runs_pca_attacks"
-        # wand_project_name = "Thesis_runs_pca_same_size_model_attacks"
-        wand_project_name = "Thesis_runs_freeze_exp_attacks"
+        wand_project_name = "Thesis_runs_pca_same_size_model_attacks"
+        # wand_project_name = "Thesis_runs_freeze_exp_attacks"
 
         torch_seed = 2022
         # FEATURE_FLIP , PGD , FGSM

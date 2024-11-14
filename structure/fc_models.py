@@ -551,7 +551,7 @@ class DLGN_FC_Network(nn.Module):
         self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
         self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
 
-    def forward(self, inp,verbose=2,gate_masks=None):
+    def forward(self, inp,verbose=2,gate_masks=None,is_retain_grad=False):
         if hasattr(self, 'standardize_layer'):
             inp = self.standardize_layer(inp)
 
@@ -574,6 +574,8 @@ class DLGN_FC_Network(nn.Module):
 
         for indx in range(len(linear_conv_outputs)):
             each_linear_conv_output = linear_conv_outputs[indx]
+            if(is_retain_grad):
+                each_linear_conv_output.retain_grad()
             self.gating_node_outputs[indx] = nn.Sigmoid()(
                 self.beta * each_linear_conv_output)
             if(gate_masks is not None):
@@ -615,7 +617,7 @@ class DLGN_FC_Network(nn.Module):
         elif(network_type == "WEIGHT_NET"):
             return self.value_network.list_of_modules[layer_num]
     
-    def exact_forward_vis(self, x,is_include_pca=False) -> torch.Tensor:
+    def exact_forward_vis(self, x,is_include_pca=False,is_no_grad=True) -> torch.Tensor:
         """
         x - Dummy input with batch size =1 to generate linear transformations
         """
@@ -634,7 +636,7 @@ class DLGN_FC_Network(nn.Module):
         with torch.no_grad():
             for layer_name, layer_obj in gating_net_layers_ordered.items():
                 merged_conv_matrix, merged_conv_bias, current_tensor_size = merge_operations_in_modules(
-                    layer_obj, current_tensor_size, merged_conv_matrix, merged_conv_bias)
+                    layer_obj, current_tensor_size, merged_conv_matrix, merged_conv_bias,is_no_grad=is_no_grad)
                 conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix.cpu(
                 )
                 conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias.cpu(
@@ -693,6 +695,7 @@ class ALLONES_FC_Value_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, input_size, seed=2022, num_classes=10):
         super(ALLONES_FC_Value_Network, self).__init__()
         torch.manual_seed(seed)
+        self.input_size = input_size
         list_of_modules = []
 
         previous_layer_size = input_size
