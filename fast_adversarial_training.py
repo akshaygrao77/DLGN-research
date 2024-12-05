@@ -233,8 +233,8 @@ if __name__ == '__main__':
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
     # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
-    # conv4_sf_dlgn , bc_fc_sf_dlgn , bc_fc_dlgn
-    model_arch_type = 'fc_dlgn'
+    # conv4_sf_dlgn , bc_fc_sf_dlgn , bc_fc_dlgn , dlgn__vgg16_bn__
+    model_arch_type = 'bc_fc_dlgn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -254,11 +254,12 @@ if __name__ == '__main__':
     # wand_project_name = "SVM_Adv_training"
     # wand_project_name = "Thesis_runs_freeze_exp"
     # wand_project_name = "Thesis_runs"
-    wand_project_name = "Different_EPS_runs"
-    # wand_project_name = "Thesis_runs_bc"
+    # wand_project_name = "Cifar10_exps"
+    wand_project_name = "Thesis_runs_bc"
     # wand_project_name = "Thesis_runs_pca"
     # wand_project_name = "Thesis_runs_resized"
     # wand_project_name = "Thesis_runs_pca_same_size_model"
+    # wand_project_name = "Thesis_runs_pca_capacity"
     
     # ADV_TRAINING ,  RECONST_EVAL_ADV_TRAINED_MODEL , VIS_ADV_TRAINED_MODEL , PART_ADV_TRAINING , GATE_FREEZE_ADV_TRAINING , VALUE_FREEZE_ADV_TRAINING
     exp_type = "ADV_TRAINING"
@@ -401,7 +402,7 @@ if __name__ == '__main__':
             net = get_model_instance(
                 model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
         elif("fc" in model_arch_type):
-            fc_width = 256
+            fc_width = 128
             fc_depth = 4
             nodes_in_each_layer_list = [fc_width] * fc_depth
             model_arch_type_str = model_arch_type_str + \

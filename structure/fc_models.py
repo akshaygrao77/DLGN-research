@@ -738,6 +738,242 @@ class ALLONES_FC_Value_Network(nn.Module):
 
         return ret
 
+class DLGN_FC_BN_Network(nn.Module):
+    def __init__(self, nodes_in_each_layer_list, beta=4, input_size_list=[28, 28], seed=2022, num_classes=10):
+        super(DLGN_FC_BN_Network, self).__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        torch.manual_seed(seed)
+        self.nodes_in_each_layer_list = nodes_in_each_layer_list
+        self.seed = seed
+        self.beta = beta
+        self.num_classes = num_classes
+        self.input_size_list = input_size_list
+        self.initialize_network()
+
+    def initialize_network(self):
+        input_size = self.input_size_list[0]
+        for ind in range(1, len(self.input_size_list)):
+            input_size *= self.input_size_list[ind]
+        self.input_size = input_size
+        self.init_gate_net()
+        print("self.gating_network", self.gating_network)
+        print("Gating net params:", sum(p.numel()
+              for p in self.gating_network.parameters()))
+        self.init_value_net()
+        print("self.value_network", self.value_network)
+        print("Value net params:", sum(p.numel()
+              for p in self.value_network.parameters()))
+    
+    def init_gate_net(self):
+        self.gating_network = DLGN_FC_BN_Gating_Network(
+            self.nodes_in_each_layer_list, self.input_size, seed=self.seed)
+
+    def init_value_net(self):
+        self.value_network = ALLONES_FC_BN_Value_Network(
+            self.nodes_in_each_layer_list, self.input_size, seed=self.seed, num_classes=self.num_classes)
+
+    def initialize_PCA_transformation(self, data, explained_var_required):
+        self.pca_layer = PCA_Layer(data, explained_var_required)
+        d1, d2 = determine_row_col_from_features(self.pca_layer.k)
+        self.input_size_list = [d1, d2]
+        self.initialize_network()
+        return self.pca_layer.k
+
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = FC_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
+
+    def forward(self, inp,verbose=2,gate_masks=None,is_retain_grad=False):
+        if hasattr(self, 'standardize_layer'):
+            inp = self.standardize_layer(inp)
+
+        if hasattr(self, 'pca_layer'):
+            inp = self.pca_layer(inp)
+            inp = inp.to(device=self.device, non_blocking=True)
+
+        inp_gating = torch.ones(inp.size(),
+                                requires_grad=True, device=self.device)
+
+        linear_conv_outputs, _ = self.gating_network(inp, verbose=verbose)
+        self.linear_conv_outputs = linear_conv_outputs
+
+        # for indx in range(len(linear_conv_outputs)):
+        #     each_conv_out = linear_conv_outputs[indx]
+        #     print("each_conv_out: {} => size {}".format(
+        #         indx, each_conv_out.size()))
+
+        self.gating_node_outputs = [None] * len(linear_conv_outputs)
+
+        for indx in range(len(linear_conv_outputs)):
+            each_linear_conv_output = linear_conv_outputs[indx]
+            if(is_retain_grad):
+                each_linear_conv_output.retain_grad()
+            self.gating_node_outputs[indx] = nn.Sigmoid()(
+                self.beta * each_linear_conv_output)
+            if(gate_masks is not None):
+                self.gating_node_outputs[indx] *= gate_masks[indx]
+
+
+        final_layer_out = self.value_network(
+            inp_gating, self.gating_node_outputs, verbose=verbose)
+
+        return final_layer_out
+
+    def get_gate_layers_ordered_dict(self,is_include_pca=False):
+        gating_net_layers_ordered = OrderedDict()
+        if(is_include_pca and hasattr(self, 'pca_layer')):
+            inp_layer = self.gating_network.list_of_modules[0]
+            print("pc_comp:{} pc_mean;{}".format(self.pca_layer.pc_comp.shape,self.pca_layer.pc_mean.shape))
+            temp_conv = nn.Linear(self.pca_layer.pc_comp.shape[0],self.pca_layer.pc_comp.shape[1])
+            print("temp_conv weight:{} bias:{} pc_comp:{} pc_mean;{}".format(temp_conv.weight.size(),temp_conv.bias.size(),self.pca_layer.pc_comp.shape,self.pca_layer.pc_mean.shape))
+            # temp_conv = temp_conv.to(device=inp_layer.device)
+            temp_conv.weight= torch.nn.Parameter(self.pca_layer.pc_comp.T.float())
+            temp_conv.bias= torch.nn.Parameter(-torch.matmul(self.pca_layer.pc_comp.T,self.pca_layer.pc_mean).float())
+            print("temp_conv weight:{} bias:{} ".format(temp_conv.weight.size(),temp_conv.bias.size()))
+            gating_net_layers_ordered["fc_pca"] = temp_conv
+        for layer_num in range(len(self.gating_network.list_of_modules)):
+          gating_net_layers_ordered["fc"+str(layer_num)+"_g"] = self.gating_network.list_of_modules[layer_num]
+
+        return gating_net_layers_ordered
+
+    def get_value_layers_ordered_dict(self):
+        gating_net_layers_ordered = OrderedDict()
+        for layer_num in range(len(self.gating_network.list_of_modules)):
+          gating_net_layers_ordered["fc"+str(layer_num)+"_g"] = self.value_network.list_of_modules[layer_num]
+
+        return gating_net_layers_ordered
+
+    def get_layer_object(self, network_type, layer_num):
+        if(network_type == "GATE_NET"):
+            return self.gating_network.list_of_modules[layer_num]
+        elif(network_type == "WEIGHT_NET"):
+            return self.value_network.list_of_modules[layer_num]
+    
+    def exact_forward_vis(self, x,is_include_pca=False,is_no_grad=True) -> torch.Tensor:
+        """
+        x - Dummy input with batch size =1 to generate linear transformations
+        """
+        self.eval()
+        x = torch.flatten(x,1)
+        gating_net_layers_ordered = self.get_gate_layers_ordered_dict(is_include_pca)
+        conv_matrix_operations_in_each_layer = OrderedDict()
+        conv_bias_operations_in_each_layer = OrderedDict()
+        channel_outs_size_in_each_layer = OrderedDict()
+        current_tensor_size = x.size()
+        print("current_tensor_size ", current_tensor_size)
+        merged_conv_matrix = None
+        merged_conv_bias = None
+        orig_out = x
+
+        with torch.no_grad():
+            for layer_name, layer_obj in gating_net_layers_ordered.items():
+                merged_conv_matrix, merged_conv_bias, current_tensor_size = merge_operations_in_modules(
+                    layer_obj, current_tensor_size, merged_conv_matrix, merged_conv_bias,is_no_grad=is_no_grad)
+                conv_matrix_operations_in_each_layer[layer_name] = merged_conv_matrix.cpu(
+                )
+                conv_bias_operations_in_each_layer[layer_name] = merged_conv_bias.cpu(
+                )
+                channel_outs_size_in_each_layer[layer_name] = current_tensor_size[0]
+
+                orig_out = layer_obj(orig_out)
+
+                convmatrix_output = apply_input_on_conv_matrix(
+                    x, merged_conv_matrix, merged_conv_bias)
+                convmatrix_output = torch.unsqueeze(torch.reshape(
+                    convmatrix_output, current_tensor_size), 0)
+                assert orig_out.size() == convmatrix_output.size(
+                ), "Size of effective and actual output unequal"
+                difference_in_output = (
+                    orig_out - convmatrix_output).abs().sum()
+                print("difference_in_output ", difference_in_output)
+
+        return conv_matrix_operations_in_each_layer, conv_bias_operations_in_each_layer, channel_outs_size_in_each_layer
+
+class DLGN_FC_BN_Gating_Network(nn.Module):
+    def __init__(self, nodes_in_each_layer_list, input_size, seed=2022):
+        super(DLGN_FC_BN_Gating_Network, self).__init__()
+        torch.manual_seed(seed)
+
+        list_of_modules = []
+
+        previous_layer_size = input_size
+        for each_current_layer_size in nodes_in_each_layer_list:
+            list_of_modules.append(nn.Linear(
+                previous_layer_size, each_current_layer_size))
+            list_of_modules.append(
+                nn.BatchNorm1d(each_current_layer_size))
+            previous_layer_size = each_current_layer_size
+
+        self.list_of_modules = nn.ModuleList(list_of_modules)
+
+    def forward(self, inp, verbose=2):
+        prev_out = torch.flatten(inp, 1)
+        layer_outs = []
+        for each_module in self.list_of_modules:
+            prev_out = each_module(prev_out)
+            layer_outs.append(prev_out)
+
+        return layer_outs, prev_out
+
+    def __str__(self):
+        ret = "Gating network "+" \n module_list:"
+        for each_module in self.list_of_modules:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+
+        return ret
+
+class ALLONES_FC_BN_Value_Network(nn.Module):
+    def __init__(self, nodes_in_each_layer_list, input_size, seed=2022, num_classes=10):
+        super(ALLONES_FC_BN_Value_Network, self).__init__()
+        torch.manual_seed(seed)
+        self.input_size = input_size
+        list_of_modules = []
+
+        previous_layer_size = input_size
+        for each_current_layer_size in nodes_in_each_layer_list:
+            list_of_modules.append(nn.Linear(
+                previous_layer_size, each_current_layer_size))
+            list_of_modules.append(
+                nn.BatchNorm1d(each_current_layer_size))
+            previous_layer_size = each_current_layer_size
+
+        self.list_of_modules = nn.ModuleList(list_of_modules)
+        self.output_layer = nn.Linear(previous_layer_size, num_classes)
+
+    def forward(self, inp, gating_signals, verbose=2):
+        prev_out = torch.flatten(inp, 1)
+        for indx in range(len(self.list_of_modules)):
+            each_module = self.list_of_modules[indx]
+            prev_out = each_module(prev_out)
+            gs_len = len(gating_signals[indx].shape)
+            pout_len = len(prev_out.shape)
+            
+            if(gs_len > pout_len):
+                prev_out = torch.unsqueeze(prev_out,-1)
+            elif(gs_len < pout_len):
+                gating_signals[indx] = torch.unsqueeze(gating_signals[indx],-1)
+            if(verbose > 2):
+                print("size:{} prev_out_{}-----:{} ".format(prev_out.size(),indx,prev_out))
+            prev_out = prev_out * gating_signals[indx]
+            if(verbose > 2):
+                print("size:{} prev_out_{}-----:{} ".format(prev_out.size(),indx,prev_out))
+
+        prev_out = self.output_layer(prev_out)
+        if(verbose > 2):
+            print("size:{} final prev_out-----:{} ".format(prev_out.size(),prev_out))
+        return prev_out
+
+    def __str__(self):
+        ret = "Value network "+" \n module_list:"
+        for each_module in self.list_of_modules:
+            ret += str(each_module)+" \n Params in module is:" + \
+                str(sum(p.numel() for p in each_module.parameters()))+"\n"
+
+        return ret
+
 
 class DGN_FC_Network(nn.Module):
     def __init__(self, nodes_in_each_layer_list, beta=4, input_size_list=[28, 28], seed=2022, num_classes=10):

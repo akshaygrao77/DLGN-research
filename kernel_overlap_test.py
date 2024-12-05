@@ -198,10 +198,10 @@ def obtain_adv_orig_kernel_overlap(net, orig_dataset,adv_dataset,is_consider_tru
 
 if __name__ == '__main__':
     # fashion_mnist , mnist
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , bc_fc_dlgn , bc_fc_sf_dlgn
-    model_arch_type = 'fc_dlgn'
+    model_arch_type = 'bc_fc_dlgn'
 
     batch_size = 64
 
@@ -214,8 +214,8 @@ if __name__ == '__main__':
     # list_of_classes_to_train_on = [1,9]
 
     map_of_mtype_paths = {
-        "STD": "root/model/save/mnist/CLEAN_TRAINING/ST_2022/fc_dlgn_W_128_D_4_dir.pt",
-        "ADFS": "root/model/save/mnist/adversarial_training/MT_fc_dlgn_W_128_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/adv_model_dir.pt",
+        "STD": "root/model/save/fashion_mnist/CLEAN_TRAINING/TR_ON_6_7/ST_2022/bc_fc_dlgn_W_256_D_4_dir.pt",
+        "ADFS": "root/model/save/fashion_mnist/adversarial_training/TR_ON_6_7/MT_bc_fc_dlgn_W_256_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/out_lossfn_BCEWithLogitsLoss()/inner_lossfn_Y_Logits_Binary_class_Loss()/adv_model_dir.pt",
     }
 
     wand_project_name = "thesis_kernel_overlap_experiments"
@@ -226,7 +226,7 @@ if __name__ == '__main__':
     adv_attack_type = "PGD"
     adv_target = None
     # K_OVERLAP , All_PAIRS_K_OVERLAP
-    exp_type = "All_PAIRS_K_OVERLAP"
+    exp_type = "K_OVERLAP"
     is_consider_NPK = False
     percentage_of_dataset_for_analysis = 100
     eps_step_size = 0.01
@@ -295,7 +295,7 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 128
+        fc_width = 256
         fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
@@ -349,7 +349,7 @@ if __name__ == '__main__':
             wandb_run_name = "DS_"+str(dataset_str) + \
                 "ST_"+str(torch_seed)+"_NSAMP_"+str(number_of_samples_used_for_analysis) + \
                 "_K_OV_"+str(model_arch_type)+"TS_"+str(number_of_samples)
-            wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type, dataset_str, is_analysis_on_train,
+            wandb_config = get_wandb_config(exp_type, adv_attack_type, model_arch_type_str, dataset_str, is_analysis_on_train,
                                             eps, number_of_adversarial_optimization_steps, eps_step_size, is_targetted, adv_target)
             wandb_config["seed"] = torch_seed
             wandb_config["percent_used_for_analysis"] = percentage_of_dataset_for_analysis
@@ -662,8 +662,8 @@ if __name__ == '__main__':
 
                 allrows.append(cur_rows)
         
-    with open("tmp/kernel_overlap_all_classes_mnist.csv", 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerows(allrows)
+        with open("tmp/kernel_overlap_all_classes_mnist.csv", 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(allrows)
 
     print("Finished execution!!!")

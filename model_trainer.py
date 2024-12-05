@@ -464,10 +464,10 @@ if __name__ == '__main__':
     # fashion_mnist , mnist , cifar10 , xor
     dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
-    # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
-    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,
+    # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net, fc_dlgn_bn,
+    # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn, dlgn__vgg16_bn__
     # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn , bc_fc_dlgn , bc_fc_sf_dlgn , conv4_sf_dlgn
-    model_arch_type = "fc_dlgn"
+    model_arch_type = "bc_fc_dlgn"
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
@@ -489,11 +489,12 @@ if __name__ == '__main__':
     # wand_project_name = "Gatesat-exp"
     # wand_project_name = "Thesis_npkreg"
     # wand_project_name = "PCA_samecap_FMNIST_training"
-    wand_project_name = "SVM_trails"
+    # wand_project_name = "Cifar10_exps"
     # wand_project_name = "Thesis_runs_pca"
     # wand_project_name = "Thesis_runs_resized"
     # wand_project_name = "Thesis_runs_pca_same_size_model"
-    # wand_project_name = "Thesis_runs_bc"
+    wand_project_name = "Thesis_runs_bc"
+    # wand_project_name = "Thesis_runs_pca_capacity"
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
@@ -506,7 +507,7 @@ if __name__ == '__main__':
     # gate_weight_l2_reg = 10
 
     svm_c_hp = 0
-    svm_c_hp = 0.01
+    # svm_c_hp = 0.01
 
     gatesat_reg=0
     # gatesat_reg=0.001
@@ -621,7 +622,7 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 128
+        fc_width = 256
         fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from structure.fc_models import DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network,BC_DNN_FC_Network,SF_DLGN_FC_Network,GALU_DNN_FC_Network,BC_SF_DLGN_FC_Network,BC_DLGN_FC_Network
+from structure.fc_models import DLGN_FC_BN_Network,DLGN_FC_Network, DNN_FC_Network, DGN_FC_Network,BC_DNN_FC_Network,SF_DLGN_FC_Network,GALU_DNN_FC_Network,BC_SF_DLGN_FC_Network,BC_DLGN_FC_Network
 from utils.visualise_utils import determine_row_col_from_features
 from sklearn.decomposition import PCA
 from collections import OrderedDict
@@ -750,6 +750,9 @@ class dnn_vgg16_bn(nn.Module):
 class vgg16_bn(nn.Module):
     def __init__(self, allones, init_weights: bool = True, num_classes: int = 10) -> None:
         super().__init__()
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        
         self.conv1_g = nn.Conv2d(3, 64, kernel_size=3, padding=1)
         self.conv2_g = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.conv3_g = nn.Conv2d(64, 128, kernel_size=3, padding=1)
@@ -840,6 +843,11 @@ class vgg16_bn(nn.Module):
 
         if init_weights:
             self._initialize_weights()
+    
+    def initialize_standardization_layer(self,mu=None,std=None):
+        self.standardize_layer = CONV_Standardize(mu,std)
+        self.standardize_layer.mu = self.standardize_layer.mu.to(device=self.device,non_blocking=True)
+        self.standardize_layer.std = self.standardize_layer.std.to(device=self.device,non_blocking=True)
 
     def _initialize_weights(self) -> None:
         for m in self.modules():
@@ -6281,6 +6289,9 @@ def get_model_instance(model_arch_type, inp_channel, seed=2022, mask_percentage=
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
     elif(model_arch_type == "fc_dlgn"):
         net = DLGN_FC_Network(
+            nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
+    elif(model_arch_type == "fc_dlgn_bn"):
+        net = DLGN_FC_BN_Network(
             nodes_in_each_layer_list, seed=seed, input_size_list=input_size_list, num_classes=num_classes)
     elif(model_arch_type == "fc_dgn"):
         net = DGN_FC_Network(
