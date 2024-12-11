@@ -467,7 +467,7 @@ if __name__ == '__main__':
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net, fc_dlgn_bn,
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn, dlgn__vgg16_bn__
     # fc_sf_dlgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ , gal_fc_dnn , gal_plain_pure_conv4_dnn , bc_fc_dlgn , bc_fc_sf_dlgn , conv4_sf_dlgn
-    model_arch_type = "bc_fc_dlgn"
+    model_arch_type = "conv4_sf_dlgn"
     # iterative_augmenting , nil , APR_exps , PART_TRAINING
     scheme_type = 'nil'
     # scheme_type = ''
@@ -493,7 +493,7 @@ if __name__ == '__main__':
     # wand_project_name = "Thesis_runs_pca"
     # wand_project_name = "Thesis_runs_resized"
     # wand_project_name = "Thesis_runs_pca_same_size_model"
-    wand_project_name = "Thesis_runs_bc"
+    wand_project_name = "Thesis_runs"
     # wand_project_name = "Thesis_runs_pca_capacity"
 
     # Percentage of information retention during PCA (values between 0-1)

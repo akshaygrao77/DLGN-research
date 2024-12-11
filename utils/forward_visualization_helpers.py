@@ -238,37 +238,46 @@ def merge_layers_operations_in_modules(modObj, current_tensor_size, lay_type, id
     return merged_conv_layer, current_tensor_size
 
 
-def merge_operations_in_modules(modObj, current_tensor_size, merged_conv_matrix=None, merged_conv_bias=None):
+def merge_operations_in_modules(modObj, current_tensor_size, merged_conv_matrix=None, merged_conv_bias=None,is_no_grad=True):
     list_to_loop = list(enumerate(modObj.children()))
     if(len(list_to_loop) == 0):
         list_to_loop = [(0, modObj)]
-    with torch.no_grad():
+    def subfunc():
+        nonlocal merged_conv_matrix
+        nonlocal merged_conv_bias
+        nonlocal current_tensor_size
         for (i, current_layer) in list_to_loop:
-            print("current_layer", current_layer)
-            if(isinstance(current_layer, torch.nn.Conv2d)):
-                if(merged_conv_matrix is None):
-                    merged_conv_matrix, merged_conv_bias, current_tensor_size = conv2d_to_conv_matrix(
-                        current_layer, current_tensor_size)
-                else:
-                    cur_conv_matrix, cur_conv_bias, current_tensor_size = conv2d_to_conv_matrix(
+                print("current_layer", current_layer)
+                if(isinstance(current_layer, torch.nn.Conv2d)):
+                    if(merged_conv_matrix is None):
+                        merged_conv_matrix, merged_conv_bias, current_tensor_size = conv2d_to_conv_matrix(
+                            current_layer, current_tensor_size)
+                    else:
+                        cur_conv_matrix, cur_conv_bias, current_tensor_size = conv2d_to_conv_matrix(
+                            current_layer, current_tensor_size)
+                        merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
+                            merged_conv_matrix, merged_conv_bias, cur_conv_matrix, cur_conv_bias)
+                elif(isinstance(current_layer, torch.nn.BatchNorm2d)):
+                    merged_conv_matrix, merged_conv_bias = merge_batchnorm_into_convmatrix(
+                        current_layer, merged_conv_matrix, merged_conv_bias)
+                elif(isinstance(current_layer, torch.nn.AvgPool2d)):
+                    cur_conv_matrix, cur_conv_bias, current_tensor_size = convert_avgpool_to_convmatrix(
                         current_layer, current_tensor_size)
                     merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
                         merged_conv_matrix, merged_conv_bias, cur_conv_matrix, cur_conv_bias)
-            elif(isinstance(current_layer, torch.nn.BatchNorm2d)):
-                merged_conv_matrix, merged_conv_bias = merge_batchnorm_into_convmatrix(
-                    current_layer, merged_conv_matrix, merged_conv_bias)
-            elif(isinstance(current_layer, torch.nn.AvgPool2d)):
-                cur_conv_matrix, cur_conv_bias, current_tensor_size = convert_avgpool_to_convmatrix(
-                    current_layer, current_tensor_size)
-                merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
-                    merged_conv_matrix, merged_conv_bias, cur_conv_matrix, cur_conv_bias)
-            elif(isinstance(current_layer, torch.nn.Linear)):
-                if(merged_conv_matrix is None):
-                    merged_conv_matrix, merged_conv_bias = current_layer.weight,current_layer.bias
-                else:
-                    merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
-                        merged_conv_matrix, merged_conv_bias, current_layer.weight, current_layer.bias)
-                current_tensor_size = (current_layer.out_features,)
+                elif(isinstance(current_layer, torch.nn.Linear)):
+                    if(merged_conv_matrix is None):
+                        merged_conv_matrix, merged_conv_bias = current_layer.weight,current_layer.bias
+                    else:
+                        merged_conv_matrix, merged_conv_bias = merge_conv_matrix(
+                            merged_conv_matrix, merged_conv_bias, current_layer.weight, current_layer.bias)
+                    current_tensor_size = (current_layer.out_features,)
+    if(is_no_grad):
+        with torch.no_grad():
+            subfunc()
+    else:
+        print("Running with grad enabled")
+        subfunc()
 
         print("merged_conv_matrix:{} merged_conv_bias:{} current_tensor_size:{}".format(
             merged_conv_matrix.size(), merged_conv_bias.size(), current_tensor_size))

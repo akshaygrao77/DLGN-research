@@ -227,14 +227,14 @@ def get_model_from_path(dataset, model_arch_type, model_path, mask_percentage=40
 
 if __name__ == '__main__':
     # fashion_mnist , mnist,cifar10 , xor
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small ,
     # conv4_deep_gated_net_with_actual_inp_in_wt_net , conv4_deep_gated_net_with_actual_inp_randomly_changed_in_wt_net
     # conv4_deep_gated_net_with_random_ones_in_wt_net , masked_conv4_dlgn , masked_conv4_dlgn_n16_small , fc_dnn , fc_dlgn , fc_dgn,dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__
     # bc_fc_dnn , fc_sf_dlgn , gal_fc_dnn , gal_plain_pure_conv4_dnn , madry_mnist_conv4_dnn , small_dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__ ,
     # plain_pure_conv4_dnn_n16_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_n16_small_pad_k_1_st1_bn_wo_bias__ , plain_pure_conv4_dnn_with_bn , plain_pure_conv4_dnn_pad_k_1_st1_with_bn__
     # conv4_sf_dlgn , bc_fc_sf_dlgn , bc_fc_dlgn , dlgn__vgg16_bn__
-    model_arch_type = 'bc_fc_dlgn'
+    model_arch_type = 'conv4_sf_dlgn'
     # batch_size = 128
     wand_project_name = None
     # wand_project_name = "fast_adv_tr_visualisation"
@@ -253,9 +253,9 @@ if __name__ == '__main__':
     # wand_project_name = "reach_end_plot"
     # wand_project_name = "SVM_Adv_training"
     # wand_project_name = "Thesis_runs_freeze_exp"
-    # wand_project_name = "Thesis_runs"
+    wand_project_name = "Thesis_runs"
     # wand_project_name = "Cifar10_exps"
-    wand_project_name = "Thesis_runs_bc"
+    # wand_project_name = "Thesis_runs_bc"
     # wand_project_name = "Thesis_runs_pca"
     # wand_project_name = "Thesis_runs_resized"
     # wand_project_name = "Thesis_runs_pca_same_size_model"

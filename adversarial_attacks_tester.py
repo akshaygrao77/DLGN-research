@@ -671,11 +671,11 @@ def project_to_eps_inf_ball(loader,eps):
 
 if __name__ == '__main__':
     # fashion_mnist , mnist, cifar10
-    dataset = 'mnist'
+    dataset = 'fashion_mnist'
     # conv4_dlgn , plain_pure_conv4_dnn , conv4_dlgn_n16_small , plain_pure_conv4_dnn_n16_small , conv4_deep_gated_net , conv4_deep_gated_net_n16_small
     # fc_dnn , fc_dlgn , fc_dgn , dlgn__conv4_dlgn_pad_k_1_st1_bn_wo_bias__, bc_fc_dnn ,  fc_sf_dlgn , madry_mnist_conv4_dnn , 
     # bc_fc_dnn , bc_fc_sf_dlgn , bc_fc_dlgn , conv4_sf_dlgn , dlgn__vgg16_bn__
-    model_arch_type = 'fc_dlgn'
+    model_arch_type = 'conv4_dlgn'
     scheme_type = 'iterative_augmented_model_attack'
     # scheme_type = ''
     batch_size = 64
@@ -688,7 +688,7 @@ if __name__ == '__main__':
 
     # Percentage of information retention during PCA (values between 0-1)
     pca_exp_percent = None
-    # pca_exp_percent = 0.45
+    # pca_exp_percent = 0.65
 
     wandb_config_additional_dict = None
     # wandb_config_additional_dict = {
@@ -701,7 +701,7 @@ if __name__ == '__main__':
 
     direct_model_path = None
     # direct_model_path = "root/model/save/cifar10/CLEAN_TRAINING/ST_2022/fc_dlgn_W_1024_D_8_dir.pt"
-    direct_model_path = "root/model/save/mnist/CLEAN_TRAINING/TR_ON_2_9/ST_2022/bc_fc_dlgn_W_256_D_4_dir.pt"
+    direct_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/ST_2022/conv4_dlgn_dir.pt"
     # direct_model_path = "root/model/save/mnist/adversarial_training/TR_ON_2_9/MT_bc_fc_dlgn_W_256_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/out_lossfn_BCEWithLogitsLoss()/inner_lossfn_Y_Logits_Binary_class_Loss()/adv_model_dir.pt"
     # direct_model_path = "root/model/save/fashion_mnist/adversarial_training/TR_ON_1_9/MT_bc_fc_dlgn_W_256_D_4_ET_ADV_TRAINING/ST_2022/fast_adv_attack_type_PGD/adv_type_PGD/EPS_0.3/OPT_Adam (Parameter Group 0    amsgrad: False    betas: (0.9, 0.999)    eps: 1e-08    lr: 0.0001    weight_decay: 0)/batch_size_64/eps_stp_size_0.01/adv_steps_40/update_on_all/R_init_True/norm_inf/use_ytrue_True/out_lossfn_BCEWithLogitsLoss()/inner_lossfn_Y_Logits_Binary_class_Loss()/adv_model_dir.pt"
     # direct_model_path = "root/model/save/fashion_mnist/CLEAN_TRAINING/TR_ON_1_9/ST_2022/bc_fc_dlgn_W_256_D_4_dir.pt"
@@ -779,7 +779,7 @@ if __name__ == '__main__':
         net = get_model_instance(
             model_arch_type, inp_channel, mask_percentage=mask_percentage, seed=torch_seed, num_classes=num_classes_trained_on)
     elif("fc" in model_arch_type):
-        fc_width = 256
+        fc_width = 128
         fc_depth = 4
         nodes_in_each_layer_list = [fc_width] * fc_depth
         model_arch_type_str = model_arch_type_str + \
@@ -825,8 +825,8 @@ if __name__ == '__main__':
         # wand_project_name = "SVM_loss_training"
         # wand_project_name = "Cifar10_flamarion_replicate"
         # wand_project_name = "Thesis_runs_attacks"
-        wand_project_name = "Thesis_runs_attacks_bc"
-        # wand_project_name = "Thesis_runs_pca_attacks"
+        # wand_project_name = "Thesis_runs_attacks_bc"
+        wand_project_name = "Thesis_runs_pca_attacks"
         # wand_project_name = "Thesis_runs_pca_same_size_model_attacks"
         # wand_project_name = "Attck_CIFAR10"
         # wand_project_name = "Thesis_runs_freeze_exp_attacks"
@@ -863,7 +863,7 @@ if __name__ == '__main__':
             # 40 is a good sweet spot more than that doesn't help much typically
             number_of_adversarial_optimization_steps = 40
             # eps_list = [0.3,0.2,0.1]
-            eps_list = [0.3]
+            eps_list = [0.3,0.1]
             eps_step_size = 0.01
         elif("cifar10" in dataset):
             number_of_adversarial_optimization_steps = 10
